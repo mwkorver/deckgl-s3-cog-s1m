@@ -1,0 +1,16 @@
+# Dedicated container Lambda for S3 Parquet footprint lookup and terrain reads.
+FROM public.ecr.aws/lambda/python:3.12
+
+RUN dnf install -y expat && dnf clean all
+
+ENV DUCKDB_EXT_DIR=/opt/duckdb_extensions
+ENV DUCKDB_VERSION=1.5.3
+ENV DUCKDB_PLATFORM=linux_arm64
+RUN mkdir -p ${DUCKDB_EXT_DIR} && python -c "import urllib.request,gzip,os; ver=os.environ['DUCKDB_VERSION']; plat=os.environ['DUCKDB_PLATFORM']; d=os.environ['DUCKDB_EXT_DIR']; req=lambda u: urllib.request.Request(u, headers={'User-Agent':'curl/8.0'}); [open(f'{d}/{e}.duckdb_extension','wb').write(gzip.decompress(urllib.request.urlopen(req(f'http://extensions.duckdb.org/v{ver}/{plat}/{e}.duckdb_extension.gz')).read())) for e in ('httpfs','aws')]" && ls -l ${DUCKDB_EXT_DIR}
+
+COPY requirements-s1m.txt ./
+RUN pip install --no-cache-dir -r requirements-s1m.txt
+
+COPY duckdb_s3.py s1m.py s1m_app.py ./
+
+CMD ["s1m_app.handler"]

@@ -1,0 +1,46 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: app/api/Dockerfile
+    container_name: cog-stac-api
+    command: uvicorn app:app --host 0.0.0.0 --port 8080 --reload
+    environment:
+      S3_COG_COLLECTION_ID: ${S3_COG_COLLECTION_ID:-naip}
+      AWS_PROFILE: ${AWS_PROFILE:-}
+      AWS_DEFAULT_PROFILE: ${AWS_PROFILE:-}
+      AWS_REGION: ${AWS_REGION:-us-west-2}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-west-2}
+      AWS_SDK_LOAD_CONFIG: "1"
+      AWS_CONFIG_FILE: /root/.aws/config
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      S3_COG_SIGN_ASSET_URLS: ${S3_COG_SIGN_ASSET_URLS:-1}
+      S3_COG_PRESIGN_EXPIRES: ${S3_COG_PRESIGN_EXPIRES:-3600}
+      S3_COG_PRESIGN_CACHE_TTL: ${S3_COG_PRESIGN_CACHE_TTL:-900}
+      S3_COG_PRESIGN_CACHE_MAXSIZE: ${S3_COG_PRESIGN_CACHE_MAXSIZE:-10000}
+      S3_COG_PRESIGN_MAX_WORKERS: ${S3_COG_PRESIGN_MAX_WORKERS:-8}
+      S3_COG_REQUEST_PAYER: ${S3_COG_REQUEST_PAYER:-requester}
+      S3_COG_EARTHSEARCH_API: ${S3_COG_EARTHSEARCH_API:-https://earth-search.aws.element84.com/v1/search}
+      S3_COG_EARTHSEARCH_PAGE_SIZE: ${S3_COG_EARTHSEARCH_PAGE_SIZE:-500}
+      # S3-backed by default: panel-triggered ingest reads the manifest index
+      # from S3 and writes the lake to S3, and /search reads that same lake.
+      # Override to a local path for fully-offline runs.
+      S3_COG_MANIFEST_INDEX: ${S3_COG_MANIFEST_INDEX:-s3://cog-stac-catalog/manifest-index}
+      S3_COG_LAKE_ROOT: ${S3_COG_LAKE_ROOT:-s3://cog-stac-catalog/lake}
+      S3_COG_REPO_ROOT: /repo-root
+    ports:
+      - "8089:8080"
+    volumes:
+      - ${HOME}/.aws:/root/.aws:ro
+      - ./cache:/cache
+      - ./api:/app
+      - ./viewer:/app/viewer:ro
+      # Bind-mount freshly-built host package dist dirs over the image-baked
+      # copies so host `tsc --build` output is served without an image rebuild.
+      - ../packages/deck.gl-geotiff/dist:/repo-root/packages/deck.gl-geotiff/dist:ro
+      - ../packages/geotiff/dist:/repo-root/packages/geotiff/dist:ro
+      - ../packages/deck.gl-raster/dist:/repo-root/packages/deck.gl-raster/dist:ro
+      - ../packages/affine/dist:/repo-root/packages/affine/dist:ro
+      - ../packages/proj/dist:/repo-root/packages/proj/dist:ro
+      - ../packages/morecantile/dist:/repo-root/packages/morecantile/dist:ro
+      - ../packages/raster-reproject/dist:/repo-root/packages/raster-reproject/dist:ro

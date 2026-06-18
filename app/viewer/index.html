@@ -1,0 +1,4229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local COG Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: system-ui, sans-serif;
+        background: #111;
+        color: #eee;
+      }
+      #app {
+        display: grid;
+        grid-template-columns: 380px 1fr;
+        height: 100%;
+      }
+      #sidebar {
+        border-right: 1px solid #333;
+        overflow: auto;
+        background: #171717;
+      }
+      #map-wrap {
+        position: relative;
+        height: 100%;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+
+
+      .maplibregl-ctrl-top-left,
+      .maplibregl-ctrl-top-right,
+      .maplibregl-ctrl-bottom-left,
+      .maplibregl-ctrl-bottom-right {
+        z-index: 20 !important;
+      }
+      .section {
+        padding: 12px 14px;
+        border-bottom: 1px solid #2a2a2a;
+      }
+      .section:last-child {
+        border-bottom: none;
+      }
+      .section h1,
+      .section h2 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+      .tab-button.active {
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: #fff;
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel.active {
+        display: block;
+      }
+      /* SAM Detect: resolution-feasibility chip (grounded in the imagery GSD). */
+      .feas-chip {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.6;
+      }
+      .feas-yes { background: #064e3b; color: #6ee7b7; }
+      .feas-maybe { background: #4a3c0a; color: #fcd34d; }
+      .feas-no { background: #4c1d1d; color: #fca5a5; }
+      .det-row {
+        display: flex; justify-content: space-between; gap: 8px;
+        padding: 3px 0; border-bottom: 1px solid #1f2937; font-size: 13px;
+      }
+      .det-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+      .controls {
+        display: grid;
+        gap: 8px;
+      }
+      .display-adjustments {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px 10px;
+        align-items: center;
+        padding: 8px 10px;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: #1d1d1d;
+      }
+      .display-adjustments label {
+        grid-column: 1 / -1;
+      }
+      .display-adjustments input[type="range"] {
+        width: 100%;
+        box-sizing: border-box;
+      }
+      input,
+      button,
+      select {
+        font: inherit;
+        border: 1px solid #444;
+        background: #222;
+        color: #eee;
+        padding: 8px 10px;
+        border-radius: 6px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        background: #2c2c2c;
+      }
+      button:disabled {
+        opacity: 0.35;
+        cursor: default;
+        background: #222;
+        border-color: #444;
+        color: #888;
+      }
+      button.search-active {
+        background: #c2500a;
+        border-color: #e06010;
+        color: #fff;
+        font-weight: 600;
+      }
+      button.search-active:hover {
+        background: #d9600f;
+      }
+      .muted {
+        color: #aaa;
+        font-size: 13px;
+      }
+      .item {
+        padding: 5px 12px;
+        border-bottom: 1px solid #252525;
+      }
+      .item strong {
+        display: block;
+        font-weight: normal;
+        margin-bottom: 2px;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        word-break: break-all;
+        margin-top: 2px;
+        color: #999;
+      }
+      .pill {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: #2c2c2c;
+        margin-right: 4px;
+        margin-top: 2px;
+        font-size: 11px;
+      }
+      .legend-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 3px;
+        font-size: 11px;
+      }
+      .swatch {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+      }
+      .item strong .swatch {
+        display: inline-block;
+        vertical-align: middle;
+        margin-right: 6px;
+      }
+      .layer-number-control {
+        background: rgba(23, 23, 23, 0.92);
+        color: #eee;
+        border: 1px solid #444;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        line-height: 1.2;
+        min-width: 72px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+      }
+      .small {
+        font-size: 12px;
+      }
+      .status-ok {
+        color: #86efac;
+      }
+      .status-warn {
+        color: #fbbf24;
+      }
+      .status-bad {
+        color: #fca5a5;
+      }
+      .key-value {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 6px 10px;
+        font-size: 13px;
+      }
+      .key-value div:nth-child(odd) {
+        color: #aaa;
+      }
+      pre.log-box {
+        margin: 0;
+        padding: 10px;
+        background: #101010;
+        border: 1px solid #2d2d2d;
+        border-radius: 6px;
+        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 260px;
+        overflow: auto;
+      }
+      #debug-overlay {
+        position: absolute;
+        bottom: 24px;
+        right: 12px;
+        width: 480px;
+        height: 240px;
+        background: rgba(15, 15, 15, 0.95);
+        border: 1px solid #333;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        z-index: 999;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+        overflow: hidden;
+      }
+      .debug-header {
+        background: #222;
+        padding: 6px 10px;
+        font-weight: bold;
+        font-size: 12px;
+        border-bottom: 1px solid #333;
+        display: flex;
+        align-items: center;
+      }
+      #debug-logs {
+        flex: 1;
+        padding: 8px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        color: #4ade80;
+        line-height: 1.4;
+      }
+      .debug-log-line {
+        border-bottom: 1px solid #222;
+        padding: 2px 0;
+      }
+      .debug-log-err {
+        color: #f87171;
+      }
+      
+      /* Glassmorphism modal backdrop */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+      .modal-backdrop.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      /* Modal Content Box */
+      .modal-content {
+        background: rgba(23, 23, 23, 0.95);
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(59, 130, 246, 0.15);
+        border-radius: 12px;
+        width: 90%;
+        max-width: 440px;
+        padding: 24px;
+        color: #eee;
+        transform: translateY(20px);
+        transition: transform 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+      .modal-backdrop.show .modal-content {
+        transform: translateY(0);
+      }
+      /* Top colored accent line */
+      .modal-content::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+      }
+      .modal-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin-top: 4px;
+        margin-bottom: 12px;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .modal-icon {
+        color: #f59e0b;
+        font-size: 20px;
+      }
+      .modal-body {
+        font-size: 14px;
+        line-height: 1.6;
+        color: #ccc;
+        margin-bottom: 20px;
+      }
+      .modal-body strong {
+        color: #fff;
+      }
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .modal-close-btn {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        border: none;
+        color: white;
+        padding: 8px 18px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .modal-close-btn:hover {
+        background: linear-gradient(135deg, #4f46e5, #3b82f6);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      }
+      .modal-close-btn:active {
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="sidebar">
+        <div class="section">
+          <h1>Local COG Viewer</h1>
+          <div class="muted">
+            Debug viewer for ordered STAC search results from the local GeoParquet lake prototype.
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="tabs">
+            <button class="tab-button active" data-tab="viewer">Viewer</button>
+            <button class="tab-button" data-tab="detect">Detect (SAM 3)</button>
+            <button class="tab-button" data-tab="terrain">Terrain (S1M)</button>
+            <button class="tab-button" data-tab="similar">Similar</button>
+            <button class="tab-button" data-tab="ingest">Data Ingest</button>
+            <button class="tab-button" data-tab="environment">Environment</button>
+          </div>
+        </div>
+
+        <div id="tab-viewer" class="tab-panel active">
+          <div class="section">
+            <h2>Collections in View</h2>
+            <div id="collections-here" class="small muted">
+              Move the map to see which imagery collections cover the view.
+            </div>
+            <div id="collection-detail" class="small" style="margin-top:8px;"></div>
+          </div>
+
+          <div class="section">
+            <h2>COG Footprints</h2>
+            <div class="controls">
+              <label class="small">
+                Collection
+                <select id="collection"></select>
+              </label>
+              <label class="small">
+                Region
+                <select id="state">
+                  <option value="">All loaded</option>
+                </select>
+              </label>
+              <label class="small">
+                Year
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <select id="year" style="flex:1;">
+                    <option value="">Latest available</option>
+                  </select>
+                  <button id="center-data" type="button" title="Move the map to the selected Collection/Region/Year extent" style="white-space:nowrap;">Center</button>
+                </div>
+              </label>
+              <label class="small">
+                Max footprints
+                <input id="limit" type="number" value="2000" min="1" max="10000" />
+              </label>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <button id="search" class="search-active">Search current map</button>
+                <label class="small" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+                  <input id="auto-search" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                  Auto search on pan
+                </label>
+              </div>
+            </div>
+            <div class="legend-row">
+              <div class="swatch" style="background:#3b82f6"></div>
+              <span>Returned order is the draw priority order from the API.</span>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Raster Layers</h2>
+            <div class="controls">
+              <label class="small" style="display:flex; align-items:center; gap:8px;">
+                <input id="toggle-cog-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                <strong id="cog-layer-label">NAIP Imagery (COG Tiles)</strong>
+              </label>
+              <label class="small" style="display:flex; align-items:center; gap:8px;">
+                <input id="toggle-usgs-naip-wms-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                <strong>USGS NAIP Reference Imagery (WMS)</strong>
+              </label>
+              <div class="display-adjustments">
+                <label class="small">
+                  Brightness <span id="brightness-value" class="muted">0%</span>
+                  <input id="brightness" type="range" min="-100" max="100" step="1" value="0" />
+                </label>
+                <label class="small">
+                  Contrast <span id="contrast-value" class="muted">100%</span>
+                  <input id="contrast" type="range" min="0" max="200" step="1" value="100" />
+                </label>
+                <span class="small muted">Display only</span>
+                <button id="reset-display" type="button">Reset</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Result summary</h2>
+            <div id="summary" class="muted">No search yet.</div>
+            <div id="timing-summary" class="small muted" style="margin-top:8px;">
+              Timing unavailable.
+            </div>
+            <div id="imagery-status" class="small status-warn" style="margin-top:8px;">
+              Imagery not requested yet.
+            </div>
+            <div id="resolution-debug" class="small muted" style="margin-top:8px;">
+              Resolution debug unavailable.
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Ordered sources</h2>
+            <div id="results"></div>
+          </div>
+        </div>
+
+        <div id="tab-detect" class="tab-panel">
+          <div class="section">
+            <h2>Concept</h2>
+            <div class="controls">
+              <label class="small">
+                Concept(s) to find <span class="muted">— comma-separated for higher recall</span>
+                <input id="det-concept" type="text" placeholder="e.g. building, rooftop, house" autocomplete="off" />
+              </label>
+              <div id="det-feasibility" class="small muted">
+                Enter a concept — feasibility is judged from the imagery resolution in view.
+                Multiple comma-separated concepts share one image encode and are merged (deduped).
+              </div>
+              <label class="small">
+                Detect area
+                <select id="det-chip">
+                  <option value="">Native 1008 px (small objects)</option>
+                  <option value="600">~600 m</option>
+                  <option value="1000">~1 km</option>
+                  <option value="2000">~2 km (big targets)</option>
+                </select>
+              </label>
+              <label class="small">
+                Min score <span id="det-score-val" class="muted">0.50</span>
+                <input id="det-score" type="range" min="0" max="1" step="0.05" value="0.5" />
+              </label>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button id="det-run" class="search-active">Detect center chip</button>
+                <button id="det-clear">Clear</button>
+              </div>
+              <div id="det-encode-hint" class="small muted" style="display:none;"></div>
+            </div>
+          </div>
+          <div class="section">
+            <h2>Results</h2>
+            <div id="det-summary" class="muted">No detection run yet.</div>
+            <div id="det-results"></div>
+          </div>
+        </div>
+
+        <div id="tab-similar" class="tab-panel">
+          <div class="section">
+            <h2>Find similar (Clay embeddings)</h2>
+            <div class="controls">
+              <div class="small muted">
+                Pick a point on the map. The chip covering it is looked up in the
+                embedding lake and every chip in scope is ranked by cosine
+                similarity — semantic search, no GPU.
+              </div>
+              <label class="small">
+                Results (k) <span id="sim-k-val" class="muted">50</span>
+                <input id="sim-k" type="range" min="10" max="500" step="10" value="50" />
+              </label>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button id="sim-pick" class="search-active">Pick point</button>
+                <button id="sim-clear">Clear</button>
+              </div>
+              <div class="small muted">
+                Scoped by the Viewer tab's state/year filters when set (blank = whole lake).
+              </div>
+            </div>
+          </div>
+          <div class="section">
+            <h2>Results</h2>
+            <div id="sim-summary" class="muted">No similarity search run yet.</div>
+            <div id="sim-results"></div>
+          </div>
+          <div class="section">
+            <h2>Verify candidates (SAM 3)</h2>
+            <div class="controls">
+              <div class="small muted">
+                Run text-prompted segmentation on the top candidates against the
+                newest imagery covering each chip — the stale-index /
+                fresh-verifier cascade.
+              </div>
+              <label class="small">
+                Concept
+                <input id="sim-verify-concept" type="text" placeholder="e.g. swimming pool, parking lot" autocomplete="off" />
+              </label>
+              <label class="small">
+                Top candidates to verify <span id="sim-verify-n-val" class="muted">3</span>
+                <input id="sim-verify-n" type="range" min="1" max="10" step="1" value="3" />
+              </label>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button id="sim-verify-run" class="search-active">Verify candidates</button>
+              </div>
+              <div id="sim-verify-status" class="small muted"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-ingest" class="tab-panel">
+          <div class="section">
+            <h2>Options</h2>
+            <div class="controls">
+              <label class="small">
+                Collection
+                <select id="ingest-collection"></select>
+              </label>
+              <button id="refresh-ingest-options">Find data to ingest (this view)</button>
+              <label class="small">
+                Region
+                <select id="ingest-state">
+                  <option value="">Select region</option>
+                </select>
+              </label>
+              <label class="small">
+                Year
+                <select id="ingest-year">
+                  <option value="">Select year</option>
+                </select>
+              </label>
+              <label class="small">
+                Strategy
+                <select id="ingest-strategy">
+                  <option value="manifest-cog-headers">Manifest + COG headers (complete)</option>
+                  <option value="manifest-earthsearch">Manifest + EarthSearch STAC (may be incomplete)</option>
+                </select>
+              </label>
+              <label class="small">
+                Max per partition (0 = unlimited)
+                <input id="ingest-limit" type="number" value="500" min="0" max="500" title="Set to 0 for unlimited (keeps going until finished)" />
+              </label>
+              <button id="run-ingest">Run ingest</button>
+            </div>
+          </div>
+          <div class="section">
+            <h2>Status</h2>
+            <div id="ingest-summary" class="muted">No ingest started.</div>
+          </div>
+          <div class="section">
+            <h2>Logs</h2>
+            <pre id="ingest-logs" class="log-box">No logs yet.</pre>
+          </div>
+        </div>
+
+        <div id="tab-terrain" class="tab-panel">
+          <div class="section">
+            <h2>USGS 3DEP Seamless 1m (S1M)</h2>
+            <div class="controls">
+              <div class="small muted">
+                Fills the viewport with S1M DEM tiles as a 3D mesh (not imagery)
+                and refreshes as you pan/zoom. Grid detail adapts to zoom. CONUS
+                only, still expanding. Pitch the map to see relief.
+              </div>
+              <label class="small">
+                Vertical exaggeration <span id="ter-exag-val" class="muted">2.0&times;</span>
+                <input id="ter-exag" type="range" min="1" max="8" step="0.5" value="2" />
+              </label>
+              <label class="small" style="display:flex; align-items:center; gap:6px;">
+                <input id="ter-gpu" type="checkbox" checked />
+                GPU displacement <span class="muted">— elevation as a texture, displaced in the vertex shader; exaggeration updates live</span>
+              </label>
+              <label class="small" style="display:flex; align-items:center; gap:6px;">
+                <input id="ter-borders" type="checkbox" checked />
+                Show tile borders <span class="muted">— outlines each S1M tile boundary</span>
+              </label>
+              <label class="small">
+                Surface
+                <select id="ter-surface">
+                  <option value="shaded" selected>Terrain shading</option>
+                  <option value="naip">NAIP imagery texture</option>
+                </select>
+              </label>
+              <label class="small">
+                Render
+                <select id="ter-mode">
+                  <option value="shaded" selected>Shaded</option>
+                  <option value="wireframe">Wireframe</option>
+                </select>
+              </label>
+              <label class="small">
+                Color
+                <select id="ter-color">
+                  <option value="adaptive" selected>Adaptive (per view)</option>
+                  <option value="absolute">Absolute (fixed scale)</option>
+                </select>
+              </label>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button id="ter-run" class="search-active">Show terrain in view</button>
+                <button id="ter-clear">Clear</button>
+              </div>
+              <div id="ter-summary" class="muted">No terrain loaded.</div>
+              <div id="ter-metrics" class="small muted">Drape metrics unavailable.</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-environment" class="tab-panel">
+          <div class="section">
+            <h2>Environment</h2>
+            <div class="controls">
+              <button id="refresh-environment">Refresh environment status</button>
+            </div>
+          </div>
+          <div class="section">
+            <h2>Checks</h2>
+            <div id="environment-checks" class="key-value"></div>
+          </div>
+          <div class="section">
+            <h2>Effective config</h2>
+            <div id="environment-config" class="key-value"></div>
+          </div>
+        </div>
+      </div>
+      <div id="map-wrap">
+        <div id="map"></div>
+        <div id="debug-overlay" style="display:none;">
+          <div class="debug-header">
+            <span>🔴 Live Debug Console</span>
+            <button id="clear-debug-btn" style="padding:2px 6px; font-size:11px; margin-left:auto; cursor:pointer;">Clear</button>
+          </div>
+          <div id="debug-logs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- API base URL. When the viewer is hosted on S3 (a different origin than
+         the API), deploy-viewer.sh writes config.js with window.S3_COG_API_BASE
+         set to the read function's URL. Served from the Lambda itself, config.js
+         is absent and API_BASE falls back to "" (same origin). A ?api= query
+         param overrides both, handy for pointing the static viewer at any API.
+         404 of a missing config.js is harmless. -->
+    <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "@chunkd/middleware": "https://esm.sh/@chunkd/middleware@11.3.0",
+          "@chunkd/source": "https://esm.sh/@chunkd/source@11.4.0",
+          "@chunkd/source-http": "https://esm.sh/@chunkd/source-http@11.4.0",
+          "@chunkd/source-memory": "https://esm.sh/@chunkd/source-memory@11.2.0",
+          "@cogeotiff/core": "https://esm.sh/@cogeotiff/core@9.5.0",
+          "@deck.gl/core": "https://esm.sh/@deck.gl/core@9.3.2",
+          "@deck.gl/geo-layers": "https://esm.sh/@deck.gl/geo-layers@9.3.2?deps=@deck.gl/core@9.3.2,@deck.gl/extensions@9.3.2,@deck.gl/layers@9.3.2,@deck.gl/mesh-layers@9.3.2",
+          "@deck.gl/layers": "https://esm.sh/@deck.gl/layers@9.3.2?deps=@deck.gl/core@9.3.2",
+          "@deck.gl/mapbox": "https://esm.sh/@deck.gl/mapbox@9.3.2?deps=@deck.gl/core@9.3.2",
+          "@deck.gl/mesh-layers": "https://esm.sh/@deck.gl/mesh-layers@9.3.2?deps=@deck.gl/core@9.3.2,@deck.gl/layers@9.3.2",
+          "@probe.gl/log": "https://esm.sh/@probe.gl/log@4.1.1?bundle",
+          "@probe.gl/env": "https://esm.sh/@probe.gl/env@4.1.1?bundle",
+          "@turf/boolean-clockwise": "https://esm.sh/@turf/boolean-clockwise@5.1.6?bundle",
+          "@s3-cog/affine": "/local-modules/affine/index.js",
+          "@s3-cog/deck.gl-geotiff": "/local-modules/deck.gl-geotiff/index.js",
+          "@s3-cog/deck.gl-raster": "/local-modules/deck.gl-raster/index.js",
+          "@s3-cog/deck.gl-raster/gpu-modules": "/local-modules/deck.gl-raster/gpu-modules/index.js",
+          "@s3-cog/geotiff": "/local-modules/geotiff/index.js",
+          "@s3-cog/lzw-tiff-decoder": "https://esm.sh/@developmentseed/lzw-tiff-decoder@0.2.2",
+          "@s3-cog/morecantile": "/local-modules/morecantile/index.js",
+          "@s3-cog/proj": "/local-modules/proj/index.js",
+          "@s3-cog/raster-reproject": "/local-modules/raster-reproject/index.js",
+          "@math.gl/core": "https://esm.sh/@math.gl/core@4.1.0",
+          "@math.gl/culling": "https://esm.sh/@math.gl/culling@4.1.0",
+          "@math.gl/web-mercator": "https://esm.sh/@math.gl/web-mercator@4.1.0",
+          "flatbush": "https://esm.sh/flatbush@4.5.1",
+          "fzstd": "https://esm.sh/fzstd@0.1.1",
+          "lerc": "https://esm.sh/lerc@3.0.0",
+          "proj4": "https://esm.sh/proj4@2.20.8",
+          "uuid": "https://esm.sh/uuid@8.3.2",
+          "wkt-parser": "https://esm.sh/wkt-parser@1.5.5"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as affine from "@s3-cog/affine";
+      import { xy_bounds } from "@s3-cog/morecantile";
+      import { epsgResolver, parseWkt } from "@s3-cog/proj";
+      import proj4 from "proj4";
+
+      // API base URL: window.S3_COG_API_BASE (config.js, set at S3 deploy time) or
+      // a ?api= override, else "" = same origin (Lambda-served viewer). All API
+      // calls go through apiFetch so the static S3 viewer can reach the API on
+      // another origin. (CORS on the Function URL already allows "*".)
+      const API_BASE = (window.S3_COG_API_BASE || new URLSearchParams(location.search).get("api") || "").replace(/\/$/, "");
+      const apiFetch = (path, opts) => fetch(`${API_BASE}${path}`, opts);
+      const S1M_API_BASE = (window.S3_COG_S1M_API_BASE || API_BASE).replace(/\/$/, "");
+      const S1M_DEMO_TOKEN = window.S3_COG_S1M_DEMO_TOKEN || "";
+
+      // --- LIVE DEBUG CONSOLE RECORDER ---
+      // Off by default: the on-page panel (#debug-overlay) is hidden and the
+      // console overrides below are disabled so logging does no DOM work.
+      // Flip DEBUG_CONSOLE_ENABLED to true (and unhide #debug-overlay) to use it.
+      const DEBUG_CONSOLE_ENABLED = false;
+      const debugLogsEl = document.getElementById("debug-logs");
+      const clearDebugBtn = document.getElementById("clear-debug-btn");
+
+      clearDebugBtn.addEventListener("click", () => {
+        if (debugLogsEl) debugLogsEl.innerHTML = "";
+      });
+
+      const DEBUG_LOG_MAX_LINES = 500;
+      let _debugScrollQueued = false;
+      function addDebugLog(msg, isErr = false) {
+        if (!DEBUG_CONSOLE_ENABLED || !debugLogsEl) return;
+        const line = document.createElement("div");
+        line.className = "debug-log-line" + (isErr ? " debug-log-err" : "");
+        const time = new Date().toLocaleTimeString();
+        line.textContent = `[${time}] ${msg}`;
+        debugLogsEl.appendChild(line);
+        // Cap the panel so the DOM does not grow unbounded over a session.
+        while (debugLogsEl.childElementCount > DEBUG_LOG_MAX_LINES) {
+          debugLogsEl.removeChild(debugLogsEl.firstElementChild);
+        }
+        // Batch the scroll into one rAF so bursts of logs trigger a single
+        // layout/reflow instead of one per line.
+        if (!_debugScrollQueued) {
+          _debugScrollQueued = true;
+          requestAnimationFrame(() => {
+            _debugScrollQueued = false;
+            debugLogsEl.scrollTop = debugLogsEl.scrollHeight;
+          });
+        }
+      }
+
+      const _origLog = console.log;
+      const _origErr = console.error;
+      console.log = (...args) => {
+        _origLog(...args);
+        addDebugLog(args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" "));
+      };
+      console.error = (...args) => {
+        _origErr(...args);
+        addDebugLog(args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" "), true);
+      };
+      
+      addDebugLog("Live Debug Console Initialized successfully.");
+
+      let layerNumberControlEl = null;
+      const WEB_MERCATOR_HALF_WORLD = 20037508.342789244;
+      const WEB_MERCATOR_TILE_SIZE = 512;
+      const WEB_MERCATOR_TMS = {
+        id: "WebMercatorQuad",
+        title: "WebMercatorQuad",
+        crs: "http://www.opengis.net/def/crs/EPSG/0/3857",
+        tileMatrices: Array.from({ length: 30 }, (_, z) => {
+          const matrixWidth = 2 ** z;
+          const cellSize = (WEB_MERCATOR_HALF_WORLD * 2) / (matrixWidth * WEB_MERCATOR_TILE_SIZE);
+          return {
+            id: String(z),
+            scaleDenominator: 0,
+            cellSize,
+            cornerOfOrigin: "topLeft",
+            pointOfOrigin: [-WEB_MERCATOR_HALF_WORLD, WEB_MERCATOR_HALF_WORLD],
+            tileWidth: WEB_MERCATOR_TILE_SIZE,
+            tileHeight: WEB_MERCATOR_TILE_SIZE,
+            matrixWidth,
+            matrixHeight: matrixWidth,
+          };
+        }),
+      };
+
+      const map = new maplibregl.Map({
+        container: "map",
+        style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+        center: [-74.5, 40.15],
+        zoom: 10,
+        zoomSnap: 1,
+      });
+      // Debug handle (this is a debug viewer): lets devtools/scripted checks
+      // drive the closure-scoped map (jumpTo, fire) without UI gymnastics.
+      window.__map = map;
+
+      const collectionEl = document.getElementById("collection");
+      const stateEl = document.getElementById("state");
+      const yearEl = document.getElementById("year");
+      const activeCollection = () => collectionEl.value || "naip";
+      // The COG-imagery toggle renders the ACTIVE collection's tiles, so its label
+      // tracks the selection (only one collection is "hot" at a time).
+      function updateCogLayerLabel() {
+        const el = document.getElementById("cog-layer-label");
+        if (!el) return;
+        const id = activeCollection();
+        const title = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
+        el.textContent = `${title} Imagery (COG Tiles)`;
+      }
+      const limitEl = document.getElementById("limit");
+      // Default search `limit` (max footprints per /search). One source maps to
+      // one MosaicLayer cache slot, so this is also the typical working-set size
+      // that drives `maxCacheSize` below. The server hard-caps `limit` at 10000.
+      const SEARCH_LIMIT_DEFAULT = 2000;
+      limitEl.value = String(SEARCH_LIMIT_DEFAULT);
+      const autoSearchEl = document.getElementById("auto-search");
+      const toggleCogEl = document.getElementById("toggle-cog-layer");
+      const toggleUsgsNaipWmsLayerEl = document.getElementById("toggle-usgs-naip-wms-layer");
+      const terBordersEl = document.getElementById("ter-borders");
+      const brightnessEl = document.getElementById("brightness");
+      const brightnessValueEl = document.getElementById("brightness-value");
+      const contrastEl = document.getElementById("contrast");
+      const contrastValueEl = document.getElementById("contrast-value");
+      const resetDisplayEl = document.getElementById("reset-display");
+
+      // Ensure all checkboxes are cleared on page load (bypassing browser cache)
+      autoSearchEl.checked = true;
+      toggleCogEl.checked = true;
+      toggleUsgsNaipWmsLayerEl.checked = false;
+      if (terBordersEl) terBordersEl.checked = true;
+
+      const searchBtn = document.getElementById("search");
+
+      function syncSearchButton() {
+        const auto = autoSearchEl.checked;
+        searchBtn.disabled = auto;
+        searchBtn.classList.toggle("search-active", !auto);
+      }
+      autoSearchEl.addEventListener("change", syncSearchButton);
+      syncSearchButton(); // apply initial state
+      const summaryEl = document.getElementById("summary");
+      const timingSummaryEl = document.getElementById("timing-summary");
+      const imageryStatusEl = document.getElementById("imagery-status");
+      const resolutionDebugEl = document.getElementById("resolution-debug");
+
+      const resultsEl = document.getElementById("results");
+      const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
+      const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
+      const refreshEnvironmentBtn = document.getElementById("refresh-environment");
+      const environmentChecksEl = document.getElementById("environment-checks");
+      const environmentConfigEl = document.getElementById("environment-config");
+      const refreshIngestOptionsBtn = document.getElementById("refresh-ingest-options");
+      const ingestCollectionEl = document.getElementById("ingest-collection");
+      const ingestStateEl = document.getElementById("ingest-state");
+      const ingestYearEl = document.getElementById("ingest-year");
+      const ingestStrategyEl = document.getElementById("ingest-strategy");
+      const ingestLimitEl = document.getElementById("ingest-limit");
+      // Server-side sync ingest hard cap (S3_COG_SYNC_INGEST_MAX_LIMIT). Sending a
+      // larger value is rejected; clamp here so the panel can't ask for more.
+      const INGEST_SYNC_MAX_LIMIT = 500;
+      const runIngestBtn = document.getElementById("run-ingest");
+      const ingestSummaryEl = document.getElementById("ingest-summary");
+      const ingestLogsEl = document.getElementById("ingest-logs");
+      let deckOverlay = null;
+      let MapboxOverlayClass = null;
+      let MosaicLayerClass = null;
+      let COGLayerClass = null;
+      let CutlineBboxModule = null;
+      let lngLatToWorldFn = null;
+      let addAlphaChannelFn = null;
+      let CreateTextureModule = null;
+      let imageryRevision = 0;
+      let activeSearchToken = 0;
+      let pendingSearch = false;
+      let searchInFlight = false;
+      let currentFootprintSignature = null;
+      let currentImagerySignature = null;
+      let currentImageryHrefs = [];
+
+      let mapReady = false;
+      let autoSearchTimeoutId = null;
+      let imageryRenderGeneration = 0;
+      const geotiffSourceCache = new Map();
+      const drapeProjectionCache = new WeakMap();
+      // Lazy per-tile presign: /search returns raw s3:// hrefs and we sign each
+      // COG only when deck.gl actually loads it (via GET /sign). signedUrlCache
+      // keys the signed URL by its s3:// href with an expiry; inflightSigns
+      // coalesces concurrent requests for the same href into one fetch.
+      const signedUrlCache = new Map(); // s3href -> { url, expiresAt }
+      const inflightSigns = new Map();  // s3href -> Promise<string>
+      // Per-search counters so the timing panel can report client-side signing.
+      let signCallCount = 0;
+      let signTotalMs = 0;
+      // Hrefs we've already re-signed once after a 403/expired error, so a
+      // persistently failing tile doesn't loop. Reset on each new search.
+      let resignAttempted = new Set();
+
+      function isExpiredSignatureError(error) {
+        for (let e = error; e; e = e.cause) {
+          const msg = String(e?.message || "");
+          if (msg.includes("403") || /expired/i.test(msg) || /accessdenied/i.test(msg)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      // Registry props for the collection that owns this s3:// href (matched by
+      // bucket), so imagery access follows the source: public buckets are read
+      // directly (no presign), requester-pays (NAIP) is presigned via /sign.
+      function collectionForHref(s3href) {
+        const m = /^s3:\/\/([^/]+)\//.exec(s3href || "");
+        if (!m) return null;
+        return collectionFeatures.find((p) => p.bucket === m[1]) || null;
+      }
+      function publicHttpsUrl(s3href, region) {
+        const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3href);
+        return m ? `https://${m[1]}.s3.${region || "us-west-2"}.amazonaws.com/${m[2]}` : s3href;
+      }
+      function chunkCacheForHref(s3href) {
+        if (!s3href?.startsWith("s3://naip-analytic/")) return undefined;
+        return {
+          cacheKey: s3href,
+          chunkSize: 1024 * 1024,
+          cacheName: "naip-analytic-cog-chunks-v1",
+          memoryMaxBytes: 96 * 1024 * 1024,
+        };
+      }
+
+      async function signHref(s3href) {
+        if (!s3href || !s3href.startsWith("s3://")) return s3href;
+        // Public collection: the browser can range-read the object directly; no
+        // presign (and no requester-pays header, which a public bucket rejects).
+        const owner = collectionForHref(s3href);
+        if (owner && owner.access === "public") {
+          // Prefer the CloudFront tile proxy when configured (adds CORS for
+          // no-CORS buckets like njogis-imagery, and edge-caches): rewrite
+          // s3://<bucket>/<key> -> <TILE_BASE>/<bucket>/<key> (CF strips /<bucket>).
+          const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3href);
+          if (m) {
+            if (window.S3_COG_TILE_BASE) {
+              return `${String(window.S3_COG_TILE_BASE).replace(/\/+$/, "")}/${m[1]}/${m[2]}`;
+            }
+            throw new Error("Public COG tile proxy is not configured (S3_COG_TILE_BASE)");
+          }
+          return s3href;
+        }
+        const now = Date.now();
+        const cached = signedUrlCache.get(s3href);
+        if (cached && cached.expiresAt > now) return cached.url;
+        let pending = inflightSigns.get(s3href);
+        if (!pending) {
+          const startedAt = performance.now();
+          // No abort signal here on purpose: signing is cheap and shared across
+          // callers, so one caller's pan-abort shouldn't cancel a sign others need.
+          pending = apiFetch(`/sign?href=${encodeURIComponent(s3href)}`)
+            .then(async (resp) => {
+              if (!resp.ok) throw new Error(`sign failed: ${resp.status}`);
+              const data = await resp.json();
+              signCallCount += 1;
+              signTotalMs += performance.now() - startedAt;
+              // Expire the client cache a minute before the server's window so we
+              // re-sign before a tile's URL actually lapses.
+              const ttlMs = Math.max(0, (Number(data.expires_in) || 0) * 1000 - 60000);
+              signedUrlCache.set(s3href, {
+                url: data.signed,
+                expiresAt: ttlMs ? now + ttlMs : now + 60000,
+              });
+              return data.signed;
+            })
+            .finally(() => inflightSigns.delete(s3href));
+          inflightSigns.set(s3href, pending);
+        }
+        return pending;
+      }
+      let ingestOptionsStateYears = {};
+      let activeIngestJobId = null;
+      let ingestStatusPollId = null;
+      // "async" (thread+subprocess + polling) or "sync" (in-process,
+      // single response) -- reported by /environment. Lazily fetched + cached.
+      let ingestModeCache = null;
+      let lastSearchFeatures = [];
+      let lastSearchBbox = null;
+      let s1mDrapeSourceKey = null;
+      let s1mDrapeSources = [];
+      let s1mDrapeSourcePending = null;
+      let s1mDrapeSourceError = null;
+      const s1mDrapeMetrics = {
+        mode: "analytic RGBIR",
+        sourceSearchMs: null,
+        sourceRawCount: 0,
+        sourceCount: 0,
+        sourceError: null,
+        tilesStarted: 0,
+        tilesCompleted: 0,
+        tilesFailed: 0,
+        tileSourceRefs: 0,
+        analyticRefs: 0,
+        totalTileMs: 0,
+        lastTileMs: null,
+        lastSourceRefs: 0,
+        lastHref: null,
+      };
+      // Memoized filtered views of lastSearchFeatures. Recreated only when
+      // lastSearchFeatures changes, so MosaicLayer sees a stable array
+      // reference across updateImageryLayers() calls triggered by panning.
+      let _memoFeaturesRef = null;
+      let _memoImagerySources = [];
+      function getImagerySources() {
+        if (lastSearchFeatures !== _memoFeaturesRef) {
+          _memoFeaturesRef = lastSearchFeatures;
+          _memoImagerySources = lastSearchFeatures.filter(
+            (feature) => feature?.assets?.image?.href && Array.isArray(feature?.bbox),
+          );
+        }
+        return _memoImagerySources;
+      }
+      function getTerrainDrapeSources() {
+        return s1mDrapeSourceKey ? s1mDrapeSources : getImagerySources();
+      }
+      function resetS1MDrapeMetrics() {
+        s1mDrapeMetrics.mode = "analytic RGBIR";
+        s1mDrapeMetrics.sourceSearchMs = null;
+        s1mDrapeMetrics.sourceRawCount = 0;
+        s1mDrapeMetrics.sourceCount = 0;
+        s1mDrapeMetrics.sourceError = null;
+        s1mDrapeMetrics.tilesStarted = 0;
+        s1mDrapeMetrics.tilesCompleted = 0;
+        s1mDrapeMetrics.tilesFailed = 0;
+        s1mDrapeMetrics.tileSourceRefs = 0;
+        s1mDrapeMetrics.analyticRefs = 0;
+        s1mDrapeMetrics.totalTileMs = 0;
+        s1mDrapeMetrics.lastTileMs = null;
+        s1mDrapeMetrics.lastSourceRefs = 0;
+        s1mDrapeMetrics.lastHref = null;
+        renderS1MDrapeMetrics();
+      }
+      function fmtMs(value) {
+        return Number.isFinite(value) ? `${value.toFixed(value >= 100 ? 0 : 1)} ms` : "-";
+      }
+      function renderS1MDrapeMetrics() {
+        const el = document.getElementById("ter-metrics");
+        if (!el) return;
+        const avgTileMs = s1mDrapeMetrics.tilesCompleted
+          ? s1mDrapeMetrics.totalTileMs / s1mDrapeMetrics.tilesCompleted
+          : null;
+        const avgRefs = s1mDrapeMetrics.tilesStarted
+          ? s1mDrapeMetrics.tileSourceRefs / s1mDrapeMetrics.tilesStarted
+          : null;
+        const errorText = s1mDrapeMetrics.sourceError ? ` · source error: ${s1mDrapeMetrics.sourceError}` : "";
+        const bucketText = ` · analytic refs ${s1mDrapeMetrics.analyticRefs}`;
+        const textureText = ` · texture ${s1mDrapeSize()}px · source cap ${S1M_MAX_DRAPE_SOURCES_PER_TILE}`;
+        const hrefText = s1mDrapeMetrics.lastHref ? ` · last ${s1mDrapeMetrics.lastHref}` : "";
+        el.textContent =
+          `Drape ${s1mDrapeMetrics.mode} · source search ${fmtMs(s1mDrapeMetrics.sourceSearchMs)}` +
+          ` · sources ${s1mDrapeMetrics.sourceCount}/${s1mDrapeMetrics.sourceRawCount}` +
+          ` · tiles ${s1mDrapeMetrics.tilesCompleted}/${s1mDrapeMetrics.tilesStarted}` +
+          ` (${s1mDrapeMetrics.tilesFailed} failed)` +
+          ` · avg tile ${fmtMs(avgTileMs)}` +
+          ` · last tile ${fmtMs(s1mDrapeMetrics.lastTileMs)}` +
+          ` · avg sources/tile ${Number.isFinite(avgRefs) ? avgRefs.toFixed(1) : "-"}` +
+          bucketText +
+          textureText +
+          hrefText +
+          errorText;
+      }
+      let imageryInitErrorMessage = null;
+      let imageryInitAttempted = false;
+      const SetAlpha1Module = {
+        name: "set-alpha-1",
+        inject: {
+          "fs:DECKGL_FILTER_COLOR": `
+            color = vec4(color.rgb, 1.0);
+          `,
+        },
+      };
+      const DisplayAdjustmentsModule = {
+        name: "displayAdjustments",
+        fs: `
+          uniform displayAdjustmentsUniforms {
+            float brightness;
+            float contrast;
+          } displayAdjustments;
+        `,
+        inject: {
+          "fs:DECKGL_FILTER_COLOR": `
+            color.rgb = clamp(
+              (color.rgb - 0.5) * displayAdjustments.contrast
+                + 0.5
+                + displayAdjustments.brightness,
+              0.0,
+              1.0
+            );
+          `,
+        },
+        uniformTypes: {
+          brightness: "f32",
+          contrast: "f32",
+        },
+        getUniforms: (props = {}) => ({
+          brightness: props.brightness ?? 0,
+          contrast: props.contrast ?? 1,
+        }),
+      };
+      // Shared mutable uniform props. Existing tile render pipelines retain this
+      // object, so controls can redraw cached textures without rebuilding the
+      // MosaicLayer or invalidating tile fetches.
+      const displayAdjustmentProps = {
+        brightness: 0,
+        contrast: 1,
+      };
+      function getDisplayAdjustments() {
+        return displayAdjustmentProps;
+      }
+
+      map.addControl(new maplibregl.NavigationControl(), "top-right");
+      map.addControl({
+        onAdd() {
+          layerNumberControlEl = document.createElement("div");
+          layerNumberControlEl.className = "maplibregl-ctrl layer-number-control";
+          updateLayerNumberControl();
+          return layerNumberControlEl;
+        },
+        onRemove() {
+          layerNumberControlEl?.remove();
+          layerNumberControlEl = null;
+        },
+      }, "top-right");
+
+      function mapMetersPerPixel() {
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        return (
+          (156543.03392804097 * Math.cos((center.lat * Math.PI) / 180)) /
+          2 ** zoom
+        );
+      }
+
+      function clampLatitude(lat) {
+        return Math.max(-85.05112878, Math.min(85.05112878, lat));
+      }
+
+      function lngLatToMercator(lng, lat) {
+        const clampedLat = clampLatitude(lat);
+        const x = (lng * WEB_MERCATOR_HALF_WORLD) / 180;
+        return [
+          x,
+          (WEB_MERCATOR_HALF_WORLD * Math.log(Math.tan((Math.PI / 4) + ((clampedLat * Math.PI) / 360)))) / Math.PI,
+        ];
+      }
+
+      function mercatorToLngLat(x, y) {
+        const lng = (x / WEB_MERCATOR_HALF_WORLD) * 180;
+        const lat =
+          (180 / Math.PI) *
+          (2 * Math.atan(Math.exp((y / WEB_MERCATOR_HALF_WORLD) * Math.PI)) - Math.PI / 2);
+        return [lng, lat];
+      }
+
+      function mercatorXToTileCol(x, zoom) {
+        const matrix = WEB_MERCATOR_TMS.tileMatrices[zoom];
+        const tileSpanX = matrix.cellSize * matrix.tileWidth;
+        return Math.floor((x - matrix.pointOfOrigin[0]) / tileSpanX);
+      }
+
+      function mercatorYToTileRow(y, zoom) {
+        const matrix = WEB_MERCATOR_TMS.tileMatrices[zoom];
+        const tileSpanY = matrix.cellSize * matrix.tileHeight;
+        return Math.floor((matrix.pointOfOrigin[1] - y) / tileSpanY);
+      }
+
+      function tileXToLon(x, z) {
+        return (x / Math.pow(2, z)) * 360 - 180;
+      }
+
+      function tileYToLat(y, z) {
+        const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+        return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+      }
+
+      function currentViewerTileLayerNumber() {
+        const zoom = map.getZoom();
+        if (typeof zoom !== "number" || Number.isNaN(zoom)) {
+          return 14;
+        }
+        return Math.max(0, Math.min(29, Math.round(zoom)));
+      }
+
+      // WebMercatorQuad (256-px tile) zoom: one level deeper than the 512-px
+      // viewer zoom, capped at 19. Derived purely from the viewer zoom so the
+      // tile grid is stable regardless of which reference layers are on. The
+      // cap (19) is inlined to avoid a temporal-dead-zone error: this runs
+      // during early map-control setup, before a module-level const would be
+      // initialized.
+      function currentRasterTmsLayerNumber() {
+        return Math.max(0, Math.min(19, currentViewerTileLayerNumber() + 1));
+      }
+
+      function currentDominantCartoCanonicalZ() {
+        const counts = new Map();
+        for (const [, sourceCache] of getBasemapSourceCacheEntries()) {
+          const ids = typeof sourceCache.getRenderableIds === "function"
+            ? sourceCache.getRenderableIds()
+            : Object.keys(sourceCache._tiles || {});
+          for (const id of ids) {
+            const tile = typeof sourceCache.getTileByID === "function"
+              ? sourceCache.getTileByID(id)
+              : sourceCache._tiles?.[id];
+            const canonicalZ = tile?.tileID?.canonical?.z;
+            if (!Number.isFinite(canonicalZ)) {
+              continue;
+            }
+            counts.set(canonicalZ, (counts.get(canonicalZ) || 0) + 1);
+          }
+        }
+        let bestZ = null;
+        let bestCount = -1;
+        for (const [z, count] of counts.entries()) {
+          if (count > bestCount) {
+            bestZ = z;
+            bestCount = count;
+          }
+        }
+        return bestZ;
+      }
+
+      function updateLayerNumberControl() {
+        if (!layerNumberControlEl) {
+          return;
+        }
+        const viewerZ = currentViewerTileLayerNumber();
+        const cartoZ = currentDominantCartoCanonicalZ();
+        layerNumberControlEl.innerHTML = `
+          <div>Layer z ${viewerZ}</div>
+          <div>Carto z ${cartoZ ?? "?"}</div>
+        `;
+      }
+
+
+
+      /**
+       * Check whether the current viewport is fully covered by the bounding
+       * box union of the given STAC features.  Uses the envelope (bounding box
+       * of all feature bboxes) as a fast conservative test — if the envelope
+       * contains the viewport, every visible pixel is inside at least one
+       * feature's extent, so a new search would not add coverage.
+       */
+      function footprintsCoverViewport(features) {
+        if (!lastSearchBbox || !features || features.length === 0) return false;
+        const viewBbox = currentBbox(); // [west, south, east, north]
+
+        // The current viewport must be fully contained within the bounding box of the last successful search
+        return lastSearchBbox[0] <= viewBbox[0] && lastSearchBbox[1] <= viewBbox[1] &&
+               lastSearchBbox[2] >= viewBbox[2] && lastSearchBbox[3] >= viewBbox[3];
+      }
+
+      // An aborted in-flight tile fetch (pan/zoom cancels deck.gl requests) is
+      // expected, not an error. The abort can be wrapped -- the thrown error is
+      // a "Failed to fetch" whose .cause is the AbortError -- so walk the cause
+      // chain rather than inspecting only the top-level error.
+      function isAbortLikeError(error) {
+        for (let e = error; e; e = e.cause) {
+          if (e?.name === "AbortError" || e?.message?.includes("abort")) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      async function resolveGeotiffSource(source, opts = {}) {
+        const { signal, concurrencyLimiter, getPriority } = opts;
+        // /search now returns the raw s3:// href; sign it on demand here so only
+        // tiles deck.gl actually loads get presigned. Cache the decoded GeoTIFF
+        // by the stable s3:// key (not the signed URL, which rotates).
+        const s3href = source?.assets?.image?.href;
+        if (!s3href) return null;
+        let geotiff = geotiffSourceCache.get(s3href);
+        if (!geotiff) {
+          try {
+            const signedUrl = await signHref(s3href);
+            const activeSignal = signal && !signal.aborted ? signal : undefined;
+            // Forward the limiter + priority so this COG's range reads join the
+            // shared per-origin queue and get ordered center-out by getPriority.
+            geotiff = await window.GeoTIFFCoreClass.fromUrl(signedUrl, {
+              signal: activeSignal,
+              concurrencyLimiter,
+              getPriority,
+              chunkCache: chunkCacheForHref(s3href),
+            });
+            geotiffSourceCache.set(s3href, geotiff);
+          } catch (error) {
+            // A 403/expired signed URL: drop the cached signature so the next
+            // resolve re-signs from scratch.
+            if (isExpiredSignatureError(error)) {
+              signedUrlCache.delete(s3href);
+            }
+            console.error("Failed to resolve GeoTIFF source:", source.id, error);
+            throw error;
+          }
+        }
+        const epsg = source?.properties?.["proj:epsg"];
+        if (Number.isFinite(epsg)) {
+          const numericEpsg = Number(epsg);
+          geotiff._crs = numericEpsg;
+          Object.defineProperty(geotiff, "crs", {
+            configurable: true,
+            enumerable: false,
+            get: () => numericEpsg,
+          });
+        }
+        return geotiff;
+      }
+
+      let normalized16BitTexturesSupported;
+      function supportsNormalized16BitTextures() {
+        if (normalized16BitTexturesSupported === undefined) {
+          const canvas = document.createElement("canvas");
+          const gl = canvas.getContext("webgl2");
+          normalized16BitTexturesSupported = Boolean(
+            gl?.getExtension("EXT_texture_norm16"),
+          );
+        }
+        return normalized16BitTexturesSupported;
+      }
+
+      function buildCogSourceLayer({ source, data, signal, id, extent, clipBounds = null, revision = null }) {
+        if (!source || !data) return null;
+
+        const activeSignal = signal && !signal.aborted ? signal : undefined;
+
+        // If clipBounds (lng/lat) provided, convert to deck.gl common space for
+        // the CutlineBbox GPU module. lngLatToWorld maps [lng,lat] → [x,y] in a
+        // 512-px world coordinate system that matches deck.gl common space.
+        let cutlineBboxCommon = null;
+        if (clipBounds && CutlineBboxModule && lngLatToWorldFn) {
+          const [west, south, east, north] = clipBounds;
+          const min = lngLatToWorldFn([west, south]);
+          const max = lngLatToWorldFn([east, north]);
+          cutlineBboxCommon = [min[0], min[1], max[0], max[1]];
+        }
+
+        const s3href = source?.assets?.image?.href;
+        const collection = s3href ? collectionForHref(s3href) : null;
+        const domain = collection?.display?.domain;
+        const displayAdjustments = getDisplayAdjustments();
+        // Normalized 16-bit textures require EXT_texture_norm16 in WebGL2.
+        // Without it, RGBA16 is rejected and subsequent uploads target an
+        // unallocated texture, producing a black tile.
+        const use16BitTextureFallback = !supportsNormalized16BitTextures();
+
+        return new COGLayerClass({
+          id,
+          geotiff: data,
+          signal: activeSignal,
+          extent,
+          domain: use16BitTextureFallback ? undefined : domain,
+          updateTriggers: {
+            getTileData: [revision],
+            renderTile: [domain, use16BitTextureFallback],
+          },
+          getTileData: async (image, options) => {
+            let tile;
+            try {
+              tile = await image.fetchTile(options.x, options.y, {
+                signal: options.signal,
+                boundless: false,
+              });
+            } catch (error) {
+              if (!isAbortLikeError(error)) {
+                console.error(`Failed to fetch tile for ${source.id}:`, error);
+              }
+              throw error;
+            }
+            const array = addAlphaChannelFn(tile.array);
+            if (array.layout === "band-separate") {
+              throw new Error("Expected pixel-interleaved analytic imagery");
+            }
+            const bitsPerSample = image.cachedTags?.bitsPerSample?.[0] || 8;
+            let textureData = array.data;
+            let format = bitsPerSample === 16 ? "rgba16unorm" : "rgba8unorm";
+            if (
+              bitsPerSample === 16 &&
+              use16BitTextureFallback &&
+              textureData instanceof Uint16Array
+            ) {
+              const domainMin = Number(domain?.[0] ?? 0);
+              const domainMax = Number(domain?.[1] ?? 65535);
+              const range = Math.max(1, domainMax - domainMin);
+              const displayData = new Uint8Array(textureData.length);
+              for (let i = 0; i < textureData.length; i++) {
+                const normalized = (textureData[i] - domainMin) / range;
+                displayData[i] = Math.round(Math.max(0, Math.min(1, normalized)) * 255);
+              }
+              textureData = displayData;
+              format = "rgba8unorm";
+            }
+            const texture = options.device.createTexture({
+              data: textureData,
+              format,
+              width: array.width,
+              height: array.height,
+            });
+            return {
+              texture,
+              width: array.width,
+              height: array.height,
+              byteLength: textureData.byteLength,
+            };
+          },
+          renderTile: (tileData) => {
+            const pipeline = [
+              { module: CreateTextureModule, props: { textureName: tileData.texture } },
+              { module: SetAlpha1Module },
+            ];
+            // Clip rendering to the TMS tile bounds via GPU fragment discard
+            if (cutlineBboxCommon) {
+              pipeline.push({ module: CutlineBboxModule, props: { bbox: cutlineBboxCommon } });
+            }
+            pipeline.push({
+              module: DisplayAdjustmentsModule,
+              props: displayAdjustments,
+            });
+            return { renderPipeline: pipeline };
+          },
+          onTileError: (error) => {
+            if (!isAbortLikeError(error)) {
+              console.error("COGLayer tile load error:", source.id, error);
+            }
+          },
+        });
+      }
+
+      // S1M terrain: /s1m/tiles returns the tiles intersecting the viewport and
+      // /s1m/terrain returns each tile's downsampled elevation grid, which we
+      // mesh (GPU TerrainMeshLayer, or CPU SimpleMeshLayer) anchored at the tile
+      // centre (METER_OFFSETS) so tiles abut. Drawn as 3D terrain, never imagery.
+      let SimpleMeshLayerClass = null;
+      let TerrainMeshLayerClass = null;   // package GPU-displacement terrain (option B)
+      let PathLayerClass = null;
+      let s1mActiveTiles = new Map();
+      let S1M_COORD = null;
+      let s1mDrapeConcurrencyLimiter = null;
+      let s1mActive = false;              // terrain mode on (refreshes on pan/zoom)
+      let s1mLayers = [];                 // tile layers currently pushed to deck
+      const s1mTileCache = new Map();     // `${dataset}@${size}` -> {data, elevations, gpuMesh, layer}
+      const s1mDrapeCache = new Map();    // `${dataset}@${size}@${imageryHref}@${revision}` -> Promise<ImageData>
+      const S1M_MAX_TILES = 128;          // enough to cover wide/pitched views; LOD keeps edge tiles cheap
+      const S1M_DRAPE_SIZE = 256;         // per-terrain-tile NAIP RGBIR texture size
+      const S1M_MAX_DRAPE_SOURCES_PER_TILE = 16;
+      let s1mMoveHandler = null;
+      let s1mRefreshSeq = 0;              // guards against stale async refreshes
+
+      function updateImageryLayers() {
+        if (!deckOverlay || !MosaicLayerClass || !COGLayerClass) {
+          return;
+        }
+
+        const layers = [];
+        const activeSearchFeatures = lastSearchFeatures || [];
+
+        // 1. Show standard COG Layer
+        if (toggleCogEl.checked && activeSearchFeatures.length > 0) {
+          // Use memoized array so MosaicLayer sees a stable reference when
+          // the underlying features haven't changed (avoids spurious
+          // tile-layer resets on pan-only updateImageryLayers calls).
+          const imagerySources = getImagerySources();
+          if (imagerySources.length > 0) {
+            layers.push(new MosaicLayerClass({
+              id: "naip-imagery",
+              sources: imagerySources,
+              revision: imageryRevision,
+              beforeId: "sam-det-fill",
+              // Keep the default per-origin concurrency limiter (6 requests).
+              // It's what queues the COG range fetches so MosaicLayer's
+              // getPriority (distance to viewport center) can pull central
+              // tiles ahead of edge tiles -- i.e. fill from the middle out.
+              // An unbounded limit (the old maxRequests: 9999) fired every
+              // fetch at once, so they painted in random network-completion
+              // order. forwarded below via resolveGeotiffSource.
+              // Keep all rendered COGs cached so panning back is instant and
+              // new searches only trigger rendering for new sources. Sized at
+              // 2x the default search limit: comfortable headroom so a typical
+              // result set (plus a pan or an overlapping re-search) never evicts
+              // an on-screen tile. A custom limit above this (up to the server's
+              // 10000 cap) can still exceed it and evict the least-recently-used,
+              // off-center tiles -- intentional, so memory stays bounded.
+              maxCacheSize: SEARCH_LIMIT_DEFAULT * 2,
+              getSource: (source, opts) => resolveGeotiffSource(source, opts),
+              onSourceError: (source, { error }) => {
+                if (isAbortLikeError(error)) {
+                  return;
+                }
+                // A lazily-signed URL can lapse if a tile sits cached past its
+                // expiry and deck.gl issues a fresh Range request. Evict the
+                // stale signature + decoded source and re-resolve once so the
+                // next pass re-signs; the guard set avoids a retry loop.
+                const s3href = source?.assets?.image?.href;
+                if (s3href && isExpiredSignatureError(error) && !resignAttempted.has(s3href)) {
+                  resignAttempted.add(s3href);
+                  signedUrlCache.delete(s3href);
+                  geotiffSourceCache.delete(s3href);
+                  imageryRevision += 1;
+                  updateImageryLayers();
+                  return;
+                }
+                console.error("Imagery source error", source?.id, error);
+                imageryStatusEl.textContent = `Imagery source error for ${source?.id ?? "unknown"}: ${error?.message ?? error}`;
+                imageryStatusEl.className = "small status-warn";
+              },
+              renderSource: (source, { data, signal }) => {
+                if (!source) return null;
+                return buildCogSourceLayer({
+                  source,
+                  data,
+                  signal,
+                  id: `cog-${source.id}`,
+                  extent: undefined,
+                  revision: imageryRevision,
+                });
+              },
+            }));
+          }
+        }
+
+        for (const l of s1mLayers) layers.push(l);
+
+        if (s1mActive && terBordersEl?.checked && s1mActiveTiles.size > 0 && PathLayerClass) {
+          const borderPaths = [];
+          for (const t of s1mActiveTiles.values()) {
+            const key = `${t.dataset}@${t.size}`;
+            const c = s1mTileCache.get(key);
+            if (c && c.data) {
+              const data = c.data;
+              const W = data.width;
+              const H = data.height;
+              const [sx, sy] = data.step;
+              const [clon, clat] = data.center_lnglat;
+
+              const ex_half = ((W - 1) * sx) / 2;
+              const ny_half = ((H - 1) * sy) / 2;
+
+              const gconv = s1mConvergenceRad(clon);
+              const cosG = Math.cos(gconv);
+              const sinG = Math.sin(gconv);
+
+              const getCornerLngLat = (ex, ny) => {
+                const x = ex * cosG + ny * sinG;
+                const y = -ex * sinG + ny * cosG;
+
+                const latRad = (clat * Math.PI) / 180;
+                const metersPerDegreeLat = 111132.95 - 559.82 * Math.cos(2 * latRad) + 1.17 * Math.cos(4 * latRad);
+                const metersPerDegreeLon = 111319.49 * Math.cos(latRad);
+
+                const deltaLat = y / metersPerDegreeLat;
+                const deltaLon = x / metersPerDegreeLon;
+
+                return [clon + deltaLon, clat + deltaLat];
+              };
+
+              borderPaths.push([
+                getCornerLngLat(ex_half, ny_half),
+                getCornerLngLat(-ex_half, ny_half),
+                getCornerLngLat(-ex_half, -ny_half),
+                getCornerLngLat(ex_half, -ny_half),
+                getCornerLngLat(ex_half, ny_half)
+              ]);
+            }
+          }
+
+          if (borderPaths.length > 0) {
+            const borderLayer = new PathLayerClass({
+              id: "s1m-tile-borders",
+              data: borderPaths,
+              getPath: (p) => p,
+              getColor: [251, 146, 60], // orange outline
+              getWidth: 2,
+              widthMinPixels: 1,
+              parameters: {
+                depthWriteEnabled: false,
+                depthCompare: "always"
+              }
+            });
+            layers.push(borderLayer);
+          }
+        }
+
+        deckOverlay.setProps({ layers });
+      }
+
+      // --- S1M terrain meshing (option C: CPU grid -> SimpleMeshLayer) ---------
+      function s1mB64ToFloat32(b64) {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Float32Array(bytes.buffer);
+      }
+
+      // Simple hypsometric ramp (low=green -> mid=tan -> high=white), t in [0,1].
+      function s1mHypso(t) {
+        const stops = [
+          [0.0, [60, 120, 60]], [0.4, [120, 150, 80]],
+          [0.7, [170, 140, 100]], [0.9, [190, 175, 160]], [1.0, [245, 245, 245]],
+        ];
+        for (let i = 1; i < stops.length; i++) {
+          if (t <= stops[i][0]) {
+            const [t0, c0] = stops[i - 1], [t1, c1] = stops[i];
+            const f = (t - t0) / Math.max(1e-6, t1 - t0);
+            return [0, 1, 2].map((k) => Math.round(c0[k] + f * (c1[k] - c0[k])));
+          }
+        }
+        return stops[stops.length - 1][1];
+      }
+
+      // Build a SimpleMeshLayer terrain mesh from the /s1m/terrain payload.
+      // Positions are ENU metres relative to the tile centre (METER_OFFSETS):
+      // x east, y north, z = (elevation - tileMin) * exaggeration. Nodata voids
+      // are dropped (alpha 0) and any triangle touching one is skipped.
+      function buildS1MTerrainLayer(data, exag, wireframe, range) {
+        const W = data.width, H = data.height;
+        const [sx, sy] = data.step;          // metres per cell (east, north)
+        const elev = s1mB64ToFloat32(data.elev_b64);
+        const nd = data.nodata;
+        const [zmin, zmax] = range || data.z_range;   // shared view range, not per-tile
+        const zspan = Math.max(1e-6, zmax - zmin);
+        const N = W * H;
+        const positions = new Float32Array(N * 3);
+        const colors = new Uint8Array(N * 4);
+        // Rotate the Albers grid offsets into true ENU so tiles abut (see
+        // s1mConvergenceRad / the GPU mesh builder).
+        const gconv = s1mConvergenceRad(data.center_lnglat[0]);
+        const cosG = Math.cos(gconv), sinG = Math.sin(gconv);
+
+        for (let r = 0; r < H; r++) {
+          for (let c = 0; c < W; c++) {
+            const i = r * W + c;
+            const raw = elev[i];
+            const isVoid = raw === nd || !Number.isFinite(raw);
+            const z = isVoid ? zmin : raw;
+            const ex = (c - (W - 1) / 2) * sx;
+            const ny = ((H - 1) / 2 - r) * sy;
+            positions[i * 3] = ex * cosG + ny * sinG;
+            positions[i * 3 + 1] = -ex * sinG + ny * cosG;
+            positions[i * 3 + 2] = (z - zmin) * exag;
+            const t = isVoid ? 0 : (z - zmin) / zspan;
+            const [cr, cg, cb] = s1mHypso(t);
+            colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb;
+            colors[i * 4 + 3] = isVoid ? 0 : 255;
+          }
+        }
+
+        // Per-vertex normals from finite differences of the exaggerated surface.
+        const normals = new Float32Array(N * 3);
+        const zAt = (r, c) => positions[(r * W + c) * 3 + 2];
+        for (let r = 0; r < H; r++) {
+          for (let c = 0; c < W; c++) {
+            const l = zAt(r, Math.max(0, c - 1)), rt = zAt(r, Math.min(W - 1, c + 1));
+            const up = zAt(Math.max(0, r - 1), c), dn = zAt(Math.min(H - 1, r + 1), c);
+            const nx = -(rt - l) / (2 * sx);
+            const ny = (up - dn) / (2 * sy);   // up == smaller r == more north
+            const nz = 1.0;
+            const inv = 1 / Math.hypot(nx, ny, nz);
+            const i = (r * W + c) * 3;
+            normals[i] = nx * inv; normals[i + 1] = ny * inv; normals[i + 2] = nz * inv;
+          }
+        }
+
+        const ok = (i) => colors[i * 4 + 3] !== 0;
+        const idx = [];
+        for (let r = 0; r < H - 1; r++) {
+          for (let c = 0; c < W - 1; c++) {
+            const a = r * W + c, b = r * W + c + 1, d = (r + 1) * W + c, e = (r + 1) * W + c + 1;
+            if (ok(a) && ok(d) && ok(b)) idx.push(a, d, b);
+            if (ok(b) && ok(d) && ok(e)) idx.push(b, d, e);
+          }
+        }
+
+        const [clon, clat] = data.center_lnglat;
+        return new SimpleMeshLayerClass({
+          id: "s1m-terrain-" + data.dataset,
+          data: [{ position: [0, 0, 0] }],
+          coordinateSystem: S1M_COORD.METER_OFFSETS,
+          coordinateOrigin: [clon, clat, 0],
+          getPosition: (d) => d.position,
+          getColor: [255, 255, 255],
+          _useMeshColors: true,
+          mesh: {
+            attributes: {
+              POSITION: { value: positions, size: 3 },
+              NORMAL: { value: normals, size: 3 },
+              COLOR_0: { value: colors, size: 4, normalized: true },
+            },
+            indices: { value: new Uint32Array(idx), size: 1 },
+          },
+          material: { ambient: 0.5, diffuse: 0.6, shininess: 16, specularColor: [40, 40, 40] },
+          wireframe: !!wireframe,
+          parameters: { cullMode: "none" },
+          pickable: false,
+        });
+      }
+
+      // --- Option B: GPU vertex displacement (package TerrainMeshLayer) --------
+      // Flat draped grid (POSITION z=0 + TEXCOORD_0) plus a zero fp64 low part;
+      // the elevation is uploaded once as an r32float texture and the vertex
+      // shader displaces z (see deck.gl-raster TerrainDisplace). Reused across
+      // exaggeration changes, which are a free uniform update (no re-mesh).
+      // Albers (EPSG:6350) grid convergence at a longitude: the angle between the
+      // tile's grid axes and true ENU. n = (sin29.5 + sin45.5)/2 is the Albers
+      // cone constant; central meridian is -96. S1M tile centres march along the
+      // Albers grid, so each mesh must be rotated by this angle (about its centre)
+      // or north-up squares on a rotated grid leave a lattice of gaps.
+      function s1mConvergenceRad(lon) {
+        return ((lon + 96) * 0.602835) * Math.PI / 180;
+      }
+
+      function s1mGpuMesh(W, H, sx, sy, lon) {
+        const N = W * H;
+        const positions = new Float32Array(N * 3);   // z stays 0; displaced on GPU
+        const texCoords = new Float32Array(N * 2);
+        const g = s1mConvergenceRad(lon), cg = Math.cos(g), sg = Math.sin(g);
+        for (let r = 0; r < H; r++) {
+          for (let c = 0; c < W; c++) {
+            const i = r * W + c;
+            const ex = (c - (W - 1) / 2) * sx;          // Albers easting offset
+            const ny = ((H - 1) / 2 - r) * sy;          // Albers northing offset
+            positions[i * 3] = ex * cg + ny * sg;       // -> true ENU east
+            positions[i * 3 + 1] = -ex * sg + ny * cg;  // -> true ENU north
+            texCoords[i * 2] = W > 1 ? c / (W - 1) : 0;
+            texCoords[i * 2 + 1] = H > 1 ? r / (H - 1) : 0;
+          }
+        }
+        const idx = [];
+        for (let r = 0; r < H - 1; r++) {
+          for (let c = 0; c < W - 1; c++) {
+            const a = r * W + c, b = a + 1, d = a + W, e = d + 1;
+            idx.push(a, d, b, b, d, e);
+          }
+        }
+        return {
+          mesh: {
+            indices: { value: new Uint32Array(idx), size: 1 },
+            attributes: {
+              POSITION: { value: positions, size: 3 },
+              TEXCOORD_0: { value: texCoords, size: 2 },
+            },
+          },
+          positions64Low: new Float32Array(N * 3),  // ENU metres are fp32-exact at tile scale
+        };
+      }
+
+      function bboxIntersects(a, b) {
+        return Array.isArray(a) && Array.isArray(b) &&
+          !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
+      }
+
+      function bboxIntersectionArea(a, b) {
+        if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+        const w = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+        const h = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+        return w * h;
+      }
+
+      function s1mDrapeSize() {
+        return S1M_DRAPE_SIZE;
+      }
+
+      function drapeSourcesForTile(tile, sources = getTerrainDrapeSources()) {
+        const bbox = tile?.bbox;
+        if (!Array.isArray(bbox)) return [];
+        return sources
+          .filter((source) => bboxIntersects(source.bbox, bbox))
+          .sort((a, b) => bboxIntersectionArea(b.bbox, bbox) - bboxIntersectionArea(a.bbox, bbox))
+          .slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
+      }
+
+      function naipSourceYear(source) {
+        const props = source?.properties || {};
+        const value = props["naip:year"] ?? props.year ?? props["datetime"] ?? props.date;
+        if (typeof value === "number") return value;
+        const match = String(value || "").match(/\b(20\d{2}|19\d{2})\b/);
+        return match ? Number(match[1]) : null;
+      }
+
+      function naipSourceRegion(source) {
+        const props = source?.properties || {};
+        return String(props.region || props.state || props["naip:state"] || "default").toLowerCase();
+      }
+
+      function mostRecentNaipSources(sources) {
+        const latestByRegion = new Map();
+        for (const source of sources) {
+          const year = naipSourceYear(source);
+          if (!Number.isFinite(year)) continue;
+          const region = naipSourceRegion(source);
+          latestByRegion.set(region, Math.max(latestByRegion.get(region) ?? -Infinity, year));
+        }
+        if (!latestByRegion.size) return sources;
+        return sources.filter((source) => {
+          const year = naipSourceYear(source);
+          if (!Number.isFinite(year)) return true;
+          return year === latestByRegion.get(naipSourceRegion(source));
+        });
+      }
+
+      function s1mDrapeSearchBody(bbox) {
+        const limit = Math.min(10000, Math.max(5000, Number(limitEl.value || SEARCH_LIMIT_DEFAULT)));
+        const body = { collections: ["naip"], bbox, limit };
+        if (activeCollection() === "naip") {
+          if (stateEl.value) body["region"] = stateEl.value;
+        }
+        return body;
+      }
+
+      function s1mDrapeSearchKey(body) {
+        return JSON.stringify({
+          ...body,
+          bbox: body.bbox.map((value) => Number(value.toFixed(5))),
+        });
+      }
+
+      async function ensureS1MDrapeSources(bbox, seq, schedulePaint) {
+        if (document.getElementById("ter-surface")?.value !== "naip") return getTerrainDrapeSources();
+        const body = s1mDrapeSearchBody(bbox);
+        const key = s1mDrapeSearchKey(body);
+        if (s1mDrapeSourceKey === key) {
+          if (s1mDrapeSourcePending) {
+            s1mDrapeSourcePending.then(() => {
+              if (seq === s1mRefreshSeq) schedulePaint?.();
+            });
+          }
+          return s1mDrapeSourcePending || s1mDrapeSources;
+        }
+
+        s1mDrapeSourceKey = key;
+        s1mDrapeSources = [];
+        s1mDrapeSourceError = null;
+        resetS1MDrapeMetrics();
+        clearS1MDrapeImages();
+        const sourceSearchStartedAt = performance.now();
+        s1mDrapeSourcePending = apiFetch("/search", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`terrain drape search failed: ${response.status}`);
+          }
+          const data = await response.json();
+          const rawSources = (data.features || []).filter(
+            (feature) => feature?.assets?.image?.href && Array.isArray(feature?.bbox),
+          );
+          const sources = mostRecentNaipSources(rawSources);
+          if (s1mDrapeSourceKey === key) {
+            s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
+            s1mDrapeMetrics.sourceRawCount = rawSources.length;
+            s1mDrapeMetrics.sourceCount = sources.length;
+            s1mDrapeMetrics.sourceError = null;
+            s1mDrapeSources = sources;
+            clearS1MDrapeImages();
+            renderS1MDrapeMetrics();
+            if (seq === s1mRefreshSeq) schedulePaint?.();
+          }
+          return sources;
+        }).catch((error) => {
+          if (s1mDrapeSourceKey === key) {
+            s1mDrapeSourceError = error?.message || String(error);
+            s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
+            s1mDrapeMetrics.sourceError = s1mDrapeSourceError;
+            s1mDrapeSources = [];
+            renderS1MDrapeMetrics();
+            if (seq === s1mRefreshSeq) schedulePaint?.();
+          }
+          return [];
+        }).finally(() => {
+          if (s1mDrapeSourceKey === key) {
+            s1mDrapeSourcePending = null;
+          }
+        });
+        schedulePaint?.();
+        return s1mDrapeSourcePending;
+      }
+
+      function displayDrapeRgbaBytes(array, source, image) {
+        const width = array.width;
+        const height = array.height;
+        const sampleCount = array.count || image.cachedTags?.samplesPerPixel || 3;
+        let sourceData;
+        if (array.layout === "band-separate") {
+          sourceData = array.bands;
+        } else {
+          sourceData = array.data;
+        }
+
+        const readSample = (pixel, band) => {
+          if (Array.isArray(sourceData)) {
+            return sourceData[band]?.[pixel] ?? 0;
+          }
+          return sourceData[pixel * sampleCount + band] ?? 0;
+        };
+
+        const sourceSampleData = Array.isArray(sourceData) ? sourceData[0] : sourceData;
+        let scaleSample = (value) => value;
+        if (!(sourceSampleData instanceof Uint8Array || sourceSampleData instanceof Uint8ClampedArray)) {
+          const domain = collectionForHref(source?.assets?.image?.href)?.display?.domain;
+          const bitsPerSample = image.cachedTags?.bitsPerSample?.[0] || 8;
+          const domainMin = Number(domain?.[0] ?? 0);
+          const domainMax = Number(domain?.[1] ?? (bitsPerSample === 16 ? 65535 : 255));
+          const range = Math.max(1, domainMax - domainMin);
+          scaleSample = (value) => Math.round(Math.max(0, Math.min(1, (value - domainMin) / range)) * 255);
+        }
+
+        const adjusted = new Uint8ClampedArray(width * height * 4);
+        const { brightness, contrast } = getDisplayAdjustments();
+        for (let pixel = 0; pixel < width * height; pixel++) {
+          const dst = pixel * 4;
+          const rawR = scaleSample(readSample(pixel, 0));
+          const rawG = scaleSample(readSample(pixel, 1));
+          const rawB = scaleSample(readSample(pixel, 2));
+          const r = Math.round(Math.max(0, Math.min(1, ((rawR / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
+          const g = Math.round(Math.max(0, Math.min(1, ((rawG / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
+          const b = Math.round(Math.max(0, Math.min(1, ((rawB / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
+          const whiteCollar = r >= 240 && g >= 240 && b >= 240 && Math.max(r, g, b) - Math.min(r, g, b) <= 12;
+          adjusted[dst] = r;
+          adjusted[dst + 1] = g;
+          adjusted[dst + 2] = b;
+          adjusted[dst + 3] = whiteCollar ? 0 : 255;
+        }
+        return { layout: "pixel-interleaved", width, height, count: 4, data: adjusted };
+      }
+
+      async function drapeProjectionForImage(image) {
+        let pending = drapeProjectionCache.get(image);
+        if (!pending) {
+          pending = (async () => {
+            const crsInput = image.crs;
+            const sourceProjection = typeof crsInput === "number"
+              ? await epsgResolver(crsInput)
+              : "coordinate_system" in crsInput
+                ? parseWkt(crsInput)
+                : crsInput;
+            const converter4326 = proj4(sourceProjection, "EPSG:4326");
+            return {
+              projectFrom4326: (lng, lat) => converter4326.inverse([lng, lat], false),
+            };
+          })();
+          drapeProjectionCache.set(image, pending);
+        }
+        return pending;
+      }
+
+      async function drapePixelMapper(image, level) {
+        const { projectFrom4326 } = await drapeProjectionForImage(image);
+        const invTransform = affine.invert(level.transform);
+        return (lng, lat) => {
+          const [x, y] = projectFrom4326(lng, lat);
+          return affine.apply(invTransform, x, y);
+        };
+      }
+
+      function s1mLngLatForUv(data, u, v) {
+        const W = data.width;
+        const H = data.height;
+        const sx = data.step[0];
+        const sy = data.step[1];
+        const [lon0, lat0] = data.center_lnglat;
+        const col = u * (W - 1);
+        const row = v * (H - 1);
+        const ex = (col - (W - 1) / 2) * sx;
+        const ny = ((H - 1) / 2 - row) * sy;
+        const g = s1mConvergenceRad(lon0);
+        const east = ex * Math.cos(g) + ny * Math.sin(g);
+        const north = -ex * Math.sin(g) + ny * Math.cos(g);
+        const lat = lat0 + north / 111320;
+        const lon = lon0 + east / (111320 * Math.cos(lat0 * Math.PI / 180));
+        return [lon, lat];
+      }
+
+      function chooseDrapeImageLevel(geotiff, source, tileBbox, textureSize) {
+        const levels = [geotiff, ...(geotiff.overviews || [])];
+        const sourceBbox = source.bbox;
+        const sourceLonSpan = Math.max(1e-9, sourceBbox[2] - sourceBbox[0]);
+        const tileLonSpan = Math.max(1e-9, tileBbox[2] - tileBbox[0]);
+        const desiredSourceWidth = textureSize * (sourceLonSpan / tileLonSpan);
+        return levels.reduce((best, level) => {
+          const bestScore = Math.abs(Math.log2(Math.max(1, best.width) / desiredSourceWidth));
+          const score = Math.abs(Math.log2(Math.max(1, level.width) / desiredSourceWidth));
+          return score < bestScore ? level : best;
+        }, levels[0]);
+      }
+
+      async function paintNaipDrapeSource(data, tile, source, out, drapeSize) {
+        const image = await resolveGeotiffSource(source, {
+          concurrencyLimiter: s1mDrapeConcurrencyLimiter,
+        });
+        const level = chooseDrapeImageLevel(image, source, tile.bbox, drapeSize);
+        const [tw, th] = [level.tileWidth, level.tileHeight];
+        const sourceBbox = source.bbox;
+        const toPixel = await drapePixelMapper(image, level);
+        const nw = s1mLngLatForUv(data, 0, 0);
+        const ne = s1mLngLatForUv(data, 1, 0);
+        const se = s1mLngLatForUv(data, 1, 1);
+        const sw = s1mLngLatForUv(data, 0, 1);
+        const sampleCorners = [
+          toPixel(nw[0], nw[1]),
+          toPixel(ne[0], ne[1]),
+          toPixel(se[0], se[1]),
+          toPixel(sw[0], sw[1]),
+        ];
+        const cols = sampleCorners.map((p) => p[0]);
+        const rows = sampleCorners.map((p) => p[1]);
+        const c0 = Math.max(0, Math.floor(Math.min(...cols) / tw));
+        const c1 = Math.min(level.tileCount.x - 1, Math.floor(Math.max(...cols) / tw));
+        const r0 = Math.max(0, Math.floor(Math.min(...rows) / th));
+        const r1 = Math.min(level.tileCount.y - 1, Math.floor(Math.max(...rows) / th));
+        if (c0 > c1 || r0 > r1) return;
+        const tilePromises = [];
+        for (let ty = r0; ty <= r1; ty++) {
+          for (let tx = c0; tx <= c1; tx++) {
+            tilePromises.push(level.fetchTile(tx, ty, { boundless: false }).then((tileData) => {
+              return [`${tx},${ty}`, displayDrapeRgbaBytes(tileData.array, source, image)];
+            }));
+          }
+        }
+        const fetched = await Promise.all(tilePromises);
+        const tileMap = new Map(fetched);
+        for (let y = 0; y < drapeSize; y++) {
+          const v = drapeSize > 1 ? y / (drapeSize - 1) : 0;
+          for (let x = 0; x < drapeSize; x++) {
+            const u = drapeSize > 1 ? x / (drapeSize - 1) : 0;
+            const [lon, lat] = s1mLngLatForUv(data, u, v);
+            const dst = (y * drapeSize + x) * 4;
+            if (out[dst + 3] > 0) continue;
+            if (
+              lon < sourceBbox[0] || lon > sourceBbox[2] ||
+              lat < sourceBbox[1] || lat > sourceBbox[3]
+            ) {
+              continue;
+            }
+            const [col, row] = toPixel(lon, lat);
+            if (col < 0 || col >= level.width || row < 0 || row >= level.height) {
+              continue;
+            }
+            const tx = Math.floor(col / tw);
+            const ty = Math.floor(row / th);
+            const src = tileMap.get(`${tx},${ty}`);
+            if (!src) {
+              continue;
+            }
+            const sx = Math.max(0, Math.min(src.width - 1, Math.floor(col - tx * tw)));
+            const sy = Math.max(0, Math.min(src.height - 1, Math.floor(row - ty * th)));
+            const srcIdx = (sy * src.width + sx) * 4;
+            if (src.data[srcIdx + 3] <= 0) continue;
+            out[dst] = src.data[srcIdx];
+            out[dst + 1] = src.data[srcIdx + 1];
+            out[dst + 2] = src.data[srcIdx + 2];
+            out[dst + 3] = src.data[srcIdx + 3];
+          }
+        }
+      }
+
+      async function buildNaipDrapeImage(data, tile, sources, drapeSize) {
+        const out = new Uint8ClampedArray(drapeSize * drapeSize * 4);
+        for (const source of sources) {
+          await paintNaipDrapeSource(data, tile, source, out, drapeSize);
+        }
+        return new ImageData(out, drapeSize, drapeSize);
+      }
+
+      function ensureS1MDrape(cache, tile, schedulePaint, seq) {
+        if (document.getElementById("ter-surface")?.value !== "naip" || cache.drapeImage) return;
+        const sources = drapeSourcesForTile(tile);
+        if (!sources.length) return;
+        const drapeSize = s1mDrapeSize();
+        cache.drapeSourceId = sources.map((source) => source.id).join(",");
+        const hrefKey = sources.map((source) => source.assets?.image?.href || source.id).join("|");
+        const key = `${tile.dataset}@${tile.size}@${hrefKey}@${imageryRevision}@${drapeSize}`;
+        let pending = s1mDrapeCache.get(key);
+        if (!pending) {
+          const tileStartedAt = performance.now();
+          const firstHref = sources[0]?.assets?.image?.href || null;
+          s1mDrapeMetrics.tilesStarted += 1;
+          s1mDrapeMetrics.tileSourceRefs += sources.length;
+          s1mDrapeMetrics.analyticRefs += sources.filter((source) => source?.assets?.image?.href?.startsWith("s3://naip-analytic/")).length;
+          s1mDrapeMetrics.lastSourceRefs = sources.length;
+          s1mDrapeMetrics.lastHref = firstHref;
+          renderS1MDrapeMetrics();
+          pending = buildNaipDrapeImage(cache.data, tile, sources, drapeSize)
+            .then((imageData) => {
+              const elapsed = performance.now() - tileStartedAt;
+              s1mDrapeMetrics.tilesCompleted += 1;
+              s1mDrapeMetrics.totalTileMs += elapsed;
+              s1mDrapeMetrics.lastTileMs = elapsed;
+              renderS1MDrapeMetrics();
+              return imageData;
+            })
+            .catch((error) => {
+              s1mDrapeMetrics.tilesFailed += 1;
+              s1mDrapeMetrics.lastTileMs = performance.now() - tileStartedAt;
+              renderS1MDrapeMetrics();
+              throw error;
+            });
+          s1mDrapeCache.set(key, pending);
+        }
+        pending.then((imageData) => {
+          if (seq !== s1mRefreshSeq) return;
+          cache.drapeImage = imageData;
+          cache.drapeKey = key;
+          schedulePaint?.();
+        }).catch((error) => {
+          cache.drapeError = error?.message || String(error);
+          console.error("Drape tile failed:", error);
+        });
+      }
+
+      function clearS1MDrapeImages() {
+        s1mDrapeCache.clear();
+        for (const cache of s1mTileCache.values()) {
+          delete cache.drapeImage;
+          delete cache.drapeKey;
+          delete cache.drapeError;
+          delete cache.drapeSourceId;
+        }
+      }
+
+      // cache = { data, elevations, gpuMesh } built once; reused on exag change so
+      // the elevation texture is not recreated (elevations ref stays stable).
+      function buildS1MTerrainLayerGPU(cache, exag, wireframe, range) {
+        const { data, elevations, gpuMesh } = cache;
+        // Shared view range (not per-tile) so colour + displacement baseline are
+        // consistent across tiles -- per-tile z_range makes each tile shade and
+        // sit differently (patchwork).
+        const [zmin, zmax] = range || data.z_range;
+        const [clon, clat] = data.center_lnglat;
+        return new TerrainMeshLayerClass({
+          id: "s1m-terrain-" + data.dataset,
+          coordinateSystem: S1M_COORD.METER_OFFSETS,
+          coordinateOrigin: [clon, clat, 0],
+          mesh: gpuMesh.mesh,
+          data: { length: 1, attributes: { positions64Low: gpuMesh.positions64Low } },
+          elevationData: elevations,
+          gridWidth: data.width, gridHeight: data.height,
+          stepX: data.step[0], stepY: data.step[1],
+          exag, zmin, zspan: Math.max(1e-6, zmax - zmin), nodata: data.nodata,
+          drapeImage: cache.drapeImage || null,
+          wireframe: !!wireframe,   // draw the displaced mesh as edges
+          parameters: { cullMode: "none" },
+          pickable: false,
+        });
+      }
+
+      // Token + base helper for the dedicated S1M service.
+      function s1mFetch(path, body) {
+        const headers = { "content-type": "application/json" };
+        if (S1M_DEMO_TOKEN) headers["x-demo-token"] = S1M_DEMO_TOKEN;
+        return fetch(`${S1M_API_BASE}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+      }
+
+      function s1mProjectedTilePixels(tile) {
+        const bbox = tile.bbox;
+        if (!Array.isArray(bbox) || bbox.length !== 4) {
+          return 256;
+        }
+        const corners = [
+          map.project([bbox[0], bbox[1]]),
+          map.project([bbox[2], bbox[1]]),
+          map.project([bbox[2], bbox[3]]),
+          map.project([bbox[0], bbox[3]]),
+        ];
+        let maxEdge = 0;
+        for (let i = 0; i < corners.length; i++) {
+          const a = corners[i], b = corners[(i + 1) % corners.length];
+          maxEdge = Math.max(maxEdge, Math.hypot(a.x - b.x, a.y - b.y));
+        }
+        return Number.isFinite(maxEdge) ? maxEdge : 256;
+      }
+
+      // Per-tile screen-error LOD. Pitched views make near tiles project wider
+      // than far tiles, so they get denser grids while distant tiles read lower
+      // DEM overviews. Quantized sizes keep cache churn bounded while panning.
+      function s1mLodSize(tile) {
+        const px = s1mProjectedTilePixels(tile);
+        if (px >= 900) return 384;
+        if (px >= 600) return 256;
+        if (px >= 360) return 192;
+        if (px >= 220) return 128;
+        if (px >= 120) return 96;
+        return 64;
+      }
+
+      function s1mPaddedBbox(bounds) {
+        const west = bounds.getWest(), south = bounds.getSouth();
+        const east = bounds.getEast(), north = bounds.getNorth();
+        const padLon = Math.max(0.01, (east - west) * 0.18);
+        const padLat = Math.max(0.01, (north - south) * 0.18);
+        return [
+          Math.max(-180, west - padLon),
+          Math.max(-90, south - padLat),
+          Math.min(180, east + padLon),
+          Math.min(90, north + padLat),
+        ];
+      }
+
+      // Fixed absolute hypsometric range (metres, NAVD88): a given elevation is
+      // always the same colour everywhere, so tiles never need a shared value and
+      // nothing recolours on pan. Lowlands have less contrast than the adaptive
+      // mode; peaks above the max saturate to white.
+      const S1M_ABS_RANGE = [0, 1500];
+
+      // Shared elevation range over the cached (in-view) tiles, so colour and the
+      // displacement baseline are consistent tile-to-tile instead of each tile
+      // stretching its own min/max.
+      function s1mViewRange() {
+        let lo = Infinity, hi = -Infinity;
+        for (const c of s1mTileCache.values()) {
+          const [a, b] = c.data.z_range;
+          if (a < lo) lo = a;
+          if (b > hi) hi = b;
+        }
+        return Number.isFinite(lo) ? [lo, Math.max(lo + 1e-6, hi)] : [0, 1];
+      }
+
+      // The range used for colour + displacement baseline: fixed absolute when the
+      // "Color" control is set to Absolute, else the adaptive shared view range.
+      function s1mColorRange() {
+        return document.getElementById("ter-color")?.value === "absolute"
+          ? S1M_ABS_RANGE
+          : s1mViewRange();
+      }
+
+      function s1mBuildTileLayer(cache, exag, range) {
+        const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
+        const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
+        const wantsDrape = document.getElementById("ter-surface")?.value === "naip";
+        const draped = gpu && !wireframe && !!cache.drapeImage && wantsDrape;
+        // deck.gl's wireframe path can render a separate line model from the
+        // source mesh. For GPU displacement that source mesh is intentionally
+        // flat (z=0), so wireframe appears as parallel lines below the terrain.
+        // Use the CPU-baked mesh for wireframe so line vertices include z.
+        return gpu && !wireframe ? buildS1MTerrainLayerGPU(
+          draped ? cache : { ...cache, drapeImage: null },
+          exag,
+          false,
+          range,
+        ) : buildS1MTerrainLayer(cache.data, exag, wireframe, range);
+      }
+
+      // Rebuild cached tile layers at the current exaggeration (a uniform change
+      // for GPU tiles -- texture reused) without re-querying coverage.
+      function rebuildS1MLayers() {
+        if (!s1mActive) return;
+        const exag = Number(document.getElementById("ter-exag").value) || 2;
+        const range = s1mColorRange();
+        s1mLayers = [...s1mTileCache.values()]
+          .map((c) => (c.layer = s1mBuildTileLayer(c, exag, range)))
+          .filter(Boolean);
+        updateImageryLayers();
+      }
+
+      // Fetch tiles covering the viewport, choose each tile's LOD from its
+      // projected screen footprint, mesh new ones, evict off-screen ones, redraw.
+      // A sequence guard drops stale refreshes.
+      async function refreshS1MTerrain() {
+        if (!s1mActive) return;
+        const summaryEl = document.getElementById("ter-summary");
+        const seq = ++s1mRefreshSeq;
+        const exag = Number(document.getElementById("ter-exag").value) || 2;
+        const terrainBbox = s1mPaddedBbox(map.getBounds());
+        let tiles;
+        try {
+          const c = map.getCenter();
+          // Order tiles from the viewport centre (where you're looking), not the
+          // bbox-envelope centre -- on a tilted view that envelope reaches the
+          // horizon, so its centre sits way forward of the foreground.
+          const r = await s1mFetch("/s1m/tiles", {
+            bbox: terrainBbox,
+            max_tiles: S1M_MAX_TILES,
+            center: [c.lng, c.lat],
+          });
+          if (!r.ok) { summaryEl.textContent = `Tiles error ${r.status}`; return; }
+          tiles = (await r.json()).tiles || [];   // nearest-to-centre first
+        } catch (e) { summaryEl.textContent = `Tiles fetch failed: ${e?.message || e}`; return; }
+        if (seq !== s1mRefreshSeq) return;
+        s1mActiveTiles = new Map(tiles.map((t) => {
+          const size = s1mLodSize(t);
+          return [`${t.dataset}@${size}`, { ...t, size }];
+        }));
+
+        // desired preserves the server's centre-out order (Map keeps insertion order).
+        const desired = s1mActiveTiles;
+        const desiredDatasets = new Set([...desired.values()].map((t) => t.dataset));
+        // Drop tiles no longer in the viewport (stale LODs are kept as a fallback until upgraded)
+        for (const key of [...s1mTileCache.keys()]) {
+          const ds = key.split("@")[0];
+          if (!desiredDatasets.has(ds)) {
+            s1mTileCache.delete(key);
+          }
+        }
+
+        // Paint = collect built layers for whatever's cached, centre-out, and redraw.
+        // rAF-throttled so progressive arrivals coalesce into one draw per frame.
+        let paintQueued = false;
+        const paint = () => {
+          paintQueued = false;
+          if (seq !== s1mRefreshSeq) return;
+          const range = s1mColorRange();  // absolute: fixed; adaptive: grows as tiles arrive
+          s1mLayers = [...desired.keys()]
+            .map((k) => {
+              const tile = desired.get(k);
+              if (!tile) return null;
+
+              // Find the best cached entry for this tile
+              let c = s1mTileCache.get(k); // try exact match first
+              if (!c) {
+                // Fallback to any other LOD size of the same dataset currently in cache
+                for (const cacheKey of s1mTileCache.keys()) {
+                  if (cacheKey.startsWith(tile.dataset + "@")) {
+                    c = s1mTileCache.get(cacheKey);
+                    break;
+                  }
+                }
+              }
+
+              if (c) {
+                // If it is the exact LOD match, ensure drape is loaded
+                if (c === s1mTileCache.get(k)) {
+                  ensureS1MDrape(c, tile, schedulePaint, seq);
+                }
+                return (c.layer = s1mBuildTileLayer(c, exag, range));
+              }
+              return null;
+            })
+            .filter(Boolean);
+          updateImageryLayers();
+          const sizes = [...new Set([...desired.values()].map((t) => t.size))].sort((a, b) => a - b);
+          const sizeText = sizes.length <= 1 ? `${sizes[0] ?? "-"}` : `${sizes[0]}-${sizes[sizes.length - 1]}`;
+          const drapedCount = [...desired.keys()].filter((k) => s1mTileCache.get(k)?.drapeImage).length;
+          const canRenderDrape = !!document.getElementById("ter-gpu")?.checked &&
+            document.getElementById("ter-mode")?.value !== "wireframe";
+          const drapeText = canRenderDrape && document.getElementById("ter-surface")?.value === "naip"
+            ? ` · ${drapedCount}/${desired.size} textured`
+            : "";
+          const drapeErrorText = canRenderDrape && document.getElementById("ter-surface")?.value === "naip" && s1mDrapeSourceError
+            ? ` · drape search failed`
+            : "";
+          summaryEl.textContent = desired.size
+            ? `${s1mLayers.length}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}`
+            : "No S1M coverage in view (CONUS only, still expanding).";
+        };
+        const schedulePaint = () => { if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); } };
+
+        ensureS1MDrapeSources(terrainBbox, seq, schedulePaint);
+        schedulePaint();  // show already-cached tiles immediately
+
+        // Fetch missing tiles centre-out with bounded concurrency (like NAIP's
+        // center-out fill), painting as each arrives so the viewport fills in.
+        const missing = [...desired].filter(([k]) => !s1mTileCache.has(k));
+        let idx = 0;
+        const worker = async () => {
+          while (idx < missing.length) {
+            if (seq !== s1mRefreshSeq) return;
+            const [key, t] = missing[idx++];
+            try {
+              const r = await s1mFetch("/s1m/terrain", { dataset: t.dataset, size: t.size });
+              if (!r.ok) continue;
+              const data = await r.json();
+              if (seq !== s1mRefreshSeq) return;  // Clear/newer refresh superseded us
+              s1mTileCache.set(key, {
+                data,
+                elevations: s1mB64ToFloat32(data.elev_b64),
+                gpuMesh: s1mGpuMesh(data.width, data.height, data.step[0], data.step[1], data.center_lnglat[0]),
+                layer: null,
+              });
+              // Evict other LOD sizes for the same dataset now that the desired one has arrived
+              for (const cacheKey of [...s1mTileCache.keys()]) {
+                if (cacheKey.startsWith(t.dataset + "@") && cacheKey !== key) {
+                  s1mTileCache.delete(cacheKey);
+                }
+              }
+              ensureS1MDrape(s1mTileCache.get(key), t, schedulePaint, seq);
+              schedulePaint();
+            } catch (_) { /* skip this tile */ }
+          }
+        };
+        await Promise.all(Array.from({ length: 6 }, worker));
+      }
+
+      const s1mDebouncedRefresh = (() => {
+        let t = null;
+        return () => { clearTimeout(t); t = setTimeout(refreshS1MTerrain, 300); };
+      })();
+
+      async function enableS1MTerrain() {
+        const summaryEl = document.getElementById("ter-summary");
+        const runEl = document.getElementById("ter-run");
+        try {
+          runEl.disabled = true;
+          summaryEl.textContent = "Loading S1M terrain…";
+
+          if (toggleCogEl) toggleCogEl.checked = false;
+          if (toggleUsgsNaipWmsLayerEl) toggleUsgsNaipWmsLayerEl.checked = false;
+          updateImagery(lastSearchFeatures);
+          updateReferenceRasterLayers();
+
+          await initImagerySupport();
+          if (!S1M_COORD) { summaryEl.textContent = "Terrain modules unavailable."; return; }
+          s1mActive = true;
+          if (!s1mMoveHandler) { s1mMoveHandler = s1mDebouncedRefresh; map.on("moveend", s1mMoveHandler); }
+          if (map.getPitch() < 30) map.easeTo({ pitch: 60, duration: 600 });
+          await refreshS1MTerrain();
+        } catch (err) {
+          summaryEl.textContent = `Terrain load failed: ${err?.message || err}`;
+        } finally {
+          runEl.disabled = false;
+        }
+      }
+
+      function clearS1MTerrain() {
+        s1mActive = false;
+        s1mRefreshSeq++;  // invalidate any in-flight refresh
+        if (s1mMoveHandler) { map.off("moveend", s1mMoveHandler); s1mMoveHandler = null; }
+        s1mTileCache.clear();
+        s1mDrapeCache.clear();
+        s1mActiveTiles.clear();
+        s1mDrapeSourceKey = null;
+        s1mDrapeSources = [];
+        s1mDrapeSourcePending = null;
+        s1mDrapeSourceError = null;
+        resetS1MDrapeMetrics();
+        s1mLayers = [];
+        updateImageryLayers();
+        const el = document.getElementById("ter-summary");
+        if (el) el.textContent = "No terrain loaded.";
+        const metricsEl = document.getElementById("ter-metrics");
+        if (metricsEl) metricsEl.textContent = "Drape metrics unavailable.";
+      }
+
+
+      function getBasemapSourceCacheEntries() {
+        const style = map.style;
+        if (!style) {
+          return [];
+        }
+        const sourceCaches = style.sourceCaches || style._sourceCaches || {};
+        const ignoredSources = new Set([
+          "naip-search",
+        ]);
+        return Object.entries(sourceCaches).filter(([sourceId]) => !ignoredSources.has(sourceId));
+      }
+
+      function updateReferenceRasterLayers() {
+        const usgsVisible = toggleUsgsNaipWmsLayerEl.checked;
+        if (map.getLayer("usgs-naip-wms-layer")) {
+          map.setLayoutProperty("usgs-naip-wms-layer", "visibility", usgsVisible ? "visible" : "none");
+        }
+        if (map.getLayer("usgs-naip-wms-layer")) {
+          map.moveLayer("usgs-naip-wms-layer");
+        }
+      }
+
+      function updateResolutionDebug(features, imagerySources) {
+        if (!imagerySources.length) {
+          resolutionDebugEl.textContent = "Resolution debug unavailable.";
+          return;
+        }
+
+        const topSource = imagerySources[0];
+        const properties = topSource?.properties || {};
+        const gsd = Number(properties["gsd"]);
+        const mapMpp = mapMetersPerPixel();
+
+        if (!Number.isFinite(gsd) || !Number.isFinite(mapMpp) || gsd <= 0) {
+          resolutionDebugEl.textContent = "Resolution debug unavailable.";
+          return;
+        }
+
+        const overviewEstimate = Math.max(
+          0,
+          Math.ceil(Math.log2(Math.max(mapMpp / gsd, 1))),
+        );
+        const fullRes = overviewEstimate === 0;
+        const topYear = properties["naip:year"] ?? "?";
+        const topId = properties["grid:code"] || topSource?.id || "?";
+
+        resolutionDebugEl.innerHTML = `
+          <div>Top source: <strong>${topId}</strong></div>
+          <div>Year ${topYear} · gsd ${gsd.toFixed(2)} m/px · map ${mapMpp.toFixed(2)} m/px</div>
+          <div>Estimated overview level ${overviewEstimate} · full res ${fullRes ? "yes" : "no"}</div>
+        `;
+      }
+
+      async function initImagerySupport() {
+        if (deckOverlay && MosaicLayerClass && COGLayerClass) {
+          return;
+        }
+        imageryInitAttempted = true;
+        try {
+          const [{ MapboxOverlay }, geoLayersModule, geotiffModule, geotiffCoreModule, rasterGpuModule, { lngLatToWorld }, meshLayersModule, deckCoreModule, rasterModule, layersModule] = await Promise.all([
+            import("@deck.gl/mapbox"),
+            import("@deck.gl/geo-layers"),
+            import("@s3-cog/deck.gl-geotiff"),
+            import("@s3-cog/geotiff"),
+            import("@s3-cog/deck.gl-raster/gpu-modules"),
+            import("@math.gl/web-mercator"),
+            import("@deck.gl/mesh-layers"),
+            import("@deck.gl/core"),
+            import("@s3-cog/deck.gl-raster"),
+            import("@deck.gl/layers"),
+          ]);
+          MapboxOverlayClass = MapboxOverlay;
+          MosaicLayerClass = geotiffModule.MosaicLayer;
+          COGLayerClass = geotiffModule.COGLayer;
+          SimpleMeshLayerClass = meshLayersModule.SimpleMeshLayer;
+          TerrainMeshLayerClass = rasterModule.TerrainMeshLayer;
+          PathLayerClass = layersModule.PathLayer;
+          S1M_COORD = deckCoreModule.COORDINATE_SYSTEM;
+          CutlineBboxModule = rasterGpuModule.CutlineBbox;
+          lngLatToWorldFn = lngLatToWorld;
+          addAlphaChannelFn = geotiffModule.addAlphaChannel;
+          CreateTextureModule = rasterGpuModule.CreateTexture;
+          window.GeoTIFFCoreClass = geotiffCoreModule.GeoTIFF;
+          if (!s1mDrapeConcurrencyLimiter && geotiffCoreModule.PerOriginSemaphore) {
+            s1mDrapeConcurrencyLimiter = new geotiffCoreModule.PerOriginSemaphore({ maxRequests: 4 });
+          }
+          deckOverlay = new MapboxOverlay({ interleaved: true, layers: [] });
+          map.addControl(deckOverlay);
+          imageryInitErrorMessage = null;
+          imageryStatusEl.textContent = "Imagery modules loaded.";
+          imageryStatusEl.className = "small status-ok";
+          if (Array.isArray(lastSearchFeatures) && lastSearchFeatures.length > 0) {
+            updateImagery(lastSearchFeatures);
+          }
+        } catch (error) {
+          console.error("Failed to load imagery modules", error);
+          imageryInitErrorMessage = error?.message || String(error);
+          imageryStatusEl.textContent = `Imagery modules failed to load; footprints-only mode. ${error?.message || error}`;
+          imageryStatusEl.className = "small status-warn";
+        }
+      }
+
+      function currentBbox() {
+        const bounds = map.getBounds();
+        return [
+          bounds.getWest(),
+          bounds.getSouth(),
+          bounds.getEast(),
+          bounds.getNorth(),
+        ];
+      }
+
+      function colorForIndex(index, total) {
+        const hue = total <= 1 ? 210 : (210 - (index / Math.max(total - 1, 1)) * 180);
+        return `hsl(${hue}, 85%, 55%)`;
+      }
+
+      function switchTab(tabName) {
+        tabButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.tab === tabName);
+        });
+        tabPanels.forEach((panel) => {
+          panel.classList.toggle("active", panel.id === `tab-${tabName}`);
+        });
+        if (typeof updateDetectChip === "function") updateDetectChip();
+      }
+
+      function renderKeyValue(target, values) {
+        target.innerHTML = "";
+        values.forEach(([key, value]) => {
+          const keyEl = document.createElement("div");
+          keyEl.textContent = key;
+          const valueEl = document.createElement("div");
+          if (typeof value === "string") {
+            valueEl.textContent = value;
+          } else {
+            valueEl.textContent = value == null ? "—" : String(value);
+          }
+          target.appendChild(keyEl);
+          target.appendChild(valueEl);
+        });
+      }
+
+      function statusLabel(ok, detail) {
+        if (ok) {
+          return `ok${detail ? ` · ${detail}` : ""}`;
+        }
+        return `failed${detail ? ` · ${detail}` : ""}`;
+      }
+
+      async function refreshEnvironment() {
+        environmentChecksEl.textContent = "Loading environment status…";
+        environmentConfigEl.textContent = "";
+        try {
+          const response = await apiFetch("/environment");
+          const data = await response.json();
+          renderKeyValue(environmentChecksEl, [
+            ["auth mode", data.auth_mode],
+            [
+              "S3 object access",
+              statusLabel(
+                data.s3_access_status?.ok,
+                data.s3_access_status?.error ||
+                  `${data.s3_access_status?.bucket || ""}${data.s3_access_status?.request_payer ? ` (${data.s3_access_status.request_payer})` : ""}`,
+              ),
+            ],
+            [
+              "manifest index",
+              statusLabel(
+                data.manifest_index?.ok,
+                data.manifest_index?.error ||
+                  `${data.manifest_index?.path || "—"}${data.manifest_index?.file_count != null ? ` · ${data.manifest_index.file_count} files` : ""}`,
+              ),
+            ],
+            (() => {
+              const mi = data.manifest_index || {};
+              if (mi.source_modified == null && mi.freshness_error == null) return null;
+              const fmt = (s) => (s ? String(s).slice(0, 10) : "—");
+              const detail = mi.freshness_error
+                ? mi.freshness_error
+                : `${mi.source || "—"} · source ${fmt(mi.source_modified)} · index ${fmt(mi.index_built)}`;
+              // ok when NOT stale; statusLabel renders the stale case as a warning.
+              return ["manifest freshness", statusLabel(mi.stale === false, detail)];
+            })(),
+            ["DB health", statusLabel(data.db?.ok, data.db?.error)],
+            [
+              "EarthSearch",
+              statusLabel(data.earthsearch?.ok, data.earthsearch?.error || data.earthsearch?.url),
+            ],
+            [
+              "AWS identity",
+              data.auth_identity?.ok
+                ? `${data.auth_identity?.arn || "unknown"}`
+                : data.auth_identity?.error || "unavailable",
+            ],
+          ].filter(Boolean));
+          renderKeyValue(environmentConfigEl, Object.entries(data.effective_config || {}));
+        } catch (error) {
+          environmentChecksEl.textContent = `Failed to load environment status: ${error?.message || error}`;
+          environmentConfigEl.textContent = "";
+        }
+      }
+
+      function updateIngestYears() {
+        const years = ingestOptionsStateYears[ingestStateEl.value] || [];
+        ingestYearEl.innerHTML = '<option value="">Select year</option>';
+        years.forEach((year) => {
+          const option = document.createElement("option");
+          option.value = String(year);
+          option.textContent = String(year);
+          ingestYearEl.appendChild(option);
+        });
+      }
+
+      function ingestCollection() { return ingestCollectionEl.value || "naip"; }
+
+      async function refreshIngestOptions() {
+        ingestSummaryEl.textContent = "Finding data to ingest in this view…";
+        const previousState = ingestStateEl.value;
+        const previousYear = ingestYearEl.value;
+        try {
+          const response = await apiFetch("/ingest/options", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ bbox: currentBbox(), collection: ingestCollection() }),
+          });
+          const data = await response.json();
+          // Populate the Collection dropdown from the ingestable collections the
+          // backend reports (first call / when it changes).
+          const cols = data.collections || ["naip"];
+          if (cols.join(",") !== Array.from(ingestCollectionEl.options).map((o) => o.value).join(",")) {
+            const prevCol = ingestCollection();
+            ingestCollectionEl.innerHTML = "";
+            cols.forEach((id) => {
+              const o = document.createElement("option");
+              o.value = id;
+              o.textContent = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
+              ingestCollectionEl.appendChild(o);
+            });
+            ingestCollectionEl.value = cols.includes(prevCol) ? prevCol : cols[0];
+          }
+          ingestOptionsStateYears = {};
+          ingestStateEl.innerHTML = '<option value="">Select region</option>';
+          (data.states || []).forEach((entry) => {
+            ingestOptionsStateYears[entry.state] = entry.years || [];
+            const option = document.createElement("option");
+            option.value = entry.state;
+            option.textContent = `${entry.state.toUpperCase()} (${(entry.years || []).join(", ")})`;
+            ingestStateEl.appendChild(option);
+          });
+          
+          if (previousState && ingestOptionsStateYears[previousState]) {
+            ingestStateEl.value = previousState;
+          }
+          // Single-region collection (e.g. KyFromAbove = just "ky"): auto-select
+          // it so the Year dropdown populates without making the user pick the lone
+          // region. (NAIP has many regions -> leave on "Select region".)
+          const regionIds = (data.states || []).map((e) => e.state);
+          if (!ingestStateEl.value && regionIds.length === 1) {
+            ingestStateEl.value = regionIds[0];
+          }
+
+          const strategyOptions = {};
+          (data.strategies || []).forEach((strategy) => {
+            strategyOptions[strategy.id] = strategy;
+          });
+          // Disable strategies the backend did NOT offer for this collection
+          // (e.g. EarthSearch is NAIP-only; an S3-prefix collection like
+          // KyFromAbove returns only COG-headers, so EarthSearch must be off,
+          // not silently a no-op).
+          Array.from(ingestStrategyEl.options).forEach((option) => {
+            const strategy = strategyOptions[option.value];
+            option.disabled = strategy ? !strategy.available : true;
+            option.textContent = strategy?.detail && !strategy.available
+              ? `${strategy.label} (unavailable)`
+              : strategy?.label || option.textContent;
+          });
+          // If the current selection is now disabled, fall back to the first
+          // enabled strategy so we never submit an unsupported one.
+          if (ingestStrategyEl.selectedOptions[0]?.disabled) {
+            const firstEnabled = Array.from(ingestStrategyEl.options).find((o) => !o.disabled);
+            if (firstEnabled) ingestStrategyEl.value = firstEnabled.value;
+          }
+          updateIngestYears();
+          
+          if (previousState && ingestOptionsStateYears[previousState] && ingestOptionsStateYears[previousState].map(String).includes(previousYear)) {
+            ingestYearEl.value = previousYear;
+          }
+          
+          ingestSummaryEl.textContent = `Loaded ${(data.states || []).length} states from current view.`;
+        } catch (error) {
+          ingestSummaryEl.textContent = `Failed to load ingest options: ${error?.message || error}`;
+        }
+      }
+
+      async function pollIngestStatus(jobId) {
+        if (!jobId) return;
+        try {
+          const response = await apiFetch(`/ingest/status/${jobId}`);
+          const data = await response.json();
+          const lines = Array.isArray(data.logs) ? data.logs : [];
+          ingestSummaryEl.textContent = `Job ${jobId} · ${data.status}${data.error ? ` · ${data.error}` : ""}`;
+          ingestLogsEl.textContent = lines.length ? lines.join("\n") : "No logs yet.";
+          if (data.status === "running") {
+            ingestStatusPollId = window.setTimeout(() => pollIngestStatus(jobId), 1500);
+          } else {
+            ingestStatusPollId = null;
+            await refreshEnvironment();
+            await refreshIngestOptions();
+            // A completed ingest adds a state/year to the lake, so refresh the
+            // Viewer's State->Year availability dropdowns to surface it (the
+            // currently-selected state is preserved by refreshAvailability).
+            if (data.status === "completed") {
+              await refreshAvailability();
+            }
+          }
+        } catch (error) {
+          ingestSummaryEl.textContent = `Failed to fetch ingest status: ${error?.message || error}`;
+          ingestStatusPollId = null;
+        }
+      }
+
+      async function getIngestConfig() {
+        if (ingestModeCache) return ingestModeCache;
+        try {
+          const response = await apiFetch("/environment");
+          const data = await response.json();
+          const mode =
+            data.ingest_mode === "sync" || data.ingest_mode === "disabled"
+              ? data.ingest_mode
+              : "async";
+          // ingest_url (set on the read-only Lambda) points the viewer at the
+          // dedicated container ingest function; falls back to same origin.
+          ingestModeCache = { mode, url: data.ingest_url || "" };
+        } catch (error) {
+          // Default to async (local/Docker) if the probe fails.
+          ingestModeCache = { mode: "async", url: "" };
+        }
+        return ingestModeCache;
+      }
+
+      // Clamp the panel's "Max per partition" to [0, server cap]. The server
+      // rejects values above S3_COG_SYNC_INGEST_MAX_LIMIT (500) unless it is 0 (unlimited).
+      function ingestLimitPerPartition() {
+        const valStr = ingestLimitEl.value.trim();
+        if (valStr === "") {
+          return INGEST_SYNC_MAX_LIMIT;
+        }
+        const requested = Number(valStr);
+        if (isNaN(requested)) {
+          return INGEST_SYNC_MAX_LIMIT;
+        }
+        const val = Math.trunc(requested);
+        if (val === 0) {
+          return 0;
+        }
+        return Math.min(Math.max(1, val), INGEST_SYNC_MAX_LIMIT);
+      }
+
+      async function runIngest() {
+        if (!ingestStateEl.value) {
+          ingestSummaryEl.textContent = "Select a state before running ingest.";
+          return;
+        }
+        if (!ingestYearEl.value) {
+          ingestSummaryEl.textContent = "Select a year before running ingest.";
+          return;
+        }
+        if (ingestStatusPollId) {
+          window.clearTimeout(ingestStatusPollId);
+          ingestStatusPollId = null;
+        }
+        ingestSummaryEl.textContent = "Starting ingest…";
+        ingestLogsEl.textContent = "Starting ingest…";
+
+        const { mode, url } = await getIngestConfig();
+        // A configured ingest_url (container ingest function) takes precedence:
+        // POST cross-origin there even though this origin is read-only.
+        if (url) {
+          await runIngestSync(url);
+          return;
+        }
+        if (mode === "disabled") {
+          ingestSummaryEl.textContent =
+            "Ingest is not available on this deployment (read-only) and no ingest function is configured.";
+          ingestLogsEl.textContent = "";
+          return;
+        }
+        if (mode === "sync") {
+          await runIngestSync("");
+          return;
+        }
+
+        try {
+          const response = await apiFetch("/ingest/run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              collection: ingestCollection(),
+              state: ingestStateEl.value,
+              year: Number(ingestYearEl.value),
+              strategy: ingestStrategyEl.value,
+              limit_per_partition: ingestLimitPerPartition(),
+            }),
+          });
+          if (!response.ok) {
+            const text = await response.text();
+            ingestSummaryEl.textContent = `Error starting ingest: ${response.status} ${text}`;
+            ingestLogsEl.textContent = "";
+            return;
+          }
+          const data = await response.json();
+          activeIngestJobId = data.job_id;
+          await pollIngestStatus(activeIngestJobId);
+        } catch (error) {
+          console.error("Ingest failed to start:", error);
+          ingestSummaryEl.textContent = `Failed to start ingest due to network error: ${error?.message || error}`;
+          ingestLogsEl.textContent = "";
+        }
+      }
+
+      // Lambda path: a single blocking request that returns the ingest result.
+      // No job id, no polling -- the response IS the outcome.
+      async function runIngestSync(baseUrl = "") {
+        ingestSummaryEl.textContent = "Running ingest (synchronous)…";
+        ingestLogsEl.textContent = "Running ingest (synchronous)…";
+        try {
+          const response = await fetch(`${baseUrl || API_BASE}/ingest/run-sync`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              collection: ingestCollection(),
+              state: ingestStateEl.value,
+              year: Number(ingestYearEl.value),
+              strategy: ingestStrategyEl.value,
+              limit_per_partition: ingestLimitPerPartition(),
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            ingestSummaryEl.textContent = `Ingest failed: ${response.status} ${data.detail || ""}`;
+            ingestLogsEl.textContent = "";
+            return;
+          }
+          if (data.status === "no_data") {
+            ingestSummaryEl.textContent = `No data · ${data.state} ${data.year} · ${data.detail || ""}`;
+            ingestLogsEl.textContent = JSON.stringify(data, null, 2);
+            return;
+          }
+          ingestSummaryEl.textContent =
+            `Completed · ${data.state} ${data.year} · ${data.rows_ingested} rows · ${data.elapsed_ms} ms`;
+          ingestLogsEl.textContent = JSON.stringify(data, null, 2);
+          await refreshEnvironment();
+          await refreshIngestOptions();
+          await refreshAvailability();
+        } catch (error) {
+          console.error("Sync ingest failed:", error);
+          ingestSummaryEl.textContent = `Failed to run ingest: ${error?.message || error}`;
+          ingestLogsEl.textContent = "";
+        }
+      }
+
+      function readTimingHeaders(response) {
+        return {
+          featureCount: Number(response.headers.get("x-search-feature-count") || 0),
+          sqlMs: Number(response.headers.get("x-search-sql-ms") || 0),
+          signMs: Number(response.headers.get("x-search-sign-ms") || 0),
+          rewriteMs: Number(response.headers.get("x-search-rewrite-ms") || 0),
+          totalMs: Number(response.headers.get("x-search-total-ms") || 0),
+          cacheHits: Number(response.headers.get("x-search-presign-cache-hits") || 0),
+          cacheMisses: Number(response.headers.get("x-search-presign-cache-misses") || 0),
+        };
+      }
+
+      function formatMs(value) {
+        return `${value.toFixed(1)} ms`;
+      }
+
+      function renderTimingSummary(timings) {
+        // Each line is one phase of the round trip, in the order it happens:
+        // server work (DB query -> build JSON), then browser work (download ->
+        // parse -> draw). Image URLs are no longer signed inline in /search --
+        // footprints are decoupled from imagery, so each COG is signed lazily
+        // via /sign as deck.gl loads it (line 2 reports that, growing as tiles
+        // stream in after this summary first renders). "Server total" is what
+        // the API spent; "round trip" is what you waited for the footprints.
+        const signNote = signCallCount > 0
+          ? `${signCallCount} tile${signCallCount === 1 ? "" : "s"} signed, ${formatMs(signTotalMs)} total`
+          : "none yet — tiles sign as they load";
+        timingSummaryEl.innerHTML = `
+          <div style="margin-bottom:4px;"><strong>Where the time went (this search):</strong></div>
+          <div><strong>1. Server — find footprints:</strong> ${formatMs(timings.server.sqlMs)} <span class="muted">(database/lake query)</span></div>
+          <div><strong>2. Client — sign image URLs:</strong> <span class="muted">lazy, per tile via /sign (${signNote})</span></div>
+          <div><strong>3. Server — build response:</strong> ${formatMs(timings.server.rewriteMs)} <span class="muted">(assemble GeoJSON)</span> → server total ${formatMs(timings.server.totalMs)}</div>
+          <div><strong>4. Browser — download + parse:</strong> ${formatMs(timings.client.fetchMs)} fetch, ${formatMs(timings.client.jsonMs)} parse</div>
+          <div><strong>5. Browser — draw:</strong> list ${formatMs(timings.client.resultsMs)} · footprints ${formatMs(timings.client.footprintsMs)} · imagery ${formatMs(timings.client.imageryMs)}</div>
+          <div style="margin-top:4px;"><strong>Round trip (footprints on screen):</strong> ${formatMs(timings.client.totalMs)}</div>
+        `;
+      }
+
+      function logTimingBreakdown(timings) {
+        console.groupCollapsed(
+          `[naip timings] ${timings.trigger} features=${timings.server.featureCount} total=${formatMs(timings.client.totalMs)}`,
+        );
+        console.table({
+          client_fetch_ms: timings.client.fetchMs.toFixed(1),
+          client_json_ms: timings.client.jsonMs.toFixed(1),
+          client_results_ms: timings.client.resultsMs.toFixed(1),
+          client_footprints_ms: timings.client.footprintsMs.toFixed(1),
+          client_imagery_ms: timings.client.imageryMs.toFixed(1),
+          client_total_ms: timings.client.totalMs.toFixed(1),
+          client_sign_calls: signCallCount,
+          client_sign_ms: signTotalMs.toFixed(1),
+          server_sql_ms: timings.server.sqlMs.toFixed(1),
+          server_sign_ms: timings.server.signMs.toFixed(1),
+          server_rewrite_ms: timings.server.rewriteMs.toFixed(1),
+          server_total_ms: timings.server.totalMs.toFixed(1),
+          presign_cache_hits: timings.server.cacheHits,
+          presign_cache_misses: timings.server.cacheMisses,
+        });
+        console.log("bbox", timings.bbox);
+        console.groupEnd();
+      }
+
+      function renderResults(features) {
+        resultsEl.innerHTML = "";
+        features.forEach((feature, index) => {
+          const properties = feature.properties || {};
+          const item = document.createElement("div");
+          item.className = "item";
+          const color = colorForIndex(index, features.length);
+          item.innerHTML = `
+            <strong><span class="swatch" style="background:${color}" title="Draw order position"></span>#${index + 1} ${properties["grid:code"] || feature.id}</strong>
+            <div>
+              <span class="pill">region ${properties["region"] ?? properties["naip:state"] ?? "?"}</span>
+              <span class="pill">year ${properties["year"] ?? properties["naip:year"] ?? "?"}</span>
+              <span class="pill">date ${properties.datetime ?? "?"}</span>
+              <span class="pill">gsd ${properties.gsd ?? "?"}</span>
+            </div>
+            <div class="mono">${feature.assets?.image?.href || ""}</div>
+          `;
+          resultsEl.appendChild(item);
+        });
+      }
+
+      function footprintSignature(features) {
+        return JSON.stringify(
+          features.map((feature) => ({
+            id: feature?.id ?? null,
+            bbox: feature?.bbox ?? null,
+          })),
+        );
+      }
+
+      function imagerySignature(features) {
+        return JSON.stringify(
+          features.map((feature) => ({
+            id: feature?.id ?? null,
+            href: feature?.assets?.image?.href ?? null,
+            bbox: feature?.bbox ?? null,
+          })),
+        );
+      }
+
+      function updateMap(features) {
+        const startedAt = performance.now();
+        const nextSignature = footprintSignature(features);
+        if (nextSignature === currentFootprintSignature) {
+          return { skipped: true, durationMs: performance.now() - startedAt };
+        }
+
+        const sourceData = {
+          type: "FeatureCollection",
+          features,
+        };
+
+        if (map.getSource("naip-search")) {
+          map.getSource("naip-search").setData(sourceData);
+          currentFootprintSignature = nextSignature;
+          return { skipped: false, durationMs: performance.now() - startedAt };
+        }
+
+        map.addSource("naip-search", {
+          type: "geojson",
+          data: sourceData,
+        });
+        currentFootprintSignature = nextSignature;
+
+        map.addLayer({
+          id: "naip-search-fill",
+          type: "fill",
+          source: "naip-search",
+          paint: {
+            "fill-color": "#f97316",
+            "fill-opacity": 0,
+          },
+        });
+
+        map.addLayer({
+          id: "naip-search-line",
+          type: "line",
+          source: "naip-search",
+          paint: {
+            "line-color": "#fb923c",
+            "line-width": 1,
+            "line-opacity": 0.5,
+          },
+        });
+        return { skipped: false, durationMs: performance.now() - startedAt };
+      }
+
+      function updateImagery(features) {
+        const startedAt = performance.now();
+        const imagerySources = features.filter(
+          (feature) => feature?.assets?.image?.href && Array.isArray(feature?.bbox),
+        );
+        const nextImageryHrefs = imagerySources.map((feature) => feature.assets.image.href);
+        const nextSignature = imagerySignature(imagerySources);
+        const zoomNow = map.getZoom();
+
+        if (!deckOverlay || !MosaicLayerClass || !COGLayerClass) {
+          imageryStatusEl.textContent = imageryInitErrorMessage
+            ? `Footprints loaded. Imagery module unavailable. ${imageryInitErrorMessage}`
+            : "Footprints loaded. Imagery module unavailable.";
+          imageryStatusEl.className = "small status-warn";
+          updateImageryLayers();
+          return { skipped: true, durationMs: performance.now() - startedAt };
+        }
+
+        const showCog = toggleCogEl.checked;
+        if (!showCog) {
+          updateImageryLayers();
+          currentImagerySignature = null;
+          imageryStatusEl.textContent = "COG Layer is disabled.";
+          imageryStatusEl.className = "small status-warn";
+          return { skipped: false, durationMs: performance.now() - startedAt };
+        }
+
+        if (!imagerySources.length) {
+          updateImageryLayers();
+          currentImagerySignature = nextSignature;
+          imageryStatusEl.textContent = "No imagery sources available in current response.";
+          imageryStatusEl.className = "small status-warn";
+          updateResolutionDebug(features, imagerySources);
+          return { skipped: false, durationMs: performance.now() - startedAt };
+        }
+
+        if (nextSignature === currentImagerySignature) {
+          imageryStatusEl.textContent = `Imagery unchanged for ${imagerySources.length} returned items.`;
+          imageryStatusEl.className = "small status-ok";
+          updateResolutionDebug(features, imagerySources);
+          updateImageryLayers();
+          return { skipped: true, durationMs: performance.now() - startedAt };
+        }
+
+        imageryRevision += 1;
+        clearS1MDrapeImages();
+        updateImageryLayers();
+        currentImagerySignature = nextSignature;
+        currentImageryHrefs = nextImageryHrefs;
+        imageryStatusEl.textContent = `Imagery rendering enabled for ${imagerySources.length} of ${features.length} returned items.`;
+        imageryStatusEl.className = "small status-ok";
+        updateResolutionDebug(features, imagerySources);
+        return { skipped: false, durationMs: performance.now() - startedAt };
+      }
+
+      async function runSearch(trigger = "manual") {
+        const clientStartedAt = performance.now();
+        const searchToken = ++activeSearchToken;
+        // Reset per-search client-side signing counters + the re-sign guard so
+        // the timing panel and 403-retry logic scope to this search.
+        signCallCount = 0;
+        signTotalMs = 0;
+        resignAttempted = new Set();
+        if (toggleCogEl.checked && (!deckOverlay || !MosaicLayerClass || !COGLayerClass) && !imageryInitErrorMessage) {
+          await initImagerySupport();
+        }
+        const body = {
+          collections: [activeCollection()],
+          bbox: currentBbox(),
+          limit: Number(limitEl.value || SEARCH_LIMIT_DEFAULT),
+        };
+        if (stateEl.value) body["region"] = stateEl.value;
+        if (yearEl.value) body["year"] = Number(yearEl.value);
+
+        summaryEl.textContent =
+          trigger === "auto" ? "Loading… (auto)" : "Loading…";
+        timingSummaryEl.textContent = "Timing pending…";
+
+        const searchPath = "/search";
+
+        const fetchStartedAt = performance.now();
+        try {
+          const response = await apiFetch(searchPath, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const fetchMs = performance.now() - fetchStartedAt;
+
+          if (searchToken < activeSearchToken) {
+            return;
+          }
+
+          if (!response.ok) {
+            const text = await response.text();
+            summaryEl.textContent = `Error: ${response.status} ${text}`;
+            return;
+          }
+
+          const serverTimings = readTimingHeaders(response);
+          const jsonStartedAt = performance.now();
+          const data = await response.json();
+          const jsonMs = performance.now() - jsonStartedAt;
+
+          if (searchToken < activeSearchToken) {
+            return;
+          }
+
+           const features = data.features || [];
+          lastSearchFeatures = features;
+          lastSearchBbox = body.bbox;
+          const isLake = true;
+          const engineName = "GeoParquet lake (DuckDB direct)";
+          const engineExplain =
+            "Footprints read from partitioned GeoParquet files via a standalone in-process DuckDB connection (read_parquet) — no database server. Prunes by bbox column + row-group stats, refines with ST_Intersects. This is the serverless lake read path.";
+          const filterNote = [];
+          if (body["region"]) filterNote.push(`region = ${body["region"]}`);
+          if (body["year"]) filterNote.push(`year = ${body["year"]}`);
+          const zeroHint =
+            features.length === 0
+              ? `<div class="muted" style="color:#fbbf24; margin-top:4px;">No footprints matched. Either this area isn't ingested, or a filter excludes it${filterNote.length ? ` (${filterNote.join(", ")})` : ""}. Try clearing the Region/Year filters.</div>`
+              : "";
+          summaryEl.innerHTML = `
+            <strong>Found ${features.length} footprint${features.length === 1 ? "" : "s"} in the current map view.</strong>
+            <div class="muted" style="margin-top:4px;">
+              <strong>Read engine:</strong> ${engineName} &nbsp;<code>${searchPath}</code>
+            </div>
+            <div class="muted" style="line-height:1.4; margin-top:2px;">${engineExplain}</div>
+            <div class="muted" style="margin-top:4px;">
+              <strong>Server query time:</strong> ${serverTimings.sqlMs.toFixed(1)} ms to find the footprints${serverTimings.signMs > 0 ? ` + ${serverTimings.signMs.toFixed(1)} ms to sign image URLs` : ""} (server total ${serverTimings.totalMs.toFixed(1)} ms).
+            </div>
+            <div class="muted" style="margin-top:2px;">Map view bbox [W, S, E, N]: ${body.bbox.map((v) => v.toFixed(4)).join(", ")}${filterNote.length ? ` · filters: ${filterNote.join(", ")}` : " · no region/year filter"}</div>
+            ${zeroHint}
+          `;
+
+          const resultsStartedAt = performance.now();
+          renderResults(features);
+          const resultsMs = performance.now() - resultsStartedAt;
+          const footprintUpdate = updateMap(features);
+          const imageryUpdate = updateImagery(features);
+          updateImageryLayers();
+          const timings = {
+            trigger,
+            bbox: body.bbox.map((value) => Number(value.toFixed(4))),
+            server: {
+              ...serverTimings,
+            },
+            client: {
+              fetchMs,
+              jsonMs,
+              resultsMs,
+              footprintsMs: footprintUpdate?.durationMs ?? 0,
+              imageryMs: imageryUpdate?.durationMs ?? 0,
+              totalMs: performance.now() - clientStartedAt,
+            },
+          };
+          renderTimingSummary(timings);
+          logTimingBreakdown(timings);
+        } catch (error) {
+          if (searchToken < activeSearchToken) {
+            return;
+          }
+          console.error("Search fetch failed:", error);
+          summaryEl.innerHTML = `
+            <span style="color:#f87171; font-weight:bold;">Network Error calling STAC search API.</span>
+            <div class="small muted" style="margin-top:4px;">${error?.message || error}</div>
+            <div class="small muted" style="margin-top:4px; line-height:1.4;">Please make sure the Uvicorn FastAPI server container is running and accessible at <code>http://localhost:8089/</code>, and that you are accessing the viewer via <code>http://localhost:8089/viewer/</code> (avoiding <code>file://</code> URLs).</div>
+          `;
+          timingSummaryEl.textContent = "Timing unavailable due to error.";
+        }
+      }
+
+      async function queueSearch(trigger = "manual") {
+        if (searchInFlight) {
+          pendingSearch = true;
+          return;
+        }
+
+        searchInFlight = true;
+        try {
+          await runSearch(trigger);
+        } finally {
+          searchInFlight = false;
+          if (pendingSearch) {
+            pendingSearch = false;
+            await queueSearch("auto");
+          }
+        }
+      }
+
+      // --- Dependent State -> Year dropdowns for the search panel ---------
+      // Availability comes from /availability for the selected read engine
+      // (postgis row store vs GeoParquet lake). Picking a state fills Year with
+      // that state's ingested years (newest first) and auto-selects the newest,
+      // so the viewer never issues the slow no-year (all-vintages) scan.
+      let searchAvailability = {};
+      let searchAvailabilityGsd = {};      // {region: {year: meters}} from /availability
+      let searchAvailabilityExtent = {};   // {region: {year: [xmin,ymin,xmax,ymax]}} from /availability
+
+      // Fly to the center of the current Collection/Region/Year selection.
+      // Blank region = union across regions; blank year = union across that
+      // region's vintages (extents barely differ between vintages anyway).
+      // A fixed zoom rather than fitBounds: fitting a large state's full
+      // extent would trigger an auto-search over the whole state and flood
+      // the footprint limit. Configurable via ?centerZoom= or
+      // window.S3_COG_CENTER_ZOOM (config.js); default z11.
+      const CENTER_ZOOM = Number(
+        new URLSearchParams(location.search).get("centerZoom") ||
+        window.S3_COG_CENTER_ZOOM || 11
+      );
+
+      // Curated per-state anchors: a visually interesting, recognizable spot
+      // (urban texture, water, distinctive infrastructure) instead of the
+      // bbox centroid, which tends to land in empty farmland or desert.
+      // Data lives in anchors.geojson (same pattern as collections.geojson;
+      // GitHub renders it as a map). Missing/unloaded entries fall back to
+      // the extent centroid.
+      let STATE_ANCHORS = {};
+      fetch("./anchors.geojson", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((fc) => {
+          for (const f of fc.features || []) {
+            if (f.properties && f.properties.region && f.geometry) {
+              STATE_ANCHORS[f.properties.region] = f.geometry.coordinates;
+            }
+          }
+        })
+        .catch((e) => console.error("anchors.geojson load failed:", e));
+
+      function centerOnSelection() {
+        const st = stateEl.value;
+        const yr = yearEl.value;
+        if (st && STATE_ANCHORS[st]) {
+          map.flyTo({ center: STATE_ANCHORS[st], zoom: CENTER_ZOOM, duration: 1200 });
+          return;
+        }
+        let box = null;
+        const merge = (b) => {
+          if (!b) return;
+          box = box
+            ? [Math.min(box[0], b[0]), Math.min(box[1], b[1]), Math.max(box[2], b[2]), Math.max(box[3], b[3])]
+            : [...b];
+        };
+        const regions = st ? [st] : Object.keys(searchAvailabilityExtent);
+        for (const region of regions) {
+          const byYear = searchAvailabilityExtent[region] || {};
+          if (yr) merge(byYear[yr]);
+          else Object.values(byYear).forEach(merge);
+        }
+        if (!box) return;
+        map.flyTo({ center: [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], zoom: CENTER_ZOOM, duration: 1200 });
+      }
+
+      function gsdLabel(meters) {
+        if (!Number.isFinite(meters) || meters <= 0) return null;
+        return meters >= 1 ? `${meters} m` : `${Math.round(meters * 100)} cm`;
+      }
+
+      // Resolution annotation for a year option. With a specific state, use that
+      // state's gsd; for "All loaded", show the finest gsd any state has for
+      // that year (matching the API's min() semantics).
+      function yearOptionLabel(year, st) {
+        let g = null;
+        if (st) {
+          g = (searchAvailabilityGsd[st] || {})[String(year)];
+        } else {
+          for (const region of Object.keys(searchAvailabilityGsd)) {
+            const v = searchAvailabilityGsd[region][String(year)];
+            if (v != null && (g == null || v < g)) g = v;
+          }
+        }
+        const label = gsdLabel(Number(g));
+        return label ? `${year} — ${label}` : String(year);
+      }
+
+      function populateSearchYears() {
+        const st = stateEl.value;
+        // Save current selection before clearing so we can try to preserve it.
+        const prevYear = yearEl.value;
+        yearEl.innerHTML = "";
+
+        if (!st) {
+          // "All loaded" — build the union of all ingested years for the
+          // dropdown, but leave the selection on "Latest available" (no year
+          // filter). The API sorts naip_year desc, so the freshest data per
+          // state surfaces first without a year constraint. Forcing a single
+          // year as default is jarring (visible dropdown jump at startup) and
+          // wrong when states have different most-recent years.
+          const allYears = Array.from(
+            new Set([].concat(...Object.values(searchAvailability)))
+          ).sort((a, b) => b - a);
+          // "Latest available" option — no year filter, results sorted naip_year desc.
+          const anyOpt = document.createElement("option");
+          anyOpt.value = ""; anyOpt.textContent = "Latest available"; yearEl.appendChild(anyOpt);
+          allYears.forEach((y) => {
+            const o = document.createElement("option");
+            o.value = y; o.textContent = yearOptionLabel(y, ""); yearEl.appendChild(o);
+          });
+          // Restore the previous selection if it is still a valid option;
+          // otherwise fall back to "Latest available" (no year filter).
+          yearEl.value = allYears.map(String).includes(prevYear) ? prevYear : "";
+        } else {
+          // Specific state: list that state's ingested years newest-first and
+          // auto-select the most recent. No "Any" option -- the no-year path
+          // scans the whole state's partitions and is meaningfully slower.
+          const years = searchAvailability[st] || [];
+          years.forEach((y) => {
+            const o = document.createElement("option");
+            o.value = y; o.textContent = yearOptionLabel(y, st); yearEl.appendChild(o);
+          });
+          if (!years.length) {
+            const o = document.createElement("option");
+            o.value = ""; o.textContent = "Any"; yearEl.appendChild(o);
+          }
+          yearEl.value = years.length ? String(years[0]) : "";
+        }
+      }
+
+      // Populate the Collection dropdown from the collections actually present in
+      // the lake (/collections), labeled via the registry (collections.geojson)
+      // when known. Default to naip.
+      async function refreshCollections() {
+        try {
+          const response = await apiFetch(`/collections`);
+          const data = await response.json();
+          const ids = (data.collections || []).map((c) => c.id);
+          if (!ids.length) ids.push("naip");
+          const prev = collectionEl.value;
+          collectionEl.innerHTML = "";
+          ids.forEach((id) => {
+            const o = document.createElement("option");
+            o.value = id;
+            o.textContent = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
+            collectionEl.appendChild(o);
+          });
+          collectionEl.value = ids.includes(prev) ? prev : (ids.includes("naip") ? "naip" : ids[0]);
+        } catch (error) {
+          console.error("collections fetch failed:", error);
+        }
+      }
+
+      async function refreshAvailability() {
+        const prevState = stateEl.value;
+        try {
+          const response = await apiFetch(`/availability?collection=${encodeURIComponent(activeCollection())}`);
+          const data = await response.json();
+          searchAvailability = (data && data.states) || {};
+          searchAvailabilityGsd = (data && data.gsd) || {};
+          searchAvailabilityExtent = (data && data.extent) || {};
+          const states = Object.keys(searchAvailability);
+          stateEl.innerHTML = '<option value="">All loaded</option>';
+          states.forEach((st) => {
+            const o = document.createElement("option");
+            o.value = st;
+            o.textContent = `${st.toUpperCase()} (${(searchAvailability[st] || []).join(", ")})`;
+            stateEl.appendChild(o);
+          });
+          // Preserve the prior selection if still valid; else stay on "All loaded".
+          if (prevState && searchAvailability[prevState]) stateEl.value = prevState;
+          else stateEl.value = "";
+          populateSearchYears();
+        } catch (error) {
+          console.error("availability fetch failed:", error);
+        }
+      }
+
+      collectionEl.addEventListener("change", async () => {
+        updateCogLayerLabel();
+        await refreshAvailability();   // repopulate Region/Year for the new collection
+        queueSearch("auto");
+      });
+      stateEl.addEventListener("change", () => {
+        populateSearchYears();
+        queueSearch("auto");
+      });
+      yearEl.addEventListener("change", () => queueSearch("auto"));
+      document.getElementById("center-data").addEventListener("click", centerOnSelection);
+
+      searchBtn.addEventListener("click", () => queueSearch("manual"));
+      tabButtons.forEach((button) => {
+        button.addEventListener("click", () => switchTab(button.dataset.tab));
+      });
+      refreshEnvironmentBtn.addEventListener("click", refreshEnvironment);
+      refreshIngestOptionsBtn.addEventListener("click", refreshIngestOptions);
+      ingestCollectionEl.addEventListener("change", refreshIngestOptions);
+      ingestStateEl.addEventListener("change", updateIngestYears);
+      runIngestBtn.addEventListener("click", runIngest);
+
+      // ===== Detect (SAM 3) tab =============================================
+      // POST /detect: DuckDB picks the covering COG, rasterio reads a chip,
+      // SAM 3 subprocess runs with a text prompt, pixel bboxes are reprojected
+      // to EPSG:4326 and returned as a GeoJSON FeatureCollection.
+      const detConceptEl = document.getElementById("det-concept");
+      const detFeasEl = document.getElementById("det-feasibility");
+      const detScoreEl = document.getElementById("det-score");
+      const detScoreValEl = document.getElementById("det-score-val");
+      const detChipEl = document.getElementById("det-chip");
+      // Ground meters of the detect window, or null for a native 1008px chip.
+      function detectChipMeters() {
+        const v = Number(detChipEl.value);
+        return Number.isFinite(v) && v > 0 ? v : null;
+      }
+      const detRunEl = document.getElementById("det-run");
+      const detClearEl = document.getElementById("det-clear");
+      const detSummaryEl = document.getElementById("det-summary");
+      const detResultsEl = document.getElementById("det-results");
+      const detEncodeHintEl = document.getElementById("det-encode-hint");
+
+      // Typical smallest meaningful dimension (m) per concept -> feasibility + box size.
+      const CONCEPT_SIZES = {
+        "car": 4.5, "truck": 8, "bus": 12, "swimming pool": 6, "pool": 6,
+        "boat": 6, "ship": 30, "rooftop": 12, "roof": 12, "building": 12,
+        "house": 10, "solar panel": 1.6, "solar farm": 50, "tree": 6,
+        "parking lot": 30, "tennis court": 11, "shipping container": 2.5,
+        "storage tank": 15, "grain silo": 8, "airplane": 30,
+        "rooftop hvac unit": 1.5, "hvac": 1.5, "road": 6, "sidewalk": 1.5,
+      };
+      function conceptSizeM(concept) {
+        const c = (concept || "").toLowerCase().trim();
+        if (!c) return null;
+        if (CONCEPT_SIZES[c]) return CONCEPT_SIZES[c];
+        for (const k in CONCEPT_SIZES) if (c.includes(k) || k.includes(c)) return CONCEPT_SIZES[k];
+        return 5;
+      }
+      function currentGsd() {
+        const f = lastSearchFeatures && lastSearchFeatures[0];
+        const g = Number(f && (f.properties ? f.properties.gsd : f.gsd));
+        return Number.isFinite(g) && g > 0 ? g : 0.6; // default 60 cm
+      }
+      function colorForConcept(concept) {
+        let h = 0; for (const ch of (concept || "x")) h = (h * 31 + ch.charCodeAt(0)) % 360;
+        return `hsl(${h}, 80%, 55%)`;
+      }
+      // /detect reads a fixed 1008-px window centered on the viewport center
+      // (server collapses the bbox to its midpoint), so draw that exact chip
+      // footprint while the Detect tab is open. Ground size = 1008 * GSD.
+      const DETECT_CHIP_PX = 1008;
+      function detectChipFeature() {
+        const c = map.getCenter();
+        // chip_m if set, else the native 1008px window's ground size.
+        const groundM = detectChipMeters() || (DETECT_CHIP_PX * currentGsd());
+        const halfM = groundM / 2;
+        const dLat = halfM / 111320;
+        const dLon = halfM / (111320 * Math.cos(c.lat * Math.PI / 180));
+        const [w, e, s, n] = [c.lng - dLon, c.lng + dLon, c.lat - dLat, c.lat + dLat];
+        return { type: "Feature",
+          geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
+          properties: {} };
+      }
+      function updateDetectChip() {
+        const active = document.querySelector('.tab-button[data-tab="detect"]').classList.contains("active");
+        if (!map.isStyleLoaded || !map.isStyleLoaded()) { map.once("idle", updateDetectChip); return; }
+        const fc = active
+          ? { type: "FeatureCollection", features: [detectChipFeature()] }
+          : { type: "FeatureCollection", features: [] };
+        if (!map.getSource("detect-chip")) {
+          map.addSource("detect-chip", { type: "geojson", data: fc });
+          map.addLayer({ id: "detect-chip-line", type: "line", source: "detect-chip",
+            paint: { "line-color": "#00e5ff", "line-width": 2, "line-dasharray": [2, 1] } });
+        } else {
+          map.getSource("detect-chip").setData(fc);
+          if (map.getLayer("detect-chip-line")) map.moveLayer("detect-chip-line");
+        }
+      }
+      function updateFeasibility() {
+        const concept = detConceptEl.value.trim();
+        const gsd = currentGsd();
+        const size = conceptSizeM(concept);
+        if (!concept) {
+          detFeasEl.innerHTML = "Enter a concept — feasibility is judged from the imagery resolution in view.";
+          return;
+        }
+        const minDet = 10 * gsd, marginal = 6 * gsd;
+        let cls, label;
+        if (size >= minDet) { cls = "feas-yes"; label = "feasible"; }
+        else if (size >= marginal) { cls = "feas-maybe"; label = "marginal"; }
+        else { cls = "feas-no"; label = "too small at this resolution"; }
+        detFeasEl.innerHTML =
+          `<span class="feas-chip ${cls}">${label}</span> ` +
+          `<span class="muted">~${size} m object · imagery ${gsd.toFixed(2)} m/px ` +
+          `(≈${(size / gsd).toFixed(0)} px)</span>`;
+      }
+      let lastDetAoiKey = null;
+      async function detect() {
+        const concept = detConceptEl.value.trim();
+        if (!concept) { detSummaryEl.textContent = "Enter a concept first."; return; }
+        const bbox = currentBbox();
+        const score = Number(detScoreEl.value);
+        const color = colorForConcept(concept);
+
+        detSummaryEl.textContent = "Running SAM 3 inference...";
+        detResultsEl.innerHTML = "";
+        detEncodeHintEl.style.display = "none";
+        detRunEl.disabled = true;
+
+        const body = {
+          bbox: bbox,
+          concept: concept,
+          score_thresh: score,
+          collection: activeCollection(),
+          region: stateEl.value || null,
+          year: yearEl.value ? Number(yearEl.value) : null,
+          chip_m: detectChipMeters()
+        };
+
+        try {
+          const response = await apiFetch("/detect", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body)
+          });
+
+          if (!response.ok) {
+            const text = await response.text();
+            detSummaryEl.textContent = `Error: ${response.status} ${text}`;
+            return;
+          }
+
+          const fc = await response.json();
+          drawDetections(fc);
+
+          const count = fc.features.length;
+          // Group by concept (multi-prompt union returns mixed concepts, deduped).
+          const byConcept = {};
+          for (const f of fc.features) {
+            const c = f.properties.concept || concept;
+            byConcept[c] = (byConcept[c] || 0) + 1;
+          }
+          detSummaryEl.innerHTML =
+            `<strong>${count}</strong> detected · score ≥ ${score.toFixed(2)}` +
+            (Object.keys(byConcept).length > 1 ? ` · union of ${Object.keys(byConcept).length} concepts (deduped)` : "");
+          detResultsEl.innerHTML = Object.entries(byConcept)
+            .sort((a, b) => b[1] - a[1])
+            .map(([c, n]) =>
+              `<div class="det-row"><span><span class="det-swatch" style="background:${colorForConcept(c)}"></span>${c}</span><span>${n}</span></div>`)
+            .join("");
+
+          const aoiKey = bbox.map((v) => v.toFixed(3)).join(",");
+          if (aoiKey === lastDetAoiKey) {
+            detEncodeHintEl.style.display = "";
+            detEncodeHintEl.textContent = "AOI already encoded ✓ — extra concepts here are ~4× faster (decode only).";
+          } else {
+            detEncodeHintEl.style.display = "";
+            detEncodeHintEl.textContent = "AOI encoded — try another concept (no re-encode needed).";
+            lastDetAoiKey = aoiKey;
+          }
+          updateFeasibility();
+        } catch (error) {
+          console.error("Detect failed:", error);
+          detSummaryEl.textContent = `Error: ${error.message}`;
+        } finally {
+          detRunEl.disabled = false;
+        }
+      }
+      function emptyFC() { return { type: "FeatureCollection", features: [] }; }
+      function drawDetections(fc) {
+        if (!map.isStyleLoaded || !map.isStyleLoaded()) { map.once("idle", () => drawDetections(fc)); return; }
+        if (map.getSource("sam-detections")) { 
+          map.getSource("sam-detections").setData(fc); 
+          if (map.getLayer("sam-det-fill")) map.moveLayer("sam-det-fill");
+          if (map.getLayer("sam-det-line")) map.moveLayer("sam-det-line");
+          return; 
+        }
+        map.addSource("sam-detections", { type: "geojson", data: fc });
+        map.addLayer({ id: "sam-det-fill", type: "fill", source: "sam-detections",
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.35 } });
+        map.addLayer({ id: "sam-det-line", type: "line", source: "sam-detections",
+          paint: { "line-color": ["get", "color"], "line-width": 1.5 } });
+      }
+      function clearDetections() {
+        if (map.getSource("sam-detections")) map.getSource("sam-detections").setData(emptyFC());
+        detSummaryEl.textContent = "No detection run yet.";
+        detResultsEl.innerHTML = "";
+        detEncodeHintEl.style.display = "none";
+        lastDetAoiKey = null;
+      }
+      detConceptEl.addEventListener("input", updateFeasibility);
+      detChipEl.addEventListener("change", updateDetectChip);
+      detScoreEl.addEventListener("input", () => { detScoreValEl.textContent = Number(detScoreEl.value).toFixed(2); });
+      detRunEl.addEventListener("click", detect);
+      detClearEl.addEventListener("click", clearDetections);
+
+      // --- Terrain (S1M DEM -> 3D mesh, viewport-tiled) ---
+      const terExagEl = document.getElementById("ter-exag");
+      const terExagValEl = document.getElementById("ter-exag-val");
+      if (terExagEl) terExagEl.addEventListener("input", () => {
+        terExagValEl.textContent = `${Number(terExagEl.value).toFixed(1)}×`;
+        rebuildS1MLayers();  // live exaggeration: rebuild cached tiles, no refetch
+      });
+      function normalizeS1MSurfaceControls(changed) {
+        const surfaceEl = document.getElementById("ter-surface");
+        const modeEl = document.getElementById("ter-mode");
+        const gpuEl = document.getElementById("ter-gpu");
+        if (surfaceEl?.value === "naip") {
+          if (modeEl) modeEl.value = "shaded";
+          if (gpuEl) gpuEl.checked = true;
+        } else if (changed === "mode" && modeEl?.value === "wireframe" && surfaceEl) {
+          surfaceEl.value = "shaded";
+        }
+      }
+      // Switching GPU<->CPU rebuilds the same cached grids with the other layer type.
+      document.getElementById("ter-gpu")?.addEventListener("change", () => {
+        normalizeS1MSurfaceControls("gpu");
+        rebuildS1MLayers();
+      });
+      document.getElementById("ter-surface")?.addEventListener("change", () => {
+        normalizeS1MSurfaceControls("surface");
+        if (s1mActive) refreshS1MTerrain();
+        else rebuildS1MLayers();
+      });
+      document.getElementById("ter-mode")?.addEventListener("change", () => {
+        normalizeS1MSurfaceControls("mode");
+        rebuildS1MLayers();
+      });   // shaded <-> wireframe
+      document.getElementById("ter-color")?.addEventListener("change", rebuildS1MLayers);  // adaptive <-> absolute
+      document.getElementById("ter-borders")?.addEventListener("change", updateImageryLayers);
+      document.getElementById("ter-run")?.addEventListener("click", enableS1MTerrain);
+      document.getElementById("ter-clear")?.addEventListener("click", clearS1MTerrain);
+
+      // --- Similar (Stage-0 semantic retrieval over the embedding lake) ---
+      const simPickEl = document.getElementById("sim-pick");
+      const simClearEl = document.getElementById("sim-clear");
+      const simKEl = document.getElementById("sim-k");
+      const simKValEl = document.getElementById("sim-k-val");
+      const simSummaryEl = document.getElementById("sim-summary");
+      const simResultsEl = document.getElementById("sim-results");
+      let simPicking = false;
+      let lastSimilarFeatures = [];
+
+      function setSimPicking(on) {
+        simPicking = on;
+        simPickEl.textContent = on ? "Click the map..." : "Pick point";
+        simPickEl.classList.toggle("search-active", !on);
+        map.getCanvas().style.cursor = on ? "crosshair" : "";
+      }
+
+      function drawSimilar(fc, queryChip) {
+        if (!map.isStyleLoaded || !map.isStyleLoaded()) { map.once("idle", () => drawSimilar(fc, queryChip)); return; }
+        // Normalize sim into [0,1] per result set so the color ramp uses the
+        // full range even when sims cluster (e.g. 0.85-0.99).
+        const sims = fc.features.map((f) => f.properties.sim);
+        const lo = Math.min(...sims), hi = Math.max(...sims);
+        const span = hi - lo || 1;
+        for (const f of fc.features) f.properties.simNorm = (f.properties.sim - lo) / span;
+
+        const queryFC = queryChip
+          ? { type: "FeatureCollection", features: [{
+              type: "Feature",
+              geometry: { type: "Polygon", coordinates: [[
+                [queryChip.bbox[0], queryChip.bbox[1]], [queryChip.bbox[2], queryChip.bbox[1]],
+                [queryChip.bbox[2], queryChip.bbox[3]], [queryChip.bbox[0], queryChip.bbox[3]],
+                [queryChip.bbox[0], queryChip.bbox[1]],
+              ]] },
+              properties: { naip_item: queryChip.naip_item },
+            }] }
+          : emptyFC();
+
+        if (!map.getSource("similar-chips")) {
+          map.addSource("similar-chips", { type: "geojson", data: fc });
+          map.addLayer({ id: "similar-fill", type: "fill", source: "similar-chips",
+            paint: {
+              "fill-color": ["interpolate", ["linear"], ["get", "simNorm"],
+                0, "#fee08b", 0.5, "#fc8d59", 1, "#d53e4f"],
+              "fill-opacity": 0.45,
+            } });
+          map.addLayer({ id: "similar-line", type: "line", source: "similar-chips",
+            paint: { "line-color": "#d53e4f", "line-width": 0.8 } });
+          map.addSource("similar-query", { type: "geojson", data: queryFC });
+          map.addLayer({ id: "similar-query-line", type: "line", source: "similar-query",
+            paint: { "line-color": "#00e5ff", "line-width": 2.5 } });
+        } else {
+          map.getSource("similar-chips").setData(fc);
+          map.getSource("similar-query").setData(queryFC);
+          for (const id of ["similar-fill", "similar-line", "similar-query-line"]) {
+            if (map.getLayer(id)) map.moveLayer(id);
+          }
+        }
+      }
+
+      async function runSimilar(lon, lat) {
+        const k = Number(simKEl.value);
+        simSummaryEl.textContent = "Searching the embedding lake...";
+        simResultsEl.innerHTML = "";
+        const body = {
+          lon, lat, k,
+          region: stateEl.value || null,
+          year: yearEl.value ? Number(yearEl.value) : null,
+        };
+        try {
+          const response = await apiFetch("/similar", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!response.ok) {
+            let detail = `${response.status}`;
+            try { detail += ` ${(await response.json()).detail}`; } catch (_) { /* body not json */ }
+            simSummaryEl.textContent = `Error: ${detail}`;
+            return;
+          }
+          const sqlMs = Number(response.headers.get("x-similar-sql-ms"));
+          const data = await response.json();
+          lastSimilarFeatures = data.features;
+          drawSimilar(data, data.query && data.query.chip);
+
+          const chip = data.query.chip;
+          const top = data.features[0];
+          simSummaryEl.innerHTML =
+            `<strong>${data.features.length}</strong> similar chips · query chip ` +
+            `<code>${chip.naip_item}</code> (${chip.year})` +
+            (Number.isFinite(sqlMs) ? ` · ${(sqlMs / 1000).toFixed(1)} s` : "") +
+            (top ? ` · top sim ${top.properties.sim.toFixed(3)}` : "");
+          simResultsEl.innerHTML = data.features.slice(0, 15).map((f, i) => {
+            const p = f.properties;
+            const cx = ((f.bbox[0] + f.bbox[2]) / 2).toFixed(6);
+            const cy = ((f.bbox[1] + f.bbox[3]) / 2).toFixed(6);
+            return `<div class="det-row sim-row" data-lon="${cx}" data-lat="${cy}" data-sim="${p.sim}" style="cursor:pointer;">` +
+              `<span>${i + 1}. ${p.naip_item}</span><span>${p.sim.toFixed(3)}</span></div>`;
+          }).join("");
+          for (const row of simResultsEl.querySelectorAll(".sim-row")) {
+            row.addEventListener("click", () => {
+              map.flyTo({ center: [Number(row.dataset.lon), Number(row.dataset.lat)], zoom: 16 });
+            });
+          }
+        } catch (error) {
+          console.error("Similar failed:", error);
+          simSummaryEl.textContent = `Error: ${error.message}`;
+        }
+      }
+
+      function clearSimilar() {
+        if (map.getSource("similar-chips")) map.getSource("similar-chips").setData(emptyFC());
+        if (map.getSource("similar-query")) map.getSource("similar-query").setData(emptyFC());
+        simSummaryEl.textContent = "No similarity search run yet.";
+        simResultsEl.innerHTML = "";
+        setSimPicking(false);
+      }
+
+      simKEl.addEventListener("input", () => { simKValEl.textContent = simKEl.value; });
+      simPickEl.addEventListener("click", () => setSimPicking(!simPicking));
+      simClearEl.addEventListener("click", clearSimilar);
+      map.on("click", (e) => {
+        if (!simPicking) return;
+        setSimPicking(false);
+        runSimilar(e.lngLat.lng, e.lngLat.lat);
+      });
+
+      // --- Verify candidates: SAM 3 against the newest imagery per chip ---
+      const simVerifyConceptEl = document.getElementById("sim-verify-concept");
+      const simVerifyNEl = document.getElementById("sim-verify-n");
+      const simVerifyNValEl = document.getElementById("sim-verify-n-val");
+      const simVerifyRunEl = document.getElementById("sim-verify-run");
+      const simVerifyStatusEl = document.getElementById("sim-verify-status");
+
+      simVerifyNEl.addEventListener("input", () => { simVerifyNValEl.textContent = simVerifyNEl.value; });
+
+      async function verifyCandidates() {
+        const concept = simVerifyConceptEl.value.trim();
+        if (!concept) { simVerifyStatusEl.textContent = "Enter a concept first."; return; }
+        if (!lastSimilarFeatures.length) { simVerifyStatusEl.textContent = "Run a similarity search first."; return; }
+        const n = Math.min(Number(simVerifyNEl.value), lastSimilarFeatures.length);
+        const color = colorForConcept(concept);
+        simVerifyRunEl.disabled = true;
+        const detections = [];
+        let failures = 0;
+        try {
+          for (let i = 0; i < n; i++) {
+            const f = lastSimilarFeatures[i];
+            simVerifyStatusEl.textContent =
+              `Verifying candidate ${i + 1}/${n} (${f.properties.naip_item})... ` +
+              `SAM 3 runs per chip; the first chip also loads the model.`;
+            const body = {
+              bbox: f.bbox,
+              concept,
+              score_thresh: 0.5,
+              collection: activeCollection(),
+              region: f.properties.region || null,
+              // year intentionally omitted: /detect picks the newest COG over
+              // the chip, so 2021-index candidates verify on current imagery.
+            };
+            const row = simResultsEl.children[i];
+            try {
+              const response = await apiFetch("/detect", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(body),
+              });
+              if (!response.ok) {
+                failures += 1;
+                if (row) row.lastElementChild.textContent = `${Number(row.dataset.sim).toFixed(3)} · error ${response.status}`;
+                continue;
+              }
+              const fc = await response.json();
+              detections.push(...fc.features);
+              if (row) row.lastElementChild.textContent =
+                `${Number(row.dataset.sim).toFixed(3)} · ${fc.features.length} ${fc.features.length === 1 ? "hit" : "hits"}`;
+              drawDetections({ type: "FeatureCollection", features: detections });
+            } catch (error) {
+              console.error("Verify failed:", error);
+              failures += 1;
+              if (row) row.lastElementChild.textContent = `${Number(row.dataset.sim).toFixed(3)} · error`;
+            }
+          }
+        } finally {
+          simVerifyRunEl.disabled = false;
+        }
+        simVerifyStatusEl.innerHTML =
+          `<strong>${detections.length}</strong> <span style="color:${color}">${concept}</span> ` +
+          `detections across ${n} verified chips` + (failures ? ` · ${failures} failed` : "");
+      }
+      simVerifyRunEl.addEventListener("click", verifyCandidates);
+
+      // A confirmed detection becomes the next similarity query: clicking a
+      // SAM 3 polygon switches to the Similar tab and searches from that spot
+      // (the Detect -> Similar hand-off, so calibration flows into scale-out
+      // without re-picking the point).
+      map.on("mouseenter", "sam-det-fill", () => { if (!simPicking) map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "sam-det-fill", () => { if (!simPicking) map.getCanvas().style.cursor = ""; });
+      map.on("click", "sam-det-fill", (e) => {
+        if (simPicking) return;   // explicit pick mode wins
+        if (!(e.features && e.features.length)) return;
+        switchTab("similar");
+        runSimilar(e.lngLat.lng, e.lngLat.lat);
+      });
+
+      toggleCogEl.addEventListener("change", () => {
+        updateImagery(lastSearchFeatures);
+        if (toggleCogEl.checked) {
+          queueSearch("auto");
+        }
+      });
+
+      toggleUsgsNaipWmsLayerEl.addEventListener("change", () => {
+        updateReferenceRasterLayers();
+      });
+
+      let displayAdjustmentFrame = null;
+      function updateDisplayAdjustmentLabels() {
+        const brightness = Number(brightnessEl.value);
+        brightnessValueEl.textContent = `${brightness > 0 ? "+" : ""}${brightness}%`;
+        contrastValueEl.textContent = `${Number(contrastEl.value)}%`;
+      }
+      function scheduleDisplayAdjustmentRender() {
+        updateDisplayAdjustmentLabels();
+        displayAdjustmentProps.brightness = Number(brightnessEl.value) / 100;
+        displayAdjustmentProps.contrast = Number(contrastEl.value) / 100;
+        if (displayAdjustmentFrame !== null) {
+          cancelAnimationFrame(displayAdjustmentFrame);
+        }
+        displayAdjustmentFrame = requestAnimationFrame(() => {
+          displayAdjustmentFrame = null;
+          imageryRevision += 1;
+          clearS1MDrapeImages();
+          map.triggerRepaint();
+          deckOverlay?._deck?.redraw("display adjustments");
+          if (s1mActive && document.getElementById("ter-surface")?.value === "naip") {
+            refreshS1MTerrain();
+          }
+        });
+      }
+      brightnessEl.addEventListener("input", scheduleDisplayAdjustmentRender);
+      contrastEl.addEventListener("input", scheduleDisplayAdjustmentRender);
+      resetDisplayEl.addEventListener("click", () => {
+        brightnessEl.value = "0";
+        contrastEl.value = "100";
+        scheduleDisplayAdjustmentRender();
+      });
+      updateDisplayAdjustmentLabels();
+
+      map.on("movestart", () => {
+        if (toggleCogEl.checked) {
+          imageryStatusEl.textContent = "Keeping current imagery while map view changes.";
+          imageryStatusEl.className = "small status-ok";
+        }
+      });
+      map.on("move", () => {
+        updateLayerNumberControl();
+      });
+
+      // --- Collections registry (layer 0): which collections cover the viewport ---
+      // Compiled from collections/registry.yaml by build_collections_geojson.py.
+      // SEARCHABLE = collections actually present in the lake -> exactly the
+      // options in the Collection selector (populated from /collections).
+      const isSearchableCollection = (id) =>
+        Array.from(collectionEl.options).some((o) => o.value === id);
+      let collectionFeatures = [];
+      let collectionById = {};
+      let selectedCollectionId = null;
+
+      async function loadCollectionsRegistry() {
+        try {
+          const res = await fetch("./collections.geojson", { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const fc = await res.json();
+          collectionFeatures = (fc.features || []).map((f) => f.properties);
+          collectionById = Object.fromEntries(collectionFeatures.map((p) => [p.id, p]));
+        } catch (err) {
+          console.warn("collections.geojson load failed", err);
+          collectionFeatures = [];
+          collectionById = {};
+        }
+      }
+      function bboxIntersectsViewport(bbox, b) {
+        // bbox = [minLon, minLat, maxLon, maxLat]
+        return !(b.getEast() < bbox[0] || b.getWest() > bbox[2] ||
+                 b.getNorth() < bbox[1] || b.getSouth() > bbox[3]);
+      }
+      function collectionAvailability(p) {
+        if (!p.active) return { label: `available · ${p.bucket_region} · region-deferred`, cls: "muted" };
+        if (isSearchableCollection(p.id)) return { label: "ingested · searchable", cls: "status-ok" };
+        return { label: "registered · not yet ingested", cls: "status-warn" };
+      }
+      function updateCollectionsHere() {
+        const el = document.getElementById("collections-here");
+        if (!el) return;
+        if (!collectionFeatures.length) {
+          el.textContent = "Collection registry unavailable.";
+          el.className = "small muted";
+          return;
+        }
+        const b = map.getBounds();
+        const hits = collectionFeatures
+          .filter((p) => bboxIntersectsViewport(p.bbox, b))
+          .sort((a, x) => (a.active === x.active ? 0 : a.active ? -1 : 1));
+        if (!hits.length) {
+          el.textContent = "No registered imagery collections cover this view.";
+          el.className = "small muted";
+          renderCollectionDetail(null);
+          return;
+        }
+        el.className = "small";
+        el.innerHTML = hits.map((p) => {
+          const yrs = Array.isArray(p.years) && p.years.length === 2
+            ? ` <span class="muted">${p.years[0]}–${p.years[1]}</span>` : "";
+          const dot = p.active ? "#22c55e" : "#9ca3af";
+          const selected = p.id === selectedCollectionId
+            ? "background:rgba(59,130,246,.18);border:1px solid #3b82f6;"
+            : "border:1px solid transparent;";
+          const dim = p.active ? "" : "opacity:.6;";
+          const name = p.active ? `<strong>${p.title}</strong>${yrs}` : `${p.title}`;
+          return `<div class="collection-row" data-cid="${p.id}" tabindex="0" role="button"`
+            + ` style="display:flex;align-items:center;gap:6px;margin:2px 0;padding:2px 4px;`
+            + `border-radius:4px;cursor:pointer;${selected}${dim}">`
+            + `<span class="swatch" style="background:${dot}"></span>${name}</div>`;
+        }).join("");
+        if (selectedCollectionId && collectionById[selectedCollectionId]) {
+          renderCollectionDetail(selectedCollectionId);
+        }
+      }
+      function selectCollection(id) {
+        if (!collectionById[id]) return;
+        selectedCollectionId = id;
+        updateCollectionsHere();
+        renderCollectionDetail(id);
+        // Tie layer 0 -> layer 1: if this collection is actually searchable
+        // (present in the lake / selector), make it the active search collection.
+        if (isSearchableCollection(id) && collectionEl.value !== id) {
+          collectionEl.value = id;
+          updateCogLayerLabel();
+          refreshAvailability().then(() => queueSearch("auto"));
+        }
+      }
+      function renderCollectionDetail(id) {
+        const el = document.getElementById("collection-detail");
+        if (!el) return;
+        const p = id && collectionById[id];
+        if (!p) { el.innerHTML = ""; return; }
+        const avail = collectionAvailability(p);
+        const yrs = Array.isArray(p.years) && p.years.length === 2 ? `${p.years[0]}–${p.years[1]}` : "—";
+        const rows = [
+          ["status", `<span class="${avail.cls}">${avail.label}</span>`],
+          ["bucket", `${p.bucket} <span class="muted">(${p.bucket_region}, ${p.access})</span>`],
+          ["region", `${p.region_code || p.region_kind || "—"}`],
+          ["years", yrs],
+          ["COG verified", p.cog_verified ? "yes" : "—"],
+        ];
+        if (p.display?.sample_bits) {
+          rows.push(["sample depth", `${p.display.sample_bits}-bit`]);
+        }
+        if (Array.isArray(p.display?.domain) && p.display.domain.length === 2) {
+          rows.push(["value range", `${p.display.domain[0]}–${p.display.domain[1]}`]);
+        }
+        const canSearch = p.active && isSearchableCollection(p.id);
+        const hint = canSearch
+          ? `<div class="small status-ok" style="margin-top:4px;">Selected for search — use COG Footprints filters below.</div>`
+          : (p.active
+              ? `<div class="small status-warn" style="margin-top:4px;">Not in the lake yet — ingest needed before it can be searched.</div>`
+              : `<div class="small muted" style="margin-top:4px;">Outside the current us-west-2 scope.</div>`);
+        el.innerHTML = `<div style="font-weight:600;margin-bottom:2px;">${p.title}</div>`
+          + rows.map(([k, v]) => `<div><span class="muted">${k}:</span> ${v}</div>`).join("")
+          + hint;
+      }
+
+      map.on("moveend", () => {
+        updateLayerNumberControl();
+        updateCollectionsHere();
+        updateDetectChip();
+        if (!mapReady) {
+          return;
+        }
+        if (autoSearchTimeoutId !== null) {
+          window.clearTimeout(autoSearchTimeoutId);
+        }
+        autoSearchTimeoutId = window.setTimeout(() => {
+          autoSearchTimeoutId = null;
+          if (autoSearchEl.checked || toggleCogEl.checked) {
+            // Skip the search if existing footprints already cover the viewport
+            if (footprintsCoverViewport(lastSearchFeatures)) {
+              imageryStatusEl.textContent = "Footprints cover viewport — search skipped.";
+              imageryStatusEl.className = "small status-ok";
+              updateResolutionDebug(lastSearchFeatures, getImagerySources());
+              // Still refresh deck.gl layers so panning picks up the new
+              // viewport position with existing features.
+              updateImageryLayers();
+            } else {
+              queueSearch("auto");
+            }
+          }
+          refreshIngestOptions();
+        }, 250);
+      });
+      map.on("load", async () => {
+        map.showTileBoundaries = false;
+
+        // Initialize SAM Detections layers early so they reside at the top of the layer stack
+        map.addSource("sam-detections", {
+          type: "geojson",
+          data: emptyFC()
+        });
+        map.addLayer({
+          id: "sam-det-fill",
+          type: "fill",
+          source: "sam-detections",
+          paint: {
+            "fill-color": ["get", "color"],
+            "fill-opacity": 0.35
+          }
+        });
+        map.addLayer({
+          id: "sam-det-line",
+          type: "line",
+          source: "sam-detections",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1.5
+          }
+        });
+
+        updateLayerNumberControl();
+        await loadCollectionsRegistry();
+        const collectionsHereEl = document.getElementById("collections-here");
+        if (collectionsHereEl) {
+          // Delegated: rows are re-rendered on each moveend, listener persists on parent.
+          const onPick = (ev) => {
+            const row = ev.target.closest(".collection-row");
+            if (row && row.dataset.cid) selectCollection(row.dataset.cid);
+          };
+          collectionsHereEl.addEventListener("click", onPick);
+          collectionsHereEl.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onPick(ev); }
+          });
+        }
+        updateCollectionsHere();
+        map.addSource("usgs-naip-wms", {
+          type: "raster",
+          tiles: [
+            "https://basemap.nationalmap.gov/arcgis/services/USGSImageryOnly/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&FORMAT=image/png&TRANSPARENT=true&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}"
+          ],
+          tileSize: 256,
+          maxzoom: 22,
+        });
+
+        map.addLayer({
+          id: "usgs-naip-wms-layer",
+          type: "raster",
+          source: "usgs-naip-wms",
+          paint: {
+            "raster-opacity": 1.0
+          },
+          layout: {
+            visibility: "none"
+          }
+        });
+        updateReferenceRasterLayers();
+
+        await initImagerySupport();
+        await refreshEnvironment();
+        await refreshIngestOptions();
+        updateImageryLayers();
+        await refreshCollections();
+        updateCogLayerLabel();
+        await refreshAvailability();
+        await queueSearch("manual");
+        mapReady = true;
+      });
+
+      // Lambda Cold Start Notice Handling
+      const lambdaModal = document.getElementById("lambda-modal");
+
+      function openModal() {
+        lambdaModal.classList.add("show");
+      }
+      function closeModal() {
+        lambdaModal.classList.remove("show");
+      }
+
+      // Cold-start modal disabled for now (kept available via openModal()).
+      // setTimeout(openModal, 1000);
+
+      lambdaModal.addEventListener("click", () => {
+        closeModal();
+      });
+    </script>
+
+    <!-- AWS Lambda Cold Start Notice Modal -->
+    <div id="lambda-modal" class="modal-backdrop">
+      <div class="modal-content">
+        <h3 class="modal-title">
+          <span class="modal-icon">⚠️</span> AWS Lambda Waking Up...
+        </h3>
+        <div class="modal-body" style="margin-bottom: 0;">
+          Welcome to the Local COG Viewer! If this is your first load or the app has been idle, the backend **AWS Lambda** might be experiencing a **cold start**.
+          <br><br>
+          Initializing the environment and importing scientific modules (like rasterio and duckdb) can take **20-30 seconds** on the initial call.
+          <br><br>
+          Once the backend is warm, searches and object segmentation will be instant!
+          <div style="text-align: center; color: #888; font-size: 12px; margin-top: 20px;">(Click anywhere to dismiss)</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

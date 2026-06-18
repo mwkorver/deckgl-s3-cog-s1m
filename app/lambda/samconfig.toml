@@ -1,0 +1,27 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "cog-stac-read"
+
+[default.build.parameters]
+# Build inside a Lambda-like container so native wheels (duckdb, pyproj,
+# pillow, pyarrow) match the arm64 Amazon Linux runtime.
+use_container = true
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+region = "us-west-2"
+capabilities = "CAPABILITY_IAM"
+# Let SAM create/manage the deployment artifact bucket automatically.
+resolve_s3 = true
+# deploy-ingest.sh supplies --resolve-image-repos for the independent container
+# stack. The default SAM configuration remains the zip-based read stack.
+confirm_changeset = true
+fail_on_empty_changeset = false
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.validate.parameters]
+lint = true

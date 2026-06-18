@@ -1,0 +1,2 @@
+# Development-only Python tooling. Runtime dependencies stay in app/api/requirements*.txt.
+ruff>=0.8,<1

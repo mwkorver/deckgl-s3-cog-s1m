@@ -1,0 +1,5 @@
+# Build artifacts produced by build-layer.sh -- regenerate, don't commit.
+build/
+*.zip
+# SAM build output (sam build) -- regenerate, don't commit.
+.aws-sam/

@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+/packages/*/dist/
+/packages/*/node_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Python bytecode & virtual envs
+__pycache__/
+*.pyc
+.venv/
+
+# Environment files
+.env
+.env.local
+.env.*
+!.env.example
+
+# Local databases and caches
+app/cache/
+app/api/__pycache__/
+app/lambda/.aws-sam/
+
+# Viewer runtime config (written by deploy-viewer.sh / created for local dev;
+# contains per-deployment API base URLs + the S1M demo token)
+app/viewer/config.js
+
+# Logs and debug files
+logs
+*.log
+npm-debug.log*
+.eslintcache
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Dedicated container Lambda for USGS 3DEP S1M terrain lookup.
+
+Parameters:
+  S1MDemoToken:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Shared development token required by the S1M Function URL.
+  S1MReservedConcurrency:
+    Type: Number
+    Default: -1
+    MinValue: -1
+    Description: Reserved concurrency for S1M. Use -1 to leave it unreserved.
+
+Conditions:
+  ReserveS1MConcurrency: !Not [!Equals [!Ref S1MReservedConcurrency, -1]]
+
+Rules:
+  RegionLock:
+    Assertions:
+      - Assert: !Equals [!Ref "AWS::Region", "us-west-2"]
+        AssertDescription: "cog-stac-s1m must be deployed in us-west-2."
+
+Resources:
+  CogStacS1MFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cog-stac-s1m
+      PackageType: Image
+      Architectures:
+        - arm64
+      Timeout: 120
+      MemorySize: 2048
+      ReservedConcurrentExecutions: !If
+        - ReserveS1MConcurrency
+        - !Ref S1MReservedConcurrency
+        - !Ref AWS::NoValue
+      EphemeralStorage:
+        Size: 512
+      Environment:
+        Variables:
+          S1M_INDEX_URL: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/s1m/S1M_Products.parquet"
+          S1M_DEMO_TOKEN: !Ref S1MDemoToken
+          DUCKDB_EXT_DIR: /opt/duckdb_extensions
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/s1m/S1M_Products.parquet"
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - GET
+            - POST
+          AllowHeaders:
+            - content-type
+            - x-demo-token
+            - authorization
+    Metadata:
+      Dockerfile: Dockerfile.s1m
+      DockerContext: ../api
+      DockerTag: s1m-arm64
+
+Outputs:
+  S1MApiUrl:
+    Description: Base invoke URL for the S1M terrain function.
+    Value: !GetAtt CogStacS1MFunctionUrl.FunctionUrl

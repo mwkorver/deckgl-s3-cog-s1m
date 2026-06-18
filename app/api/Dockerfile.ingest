@@ -1,0 +1,36 @@
+# Container-image Lambda for the COG STAC ingest path (cog-stac-ingest).
+#
+# WHY a container, not a zip: ingest pulls in pyarrow (~135M) + pyproj (~33M) +
+# pillow (~20M) + duckdb + the spatial/httpfs/aws extensions, which blows past
+# Lambda's 250M unzipped zip limit. Container images allow up to 10G and a 15min
+# timeout -- the right envelope for ingest. The read API stays a small zip.
+#
+# Same FastAPI app (app.py) as the read function, but here AWS_LAMBDA_FUNCTION_NAME
+# is set and S3_COG_INGEST_MODE is NOT "disabled", so INGEST_MODE resolves to
+# "sync" and POST /ingest/run-sync runs in-process.
+FROM public.ecr.aws/lambda/python:3.12
+
+# Bake the DuckDB extension binaries at DUCKDB_EXT_DIR so duckdb_s3.configure()
+# LOADs spatial/httpfs/aws by path -- no INSTALL at runtime (no writable $HOME /
+# network egress on Lambda). Version + platform MUST match the duckdb wheel in
+# requirements.txt (duckdb==1.5.3); arm64 image -> linux_arm64 extensions.
+ENV DUCKDB_EXT_DIR=/opt/duckdb_extensions
+ENV DUCKDB_VERSION=1.5.3
+ENV DUCKDB_PLATFORM=linux_arm64
+# Single-line python -c (not a heredoc: the legacy Docker builder doesn't honor
+# RUN <<EOF, which silently no-ops and leaves the dir empty). Raises on any
+# download/decompress error so a bad version/platform fails the build loudly.
+RUN mkdir -p ${DUCKDB_EXT_DIR} && python -c "import urllib.request,gzip,os; ver=os.environ['DUCKDB_VERSION']; plat=os.environ['DUCKDB_PLATFORM']; d=os.environ['DUCKDB_EXT_DIR']; req=lambda u: urllib.request.Request(u, headers={'User-Agent':'curl/8.0'}); [open(f'{d}/{e}.duckdb_extension','wb').write(gzip.decompress(urllib.request.urlopen(req(f'http://extensions.duckdb.org/v{ver}/{plat}/{e}.duckdb_extension.gz')).read())) for e in ('spatial','httpfs','aws')]" && ls -l ${DUCKDB_EXT_DIR}
+
+# Full ingest dependency set (shared with the docker dev image).
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# All read + ingest source. app.py is the handler; ingest_duckdb/ingest_manifest
+# carry the pyarrow/pyproj/pillow ingest pipeline; duckdb_s3 wires DuckDB-on-S3.
+COPY app.py ingest_duckdb.py ingest_manifest.py descriptors.py duckdb_s3.py build_manifest_index.py ./
+RUN mkdir -p viewer
+
+# Mangum handler (app.handler) -- the Lambda container base image's entrypoint
+# invokes this on each request.
+CMD ["app.handler"]

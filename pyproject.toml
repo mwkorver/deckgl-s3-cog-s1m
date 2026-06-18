@@ -1,0 +1,21 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+  ".git",
+  ".pytest_cache",
+  ".venv",
+  "dist",
+  "node_modules",
+  "packages/morecantile/spec",
+  "fixtures/geotiff-test-data/rasterio_generated",
+]
+
+[tool.ruff.lint]
+select = [
+  "E9",
+  "F",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/test_*.py" = ["F811"]

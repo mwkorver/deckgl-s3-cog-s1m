@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  COG STAC ingest API on Lambda. Runs the full ingest dependency set as an
+  arm64 container image with a 15-minute timeout. Deployed independently from
+  the zip-based read API so routine read changes do not rebuild this image.
+
+Rules:
+  RegionLock:
+    Assertions:
+      - Assert: !Equals [!Ref "AWS::Region", "us-west-2"]
+        AssertDescription: "cog-stac-ingest must be deployed in us-west-2 (data residency)."
+
+Resources:
+  # The legacy combined stack used the physical name cog-stac-ingest. Use a new
+  # physical name so this stack can be deployed before the read stack removes
+  # the legacy resource. This avoids a name collision and minimizes migration
+  # disruption.
+  CogStacIngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cog-stac-ingest-worker
+      PackageType: Image
+      Architectures:
+        - arm64
+      Timeout: 900
+      MemorySize: 1769
+      Environment:
+        Variables:
+          S3_COG_LAKE_ROOT: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"
+          S3_COG_MANIFEST_INDEX: s3://cog-stac-catalog/manifest-index
+          S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
+          S3_COG_REQUEST_PAYER: requester
+          S3_COG_SIGN_ASSET_URLS: "1"
+          # Extensions are baked into the image by Dockerfile.ingest.
+          DUCKDB_EXT_DIR: /opt/duckdb_extensions
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}"
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+              Resource:
+                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/*"
+                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/detections/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - arn:aws:s3:::cog-stac-catalog
+                - arn:aws:s3:::cog-stac-catalog/*
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - arn:aws:s3:::naip-analytic
+                - arn:aws:s3:::naip-analytic/*
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - GET
+            - POST
+          AllowHeaders:
+            - "*"
+    Metadata:
+      Dockerfile: Dockerfile.ingest
+      DockerContext: ../api
+      DockerTag: ingest-arm64
+
+Outputs:
+  IngestUrl:
+    Description: Base invoke URL for the COG STAC ingest function.
+    Value: !GetAtt CogStacIngestFunctionUrl.FunctionUrl
+  LakeRoot:
+    Description: Private GeoParquet output prefix shared with the read stack.
+    Value: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"

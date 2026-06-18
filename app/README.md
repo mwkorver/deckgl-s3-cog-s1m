@@ -1,0 +1,401 @@
+# Local COG STAC prototype
+
+This directory contains a local object-key-first prototype for:
+
+- a DuckDB + GeoParquet "lake" index of NAIP, with **no database server**
+- a lightweight Python STAC-like API
+- ordered search results suitable for browser-side `deck.gl-raster`
+
+The read and ingest paths both run entirely on an in-process DuckDB connection
+over a partitioned GeoParquet tree. There is no PostGIS / Postgres container —
+this matches the AWS Lambda serverless profile we are targeting.
+
+## Design choices
+
+- GeoParquet lake as the single store (`cache/exports/naip_rgbir_duckdb/`)
+- source-of-truth is `source_bucket + source_key`
+- `state`, `naip_year`, `product`, `resolution_dir`, and `filename` come from the object key
+- `proj_epsg` and the footprint geometry are required
+- `bbox_{xmin,ymin,xmax,ymax}` are materialized columns derived from the geometry
+  (so bbox-first predicates prune Parquet files + row groups, just like a lake reader)
+- rows are Hilbert-clustered per `state` so the bbox stats stay selective
+- result ordering is NAIP-specific:
+  - `naip_year desc`
+  - `acquisition_date desc`
+  - `gsd asc`
+  - `source_key asc`
+
+## Services
+
+- `api`: Python service on `localhost:8089` (DuckDB in-process; no database server)
+
+## Deploying to AWS
+
+> **Deployment region: `us-west-2`**
+>
+> This application is intentionally region-locked because its principal COG
+> source buckets, including `naip-analytic`, `njogis-imagery`, and
+> `kyfromabove`, are in `us-west-2`. Deploying the Lambda APIs, GeoParquet lake,
+> viewer bucket, and CloudFront origins in the same region minimizes latency and
+> avoids cross-region S3 transfer charges. The foundation, read, and ingest
+> templates reject other regions.
+
+The AWS deployment has three independently managed stacks:
+
+1. `cog-stac-foundation`: retained S3 bucket and CloudFront proxy; admin-owned.
+2. `cog-stac-ingest`: container-image ingest Lambda; deployed when ingest code
+   or dependencies change.
+3. `cog-stac-read`: zip-based read Lambda and DuckDB layer; deployed frequently.
+
+Run deployments from the `lambda/` directory:
+
+```bash
+cd app/lambda
+./deploy-foundation.sh       # admin, once
+./deploy.sh                  # ingest -> read -> viewer
+./deploy.sh --read-only      # update read + viewer without rebuilding ingest
+./deploy.sh --ingest-only    # update only the ingest container
+./deploy-read.sh --no-viewer # update only the read Lambda
+```
+
+`deploy-foundation.sh` is create-only by default. If the stack already exists,
+it prints outputs without changing anything. If legacy bucket/CloudFront
+resources exist outside the stack, it refuses to create duplicates. Intentional
+foundation updates require `./deploy-foundation.sh --update`. Foundation
+resources are tagged `Application=deck.gl-s3-cog`; this tag identifies the
+CloudFront distribution without depending on its generated id. The script and
+CloudFormation template both enforce deployment in `us-west-2`.
+
+For accounts whose bucket and CloudFront distribution predate
+`cog-stac-foundation`, application deploys accept the existing deterministic
+viewer bucket. Supply the legacy tile proxy when publishing the viewer:
+
+```bash
+TILE_BASE=https://d3otm97s6tpvta.cloudfront.net ./deploy.sh --read-only
+```
+
+**What it does (in order):**
+1. Deploys the ingest stack and reads its `IngestUrl` output.
+2. Passes that URL to the read stack as the `IngestUrl` parameter.
+3. Builds/deploys the read Lambda and DuckDB layer.
+4. Publishes the static HTML/JS viewer to the foundation S3 bucket.
+
+The viewer contract is unchanged: it calls the read API's `/environment`
+endpoint, which returns the configured ingest URL.
+
+> The shared, author-published catalog (`s3://cog-stac-catalog/manifest-index`,
+> read-only) is consumed cross-account; deployers never write to it.
+
+**Prerequisites** (one-time setup before first deploy):
+
+| Tool | Install |
+|------|---------|
+| AWS CLI v2 | https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html |
+| SAM CLI | `brew install aws-sam-cli` |
+| Docker (arm64) | Colima: `colima start --arch aarch64 --vm-type vz`  or Docker Desktop |
+| pnpm (for viewer) | `npm install -g pnpm` then `pnpm install && pnpm build` at repo root |
+
+**IAM (one-time per account):**
+
+Create and assume the narrowly scoped `cog-stac-deploy` role described in
+`lambda/iam/README.md`. Use short-lived SSO credentials rather than static keys.
+
+**Configure `.env`:**
+
+```bash
+cp .env.example .env
+# Set AWS_PROFILE=cog-stac-deploy
+# Set S3_COG_LAKE_ROOT=s3://cog-stac-viewer-<your-account-id>-us-west-2/lake
+# (the foundation stack creates and retains this bucket)
+```
+
+**Costs to expect:**
+
+The dominant variable cost is **S3 requester-pays egress** from `naip-analytic`:
+every COG tile the browser renders triggers a partial GET (~$0.09/GB out +
+$0.0004/1000 requests). Lambda invocations and the S3-backed viewer are
+negligible at light usage. Light exploration of a small area is cents or less;
+sharing the viewer publicly or rendering many states at once can accumulate
+meaningful charges.
+
+The read template can create a monthly **Budget alarm**. Set these environment
+variables when deploying the read stack:
+
+```bash
+BUDGET_ALERT_EMAIL=you@example.com MONTHLY_BUDGET_USD=10 ./lambda/deploy-read.sh
+```
+
+Alerts fire at 80% actual and 100% forecasted spend. After deploy, AWS sends
+a confirmation email — click the link to activate it.
+
+**Tear down:**
+
+```bash
+# Application Lambdas only; foundation bucket and data are kept:
+lambda/teardown.sh --keep-bucket
+
+# OR full teardown — both app stacks, foundation, and bucket data, behind a typed
+# confirmation (does not touch the shared cog-stac-catalog bucket):
+lambda/teardown.sh
+```
+
+---
+
+## Start
+
+```bash
+cd app
+cp .env.example .env
+docker-compose up --build
+```
+
+The Docker image builds the required JavaScript package outputs itself, then
+copies the resulting `packages/*/dist` artifacts into the Python API image. A
+host-side `pnpm build` is no longer required for self-deploy.
+
+### Synchronous SAM 3 detection (host development only)
+
+The `/detect` prototype uses two Python environments: this API environment
+contains rasterio and NumPy 2.x to cut a COG chip, while the companion
+[`sam-concept-worker`](https://github.com/mwkorver/sam-concept-worker) environment
+contains SAM 3 and NumPy 1.x. Configure the subprocess explicitly:
+
+```bash
+python3.12 -m venv .venv-detect
+source .venv-detect/bin/activate
+python -m pip install -r api/requirements-detect.txt
+
+export SAM3_PYTHON="$HOME/.venvs/sam3/bin/python"
+export SAM3_SCRIPT="$HOME/working/sam-concept-worker/dev/run_sam3_json.py"
+export SAM3_TIMEOUT_SECONDS=300
+
+uvicorn api.app:app --host 0.0.0.0 --port 8089 --reload
+```
+
+Run Uvicorn on the host for this path so both configured files are visible.
+Docker Compose remains the normal API/viewer workflow, but its container does
+not include the separate SAM environment. The endpoint is synchronous and
+returns GeoJSON directly; SQS dispatch and persisted detections are future work.
+
+#### Warm worker (faster local iteration)
+
+The subprocess path above rebuilds SAM 3 on every `/detect` call, re-paying the
+model load each time. For interactive work, run the **warm worker** instead: a
+long-lived process that loads the model once and serves chips over localhost
+HTTP. Start it in its own terminal (in the `sam-concept-worker` checkout, with
+that repo's SAM 3 environment active):
+
+```bash
+PYTORCH_ENABLE_MPS_FALLBACK=1 python dev/serve_sam3.py --port 8765
+```
+
+Then point the API at it and start uvicorn as usual:
+
+```bash
+export SAM3_WORKER_URL="http://127.0.0.1:8765"   # takes precedence over SAM3_SCRIPT
+uvicorn api.app:app --host 0.0.0.0 --port 8089 --reload
+```
+
+Because the worker is a separate process on a fixed port, it stays warm across
+API `--reload` restarts -- you load SAM 3 once and iterate on the API freely.
+When `SAM3_WORKER_URL` is unset, `/detect` falls back to the cold subprocess.
+
+The warm worker also enables **tiled detection**: a large `chip_m` is covered by
+a grid of native 1008px tiles (no decimation -- full small-object detail across
+the whole area) run in a single `/infer_batch`, then stitched and deduped in
+world space. Tune with `DEFAULT_TILE_OVERLAP_PX` (seam overlap, sized to the
+largest object) and `MAX_TILES` (fan-out cap). Without a worker, a large
+`chip_m` falls back to one decimated read (no tiling).
+
+## AWS credentials
+
+Local development and deployment use the SSO-assumed `cog-stac-deploy` role:
+
+1. Configure the `cog-stac-deploy` profile as described in
+   `lambda/iam/README.md`.
+2. Authenticate the profile through AWS SSO.
+3. Set `AWS_PROFILE=cog-stac-deploy` in `.env`.
+
+Docker Compose mounts `~/.aws` read-only so the container can resolve the
+profile and its temporary session credentials. No IAM user or static access
+keys are used. The API uses the role to sign requester-pays `naip-analytic`
+requests server-side.
+
+## Endpoints
+
+- `GET /health`
+- `GET /`
+- `GET /collections`
+- `GET /collections/naip`
+- `POST /search` — reads the GeoParquet lake via the in-process DuckDB connection
+- `GET /availability` — state → available NAIP years (powers the viewer dropdowns)
+- `POST /ingest/options`
+- `POST /ingest/run`
+- `GET /ingest/status/{job_id}`
+- `GET /viewer/`
+
+Example:
+
+```bash
+curl -sS http://localhost:8089/search \
+  -H 'content-type: application/json' \
+  -d '{
+    "collections": ["naip"],
+    "bbox": [-75.8, 38.9, -75.3, 39.1],
+    "limit": 20
+  }'
+```
+
+## Debug viewer
+
+After the API is running, open:
+
+- `http://localhost:8089/viewer/`
+
+The viewer:
+
+- queries `/search` using the current map extent
+- draws returned footprints
+- shows the returned source order in a side panel
+- lets you filter by `state`, `year`, and `Max footprints` (search `limit`, capped at 1000)
+- the **Year** dropdown is populated from `/availability` for the selected state, newest auto-selected
+- can re-search automatically while you pan (`Auto search on pan`)
+
+### Map layers
+
+The control panel toggles these layers (all off by default):
+
+- **NAIP Imagery (COG Tiles)** — renders the returned NAIP COGs directly in the
+  browser via `deck.gl-raster` (MosaicLayer/COGLayer), reading the cloud-optimized
+  GeoTIFFs over presigned S3 URLs. Footprints are decoupled from imagery: `/search`
+  returns raw `s3://` hrefs (drawn instantly), and each COG is signed lazily,
+  on demand, only when its tile enters the viewport (see below).
+- **USGS NAIP Reference Imagery (WMS)** — USGS NAIP imagery via WMS, for visual
+  comparison against the COG-rendered imagery.
+
+An on-map HUD reports the active zoom (`z`) for the viewer layer and the CARTO
+basemap.
+
+## Ingest
+
+Ingest writes the GeoParquet lake with `ingest_duckdb.py`: it reads the manifest
+index, enriches matching assets via EarthSearch STAC (`proj:*`, year, state,
+geometry), derives footprints from `proj:bbox` + `proj:epsg`, clusters by
+`ST_Hilbert`, and writes a `state=/naip_year=/product=` partitioned GeoParquet
+tree under `cache/exports/naip_rgbir_duckdb/`. No Postgres, no staging table.
+
+The Data Ingest tab in the viewer drives this through `/ingest/run`; the same
+script can be run directly:
+
+```bash
+docker-compose run --rm api python ingest_duckdb.py --states ri ct de nj
+docker-compose run --rm api python ingest_duckdb.py --states de --latest-year-only --limit-per-partition 5
+```
+
+The prototype treats the NAIP analytic manifest as external runtime input, not
+repo data. Download or mount it into
+`app/cache/naip-analytic-manifest.txt` before building the index.
+
+### Build the manifest index (run whenever the manifest is updated)
+
+The published manifest is a flat ~404 MB, ~7M-line list of every object key in
+the bucket (FGDC sidecars, original imagery, COGs, index artifacts). Scanning it
+per ingest job is the slow part of the pipeline, so `build_manifest_index.py`
+does the scan **once** and writes a small queryable index containing only the
+RGBIR COG tiles (`*/rgbir_cog/*.tif` — the single COG product NAIP publishes):
+
+```bash
+docker-compose run --rm api python build_manifest_index.py
+```
+
+This produces a Hive-partitioned GeoParquet-style tree at
+`cache/manifest_index/state=<st>/naip_year=<yr>/` (~15 MB total, ~1.23M keys,
+columns: `source_key, state, naip_year, resolution, quad, filename, product,
+acq_date`). An ingest job/chunk then does a millisecond pushdown read of one
+partition (e.g. `manifest_index/state=tx/naip_year=2020/`) instead of
+re-streaming the 404 MB text file.
+
+The build is idempotent — each run clears and rewrites the tree, so it can't
+accumulate stale keys. **Re-run it whenever AWS publishes a new manifest**
+(infrequent); it is not part of the per-ingest hot path. Inputs/outputs are
+overridable via `--manifest` / `--out` (or `S3_COG_MANIFEST_PATH` /
+`S3_COG_MANIFEST_INDEX`); `--manifest` may be an `s3://` URL.
+
+## Metadata strategies
+
+`ingest_duckdb.py` supports two metadata strategies (`--strategy`):
+
+### `manifest-earthsearch` (default)
+
+- the manifest index defines the complete expected URL set
+- EarthSearch supplies `proj:*`, `naip:year`, `naip:state`, and asset metadata
+- stored footprints come from `proj:bbox` transformed from `proj:epsg` into `EPSG:4326`
+
+Faster than opening every TIFF header; appropriate when EarthSearch coverage is
+complete for the target state/year.
+
+### `manifest-cog-headers`
+
+- the manifest index still defines the URL inventory
+- each matching COG is opened by range-read against the TIFF header
+- raster-native metadata (projection, transform, size, bounds) comes directly from the file
+
+Slower (one remote header inspection per COG) but independent of EarthSearch
+completeness/freshness. Use it when EarthSearch is missing items, `proj:bbox`
+looks suspect, or you need to validate metadata from the raster.
+
+## Why DuckDB + GeoParquet
+
+This prototype runs the whole read/ingest path with no database server, which is
+exactly the AWS Lambda profile: a Lambda invocation opens an in-process DuckDB,
+`read_parquet`s the lake (locally or over `s3://`), prunes by bbox columns +
+row-group stats, and returns STAC features — no connection pool, no PostGIS.
+
+## Lazy, per-tile URL signing (the innovative part)
+
+The NAIP source bucket (`naip-analytic`) is **requester-pays** and the assets are
+served over **presigned** S3 URLs signed with the Lambda execution role's
+temporary STS credentials. The naive approach — batch-sign every asset URL inside
+`/search` — has two problems:
+
+1. **Latency coupling.** Nothing draws until *all* URLs are signed and the whole
+   payload returns, so the first footprint waits on the last signature.
+2. **Payload bloat.** Role-signed URLs carry an `X-Amz-Security-Token` (~700 bytes
+   each), so a 50-feature search balloons the response with signatures the user
+   may never look at (only on-screen tiles ever get fetched).
+
+Instead, signing is **decoupled from search** and pushed to the point of use:
+
+- **`POST /search`** returns raw `s3://` hrefs only — small, fast, and the
+  footprint polygons paint immediately (server `sign-ms` is `0`). Server-side
+  signing in `/search` is still available behind `S3_COG_SEARCH_SIGN_ASSETS` but is
+  off by default.
+- **`GET /sign?href=s3://…`** signs a *single* href on demand. The actual
+  presigning still happens server-side (only the Lambda role holds the creds), but
+  one URL at a time.
+- The **viewer signs lazily, per tile.** `deck.gl-raster`'s `MosaicLayer` calls
+  the app's `getSource(source, { signal, concurrencyLimiter, getPriority })` hook
+  only for sources currently in the viewport. Our `getSource` (`resolveGeotiffSource`)
+  calls `GET /sign` for that one COG, then hands the signed URL to
+  `GeoTIFF.fromUrl(url, { signal, concurrencyLimiter, getPriority })`. So **only
+  COGs that actually come on screen are ever signed.**
+
+On top of the package's hook the viewer adds a thin client-side signing layer:
+
+- a **`signedUrlCache`** keyed by `s3://` href, with a TTL just under the presign
+  expiry, so panning back to a tile reuses its URL;
+- **request coalescing** (`inflightSigns`) so concurrent loads of the same href
+  issue a single `/sign` call;
+- **403 / expired re-signing**: on a signature-expired error the cached URL +
+  GeoTIFF are evicted and the tile is re-signed and reloaded.
+
+Forwarding the layer's `concurrencyLimiter` and `getPriority` (euclidean distance
+from each source's bbox center to the live viewport center) into `GeoTIFF.fromUrl`
+also makes range reads fill **center-out** — tiles nearest the middle of the map
+decode first, and the priority queue re-sorts as you pan.
+
+This is the part worth lifting into other `deck.gl-raster` apps: the `getSource`
+hook is the package's intended seam for turning a source descriptor into fetchable
+data, and it's `async`, so per-tile credential/URL acquisition (signing,
+requester-pays, token-vending) fits naturally there instead of being front-loaded
+into the catalog/search response.

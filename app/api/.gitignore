@@ -1,0 +1,4 @@
+# SAM 3 test chips / overlays (regenerate via extract_chips_30cm.py)
+chip.png
+chip_*.png
+*_sam3.png

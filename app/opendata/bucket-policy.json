@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadManifestIndex",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::cog-stac-catalog/manifest-index/*"
+    },
+    {
+      "Sid": "PublicListBucket",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::cog-stac-catalog"
+    },
+    {
+      "Sid": "PublicGetBucketLocation",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetBucketLocation",
+      "Resource": "arn:aws:s3:::cog-stac-catalog"
+    }
+  ]
+}

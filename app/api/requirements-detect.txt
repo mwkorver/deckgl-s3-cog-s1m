@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# Host-only synchronous /detect dependencies. Keep these out of the SAM 3
+# numpy<2 environment and out of the normal read Lambda / Docker API runtime.
+numpy>=2,<3
+rasterio>=1.4,<2
+shapely>=2,<3
+pyproj>=3.6,<4

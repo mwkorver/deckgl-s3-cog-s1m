@@ -1,0 +1,327 @@
+{
+  "type": "FeatureCollection",
+  "generated_from": "collections/registry.yaml (do not edit by hand)",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "naip",
+        "title": "NAIP (USDA National Agriculture Imagery Program)",
+        "active": true,
+        "status": "ready",
+        "region_kind": "us-conus",
+        "region_code": null,
+        "years": [
+          2010,
+          2023
+        ],
+        "bucket": "naip-analytic",
+        "bucket_region": "us-west-2",
+        "access": "requester-pays",
+        "cog_verified": true,
+        "display": null,
+        "bbox": [
+          -125.0,
+          24.0,
+          -66.5,
+          49.5
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -125.0,
+              24.0
+            ],
+            [
+              -66.5,
+              24.0
+            ],
+            [
+              -66.5,
+              49.5
+            ],
+            [
+              -125.0,
+              49.5
+            ],
+            [
+              -125.0,
+              24.0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "kyfromabove",
+        "title": "KyFromAbove (Kentucky)",
+        "active": true,
+        "status": "ready",
+        "region_kind": "us-state",
+        "region_code": "KY",
+        "years": [
+          2012,
+          2024
+        ],
+        "bucket": "kyfromabove",
+        "bucket_region": "us-west-2",
+        "access": "public",
+        "cog_verified": true,
+        "display": null,
+        "bbox": [
+          -89.6,
+          36.5,
+          -81.9,
+          39.15
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -89.6,
+              36.5
+            ],
+            [
+              -81.9,
+              36.5
+            ],
+            [
+              -81.9,
+              39.15
+            ],
+            [
+              -89.6,
+              39.15
+            ],
+            [
+              -89.6,
+              36.5
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "nj-imagery",
+        "title": "New Jersey Statewide Digital Aerial Imagery",
+        "active": true,
+        "status": "ready",
+        "region_kind": "us-state",
+        "region_code": "NJ",
+        "years": [
+          2015,
+          2020
+        ],
+        "bucket": "njogis-imagery",
+        "bucket_region": "us-west-2",
+        "access": "public",
+        "cog_verified": true,
+        "display": {
+          "sample_bits": 16,
+          "domain": [
+            0,
+            65535
+          ]
+        },
+        "bbox": [
+          -75.6,
+          38.9,
+          -73.9,
+          41.36
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -75.6,
+              38.9
+            ],
+            [
+              -73.9,
+              38.9
+            ],
+            [
+              -73.9,
+              41.36
+            ],
+            [
+              -75.6,
+              41.36
+            ],
+            [
+              -75.6,
+              38.9
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "in-imagery",
+        "title": "Indiana Statewide Digital Aerial Imagery",
+        "active": false,
+        "status": "ready",
+        "region_kind": "us-state",
+        "region_code": "IN",
+        "years": [
+          2025,
+          2025
+        ],
+        "bucket": "gisimageryingov",
+        "bucket_region": "us-east-2",
+        "access": "public",
+        "cog_verified": false,
+        "display": null,
+        "bbox": [
+          -88.1,
+          37.77,
+          -84.78,
+          41.76
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -88.1,
+              37.77
+            ],
+            [
+              -84.78,
+              37.77
+            ],
+            [
+              -84.78,
+              41.76
+            ],
+            [
+              -88.1,
+              41.76
+            ],
+            [
+              -88.1,
+              37.77
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "vt-opendata",
+        "title": "Vermont Open Geospatial (VTORTHO)",
+        "active": false,
+        "status": "ready",
+        "region_kind": "us-state",
+        "region_code": "VT",
+        "years": [
+          1994,
+          2021
+        ],
+        "bucket": "vtopendata-prd",
+        "bucket_region": "us-east-2",
+        "access": "public",
+        "cog_verified": false,
+        "display": null,
+        "bbox": [
+          -73.44,
+          42.73,
+          -71.46,
+          45.02
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -73.44,
+              42.73
+            ],
+            [
+              -71.46,
+              42.73
+            ],
+            [
+              -71.46,
+              45.02
+            ],
+            [
+              -73.44,
+              45.02
+            ],
+            [
+              -73.44,
+              42.73
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "nz-imagery",
+        "title": "New Zealand Imagery",
+        "active": false,
+        "status": "needs-investigation",
+        "region_kind": "country",
+        "region_code": "NZ",
+        "years": null,
+        "bucket": "nz-imagery",
+        "bucket_region": "ap-southeast-2",
+        "access": "public",
+        "cog_verified": false,
+        "display": null,
+        "bbox": [
+          166.0,
+          -47.4,
+          178.6,
+          -34.0
+        ]
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              166.0,
+              -47.4
+            ],
+            [
+              178.6,
+              -47.4
+            ],
+            [
+              178.6,
+              -34.0
+            ],
+            [
+              166.0,
+              -34.0
+            ],
+            [
+              166.0,
+              -47.4
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

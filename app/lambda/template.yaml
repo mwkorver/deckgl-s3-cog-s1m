@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  COG STAC read API on Lambda. Runs api/app.py (handler = Mangum(app)) as a
+  small zip package, with the self-built DuckDB layer mounted at /opt so the
+  baked spatial/httpfs extensions LOAD by path. Exposed via a Lambda Function
+  URL (no API Gateway). The container-image ingest Lambda is deployed by
+  ingest-template.yaml and passed in as IngestUrl.
+
+Parameters:
+  BudgetAlertEmail:
+    Type: String
+    Default: ""
+    Description: >
+      Email address for monthly spend alerts (AWS Budgets). Leave blank (the
+      default) to skip budget creation -- you can add one later in the console.
+      After deploy, AWS sends a confirmation email; click the link to activate.
+  MonthlyBudgetUSD:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: >
+      Monthly spend limit in USD. Alerts fire at 80% actual ($8 with the $10
+      default) and at 100% forecasted. The dominant cost is S3 requester-pays
+      egress from naip-analytic (~$0.09/GB out + $0.0004/1000 GETs); $10 covers
+      light multi-state exploration. Raise this if you plan heavier use.
+  IngestUrl:
+    Type: String
+    MinLength: 1
+    Description: >
+      Base invoke URL for the separately deployed cog-stac-ingest function. The
+      read API surfaces this through /environment so the static viewer can POST
+      ingest requests without knowing about the ingest stack.
+
+Conditions:
+  CreateBudget: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
+
+# Hard data-residency lock: all NAIP data (naip-analytic source, the
+# cog-stac-catalog lake/index) lives in us-west-2. Reject any
+# attempt to create/update this stack in another region -- a --region override
+# or a misconfigured profile fails at change-set time instead of deploying a
+# cross-region function that pays inter-region transfer and can't reach buckets.
+Rules:
+  RegionLock:
+    Assertions:
+      - Assert: !Equals [!Ref "AWS::Region", "us-west-2"]
+        AssertDescription: "cog-stac-read must be deployed in us-west-2 (data residency)."
+
+Globals:
+  Function:
+    # HTTP API caps synchronous integrations at 30s, so a larger timeout buys
+    # nothing for the request path -- 29s leaves a margin under that ceiling.
+    Timeout: 29
+    # Lambda scales CPU with memory (~1 vCPU per 1.8GB). DuckDB S3 parquet scans
+    # for /search and the spatial/httpfs extension LOAD on cold start are
+    # CPU/throughput-bound, so 2048MB (~1.1 vCPU) is a better baseline than the
+    # 1024MB test value. Raise toward 3008MB if /search latency stays high.
+    MemorySize: 2048
+
+Resources:
+  DuckDbLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: cog-stac-duckdb
+      # Directory whose contents (python/, duckdb_extensions/) are mounted at
+      # /opt. Build it first: `ARCH=arm64 ./build-layer.sh`.
+      ContentUri: build/layer
+      CompatibleArchitectures:
+        - arm64
+      CompatibleRuntimes:
+        - python3.12
+
+  CogStacReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cog-stac-read
+      CodeUri: ../
+      Handler: app.handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      Layers:
+        - !Ref DuckDbLayer
+      Environment:
+        Variables:
+          # s3:// prefix flips on the httpfs + credential_chain + requester-pays
+          # branch in get_lake_duckdb(). /health proves the extension LOAD works
+          # without needing the bucket populated.
+          # App output (footprint lake; SAM 3 detections later) lives under lake/
+          # in THIS deployer's single per-account bucket -- the viewer bucket --
+          # not a separate lake bucket. The viewer bucket policy denies public
+          # read on lake/ + detections/, so app output stays private while the
+          # same bucket serves the public viewer. S3_COG_MANIFEST_INDEX stays on the
+          # shared, author-published cog-stac-catalog bucket (read-only, below).
+          S3_COG_LAKE_ROOT: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"
+          S3_COG_MANIFEST_INDEX: s3://cog-stac-catalog/manifest-index
+          S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
+          S3_COG_REQUEST_PAYER: requester
+          S3_COG_SIGN_ASSET_URLS: "1"
+          # Presigned asset URLs are signed with the Lambda execution role's
+          # temporary STS credentials, which can expire before a 1h window --
+          # so a 1h promise is partly false here. 15min matches the presign
+          # cache horizon (min(EXPIRES-60, 900)) and the practical cred life.
+          S3_COG_PRESIGN_EXPIRES: "900"
+          # Read-only zip deploy: the trimmed package omits pyarrow/pyproj/pillow,
+          # so /ingest/* returns 501 instead of ImportError. Ingest runs on the
+          # dedicated container function instead.
+          S3_COG_INGEST_MODE: disabled
+          # Point the viewer at the separately deployed container ingest
+          # function. /environment surfaces this so the ingest panel POSTs there.
+          S3_COG_INGEST_URL: !Ref IngestUrl
+      Policies:
+        # App output (lake/ footprints, detections/ later) lives in THIS
+        # deployer's viewer bucket. /search only reads it -> read-only, scoped to
+        # those prefixes (not the whole bucket, which also serves the public
+        # viewer). ListBucket is needed for DuckDB's read_parquet glob expansion.
+        - Statement:
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}"
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource:
+                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/*"
+                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/detections/*"
+        # Read-only on the SHARED, author-published bucket holding the prebuilt
+        # manifest index (S3_COG_MANIFEST_INDEX = s3://cog-stac-catalog/manifest-index).
+        # Deployers read this to skip the 404MB manifest download + index build;
+        # they never write here. (Author's bucket policy must allow cross-account
+        # GetObject/ListBucket on manifest-index/* for this to resolve.)
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - arn:aws:s3:::cog-stac-catalog
+                - arn:aws:s3:::cog-stac-catalog/*
+        # Read the public, requester-pays NAIP source imagery + manifest. The
+        # requester-pays charge lands on this account; S3CrudPolicy is too broad
+        # (no writes needed), so grant read-only on the bucket + its objects.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - arn:aws:s3:::naip-analytic
+                - arn:aws:s3:::naip-analytic/*
+      # Built-in HTTPS endpoint on the function -- no API Gateway. AuthType NONE
+      # makes it publicly invokable (the viewer is a public browser app);
+      # FastAPI does all routing in-process via Mangum. CORS is set here so the
+      # viewer's cross-origin fetches succeed. Tighten AllowOrigins to the
+      # viewer's host once it has a stable domain instead of the wildcard.
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - GET
+            - POST
+          AllowHeaders:
+            - "*"
+          # /search reports its server-side timing as custom x-search-* response
+          # headers; the viewer's "where the time went" panel reads them. Without
+          # ExposeHeaders, the cross-origin (S3 viewer -> Function URL) fetch can't
+          # see custom headers per the CORS spec, so the panel shows all 0.0 ms.
+          ExposeHeaders:
+            - x-search-feature-count
+            - x-search-sql-ms
+            - x-search-sign-ms
+            - x-search-rewrite-ms
+            - x-search-total-ms
+            - x-search-presign-cache-hits
+            - x-search-presign-cache-misses
+    # Custom build (Makefile in CodeUri): install only the trimmed read deps so
+    # the package + DuckDB layer fit under Lambda's 250M unzipped limit. A plain
+    # PythonPipBuilder build off api/requirements.txt overflows (pyarrow et al).
+    Metadata:
+      BuildMethod: makefile
+
+  # NOTE: there is no separate lake bucket. The app's PRIVATE output (lake/
+  # footprints, detections/ later) lives under prefixes in the per-account
+  # viewer bucket, kept non-public by the foundation stack's bucket policy.
+
+  # Static viewer hosting. The viewer (api/viewer) is pure HTML/JS that calls
+  # the API cross-origin via window.S3_COG_API_BASE (config.js, written by
+  # deploy-viewer.sh). Serving it from S3 instead of the Lambda means a viewer
+  # edit is one `aws s3 sync` (seconds) instead of a function rebuild+redeploy.
+  # HTTP-only website endpoint (no HTTPS) -- fine for this open-source demo; an
+  # HTTP page calling the HTTPS Function URL is allowed (mixed-content blocking
+  # only applies the other way). Add CloudFront later for HTTPS/custom domain.
+  # NOTE: the per-account bucket (cog-stac-viewer-<acct>-<region>) is NOT
+  # declared here. It holds the app's PRIVATE data (lake/ footprints,
+  # detections/) and must OUTLIVE the stack -- a `sam delete` (shutdown/pause)
+  # tears down the Lambdas but must never touch the bucket or its data -- and a
+  # fresh `sam deploy` must reference an already-existing bucket instead of
+  # colliding on the global S3 name. It is created and retained by the separate
+  # admin-owned cog-stac-foundation stack. This stack references it by its
+  # deterministic name and ARN.
+
+  # Monthly spend alert. Opt-in: only created when BudgetAlertEmail is set.
+  # AWS Budgets is a global/account-level service; the resource can live in
+  # any region's stack. Two notifications:
+  #   - 80% actual  → early warning before you hit the limit
+  #   - 100% forecasted → projected to exceed within the billing period
+  # After first deploy AWS sends a subscription confirmation email to the
+  # address -- click "Confirm subscription" to activate the alerts.
+  CogStacBudget:
+    Type: AWS::Budgets::Budget
+    Condition: CreateBudget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AWS::StackName}-budget"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUSD
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetAlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetAlertEmail
+
+Outputs:
+  ApiUrl:
+    Description: Base invoke URL for the COG STAC read API (Lambda Function URL).
+    Value: !GetAtt CogStacReadFunctionUrl.FunctionUrl
+  ViewerUrl:
+    Description: Static viewer website endpoint (HTTP). Run deploy-viewer.sh to publish.
+    Value: !Sub "http://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}.s3-website-${AWS::Region}.amazonaws.com"
+  ViewerBucketName:
+    Description: S3 bucket the viewer is synced to (deploy-viewer.sh target).
+    Value: !Sub "cog-stac-viewer-${AWS::AccountId}-${AWS::Region}"
+  IngestUrl:
+    Description: Base invoke URL configured for the separately deployed COG STAC ingest function.
+    Value: !Ref IngestUrl
+  LakeRoot:
+    Description: Where the app writes its private GeoParquet output (footprint lake + SAM 3 detections) -- the lake/ prefix of this deployer's single per-account bucket (the viewer bucket).
+    Value: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"

@@ -1,0 +1,720 @@
+{
+ "type": "FeatureCollection",
+ "description": "Per-state Center-button anchors: a visually interesting, recognizable spot per NAIP region. Missing regions fall back to the data extent centroid.",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -86.8,
+     33.52
+    ]
+   },
+   "properties": {
+    "region": "al",
+    "name": "Birmingham"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -92.29,
+     34.74
+    ]
+   },
+   "properties": {
+    "region": "ar",
+    "name": "Little Rock"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -112.07,
+     33.45
+    ]
+   },
+   "properties": {
+    "region": "az",
+    "name": "Phoenix"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -122.42,
+     37.77
+    ]
+   },
+   "properties": {
+    "region": "ca",
+    "name": "San Francisco / Bay Area"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -105.27,
+     40.02
+    ]
+   },
+   "properties": {
+    "region": "co",
+    "name": "Boulder"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -72.93,
+     41.31
+    ]
+   },
+   "properties": {
+    "region": "ct",
+    "name": "New Haven"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -75.55,
+     39.74
+    ]
+   },
+   "properties": {
+    "region": "de",
+    "name": "Wilmington"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -80.13,
+     25.79
+    ]
+   },
+   "properties": {
+    "region": "fl",
+    "name": "Miami Beach"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -84.39,
+     33.75
+    ]
+   },
+   "properties": {
+    "region": "ga",
+    "name": "Atlanta"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -157.83,
+     21.28
+    ]
+   },
+   "properties": {
+    "region": "hi",
+    "name": "Honolulu"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -93.62,
+     41.59
+    ]
+   },
+   "properties": {
+    "region": "ia",
+    "name": "Des Moines"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -116.2,
+     43.62
+    ]
+   },
+   "properties": {
+    "region": "id",
+    "name": "Boise"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.63,
+     41.88
+    ]
+   },
+   "properties": {
+    "region": "il",
+    "name": "Chicago"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -86.16,
+     39.77
+    ]
+   },
+   "properties": {
+    "region": "in",
+    "name": "Indianapolis"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -97.34,
+     37.69
+    ]
+   },
+   "properties": {
+    "region": "ks",
+    "name": "Wichita"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -85.76,
+     38.25
+    ]
+   },
+   "properties": {
+    "region": "ky",
+    "name": "Louisville"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -90.07,
+     29.95
+    ]
+   },
+   "properties": {
+    "region": "la",
+    "name": "New Orleans"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -71.06,
+     42.36
+    ]
+   },
+   "properties": {
+    "region": "ma",
+    "name": "Boston"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -76.61,
+     39.28
+    ]
+   },
+   "properties": {
+    "region": "md",
+    "name": "Baltimore Inner Harbor"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -70.26,
+     43.66
+    ]
+   },
+   "properties": {
+    "region": "me",
+    "name": "Portland"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.05,
+     42.33
+    ]
+   },
+   "properties": {
+    "region": "mi",
+    "name": "Detroit"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -93.27,
+     44.98
+    ]
+   },
+   "properties": {
+    "region": "mn",
+    "name": "Minneapolis"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -90.18,
+     38.62
+    ]
+   },
+   "properties": {
+    "region": "mo",
+    "name": "St. Louis"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -90.18,
+     32.3
+    ]
+   },
+   "properties": {
+    "region": "ms",
+    "name": "Jackson"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -111.04,
+     45.68
+    ]
+   },
+   "properties": {
+    "region": "mt",
+    "name": "Bozeman"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -80.84,
+     35.23
+    ]
+   },
+   "properties": {
+    "region": "nc",
+    "name": "Charlotte"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -96.79,
+     46.88
+    ]
+   },
+   "properties": {
+    "region": "nd",
+    "name": "Fargo"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -95.93,
+     41.26
+    ]
+   },
+   "properties": {
+    "region": "ne",
+    "name": "Omaha"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -70.76,
+     43.08
+    ]
+   },
+   "properties": {
+    "region": "nh",
+    "name": "Portsmouth"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -74.42,
+     39.36
+    ]
+   },
+   "properties": {
+    "region": "nj",
+    "name": "Atlantic City"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -106.65,
+     35.08
+    ]
+   },
+   "properties": {
+    "region": "nm",
+    "name": "Albuquerque"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -115.17,
+     36.12
+    ]
+   },
+   "properties": {
+    "region": "nv",
+    "name": "Las Vegas Strip"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.97,
+     40.78
+    ]
+   },
+   "properties": {
+    "region": "ny",
+    "name": "Manhattan"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.0,
+     39.96
+    ]
+   },
+   "properties": {
+    "region": "oh",
+    "name": "Columbus"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -97.52,
+     35.47
+    ]
+   },
+   "properties": {
+    "region": "ok",
+    "name": "Oklahoma City"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -122.68,
+     45.52
+    ]
+   },
+   "properties": {
+    "region": "or",
+    "name": "Portland"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -80.0,
+     40.44
+    ]
+   },
+   "properties": {
+    "region": "pa",
+    "name": "Pittsburgh three rivers"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -66.11,
+     18.47
+    ]
+   },
+   "properties": {
+    "region": "pr",
+    "name": "San Juan"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -71.41,
+     41.82
+    ]
+   },
+   "properties": {
+    "region": "ri",
+    "name": "Providence"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.93,
+     32.78
+    ]
+   },
+   "properties": {
+    "region": "sc",
+    "name": "Charleston"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -96.73,
+     43.55
+    ]
+   },
+   "properties": {
+    "region": "sd",
+    "name": "Sioux Falls"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -86.78,
+     36.16
+    ]
+   },
+   "properties": {
+    "region": "tn",
+    "name": "Nashville"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -97.74,
+     30.27
+    ]
+   },
+   "properties": {
+    "region": "tx",
+    "name": "Austin"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -111.89,
+     40.76
+    ]
+   },
+   "properties": {
+    "region": "ut",
+    "name": "Salt Lake City"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -76.3,
+     36.93
+    ]
+   },
+   "properties": {
+    "region": "va",
+    "name": "Norfolk naval base"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -64.93,
+     18.34
+    ]
+   },
+   "properties": {
+    "region": "vi",
+    "name": "Charlotte Amalie"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.21,
+     44.48
+    ]
+   },
+   "properties": {
+    "region": "vt",
+    "name": "Burlington"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -122.33,
+     47.61
+    ]
+   },
+   "properties": {
+    "region": "wa",
+    "name": "Seattle"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.91,
+     43.04
+    ]
+   },
+   "properties": {
+    "region": "wi",
+    "name": "Milwaukee"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -81.63,
+     38.35
+    ]
+   },
+   "properties": {
+    "region": "wv",
+    "name": "Charleston"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -110.76,
+     43.48
+    ]
+   },
+   "properties": {
+    "region": "wy",
+    "name": "Jackson"
+   }
+  }
+ ]
+}
