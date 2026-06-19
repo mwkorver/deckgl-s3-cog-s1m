@@ -2086,6 +2086,33 @@
         return { layout: "pixel-interleaved", width, height, count: 4, data: adjusted };
       }
 
+      // Decoded-COG-tile cache shared across drape sub-tiles. Adjacent sub-tiles
+      // of the same S1M tile pick the same overview level (equal bbox span) and
+      // overlap on COG tiles at their shared edge, so without this each shared
+      // (source, level, tx, ty) would be fetched + colour-decoded once per
+      // sub-tile. Keyed on imageryRevision, which is bumped (and this cache
+      // cleared) on every imagery/display change, so entries never go stale. The
+      // decoded tiles are read-only, so sharing one array across sub-tiles is safe.
+      const S1M_COG_TILE_CACHE_MAX = 256;
+      const s1mCogTileCache = new Map();   // key -> Promise<decoded rgba tile>
+      function getDrapeCogTile(source, image, level, tx, ty) {
+        const key = `${source.id}@${level.width}x${level.height}@${tx},${ty}@${imageryRevision}`;
+        let pending = s1mCogTileCache.get(key);
+        if (pending) {
+          s1mCogTileCache.delete(key);     // LRU: move to most-recently-used
+          s1mCogTileCache.set(key, pending);
+          return pending;
+        }
+        pending = level.fetchTile(tx, ty, { boundless: false })
+          .then((tileData) => displayDrapeRgbaBytes(tileData.array, source, image))
+          .catch((error) => { s1mCogTileCache.delete(key); throw error; });
+        s1mCogTileCache.set(key, pending);
+        while (s1mCogTileCache.size > S1M_COG_TILE_CACHE_MAX) {
+          s1mCogTileCache.delete(s1mCogTileCache.keys().next().value);  // evict oldest
+        }
+        return pending;
+      }
+
       async function drapeProjectionForImage(image) {
         let pending = drapeProjectionCache.get(image);
         if (!pending) {
@@ -2184,8 +2211,8 @@
         const tilePromises = [];
         for (let ty = r0; ty <= r1; ty++) {
           for (let tx = c0; tx <= c1; tx++) {
-            tilePromises.push(level.fetchTile(tx, ty, { boundless: false }).then((tileData) => {
-              return [`${tx},${ty}`, displayDrapeRgbaBytes(tileData.array, source, image)];
+            tilePromises.push(getDrapeCogTile(source, image, level, tx, ty).then((rgba) => {
+              return [`${tx},${ty}`, rgba];
             }));
           }
         }
@@ -2464,6 +2491,7 @@
 
       function clearS1MDrapeImages() {
         s1mDrapeCache.clear();
+        s1mCogTileCache.clear();
         for (const cache of s1mTileCache.values()) {
           delete cache.drapeImage;
           delete cache.drapeKey;
