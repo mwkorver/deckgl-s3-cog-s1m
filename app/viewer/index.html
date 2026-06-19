@@ -1009,7 +1009,7 @@
           : null;
         const errorText = s1mDrapeMetrics.sourceError ? ` · source error: ${s1mDrapeMetrics.sourceError}` : "";
         const bucketText = ` · analytic refs ${s1mDrapeMetrics.analyticRefs}`;
-        const textureText = ` · texture ${s1mDrapeSize()}px · source cap ${S1M_MAX_DRAPE_SOURCES_PER_TILE}`;
+        const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${S1M_SUBDIV_MAX}×) · source cap ${S1M_MAX_DRAPE_SOURCES_PER_TILE}`;
         const hrefText = s1mDrapeMetrics.lastHref ? ` · last ${s1mDrapeMetrics.lastHref}` : "";
         el.textContent =
           `Drape ${s1mDrapeMetrics.mode} · source search ${fmtMs(s1mDrapeMetrics.sourceSearchMs)}` +
@@ -1405,8 +1405,9 @@
       const s1mTileCache = new Map();     // `${dataset}@${size}` -> {data, elevations, gpuMesh, layer}
       const s1mDrapeCache = new Map();    // `${dataset}@${size}@${imageryHref}@${revision}` -> Promise<ImageData>
       const S1M_MAX_TILES = 128;          // enough to cover wide/pitched views; LOD keeps edge tiles cheap
-      const S1M_DRAPE_SIZE = 256;         // per-terrain-tile NAIP RGBIR texture size
       const S1M_MAX_DRAPE_SOURCES_PER_TILE = 16;
+      const S1M_SUBTILE_DRAPE_SIZE = 512; // per NAIP drape sub-tile; effective res = subdiv × this
+      const S1M_SUBDIV_MAX = 8;           // cap on per-tile N×N drape sub-tiling
       let s1mMoveHandler = null;
       let s1mRefreshSeq = 0;              // guards against stale async refreshes
       let buildingFootprintSeq = 0;
@@ -1720,10 +1721,6 @@
         const w = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
         const h = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
         return w * h;
-      }
-
-      function s1mDrapeSize() {
-        return S1M_DRAPE_SIZE;
       }
 
       function drapeSourcesForTile(tile, sources = getTerrainDrapeSources()) {
@@ -2136,6 +2133,15 @@
         return [lon, lat];
       }
 
+      // Map a sub-tile-local uv (0..1 over the sub-tile) into the full tile's uv
+      // (uvRect = [u0, v0, u1, v1] in full-tile uv space), then to lon/lat. The
+      // whole-tile case is uvRect [0,0,1,1].
+      function s1mLngLatForSubUv(data, uvRect, u, v) {
+        const uFull = uvRect[0] + u * (uvRect[2] - uvRect[0]);
+        const vFull = uvRect[1] + v * (uvRect[3] - uvRect[1]);
+        return s1mLngLatForUv(data, uFull, vFull);
+      }
+
       function chooseDrapeImageLevel(geotiff, source, tileBbox, textureSize) {
         const levels = [geotiff, ...(geotiff.overviews || [])];
         const sourceBbox = source.bbox;
@@ -2149,18 +2155,19 @@
         }, levels[0]);
       }
 
-      async function paintNaipDrapeSource(data, tile, source, out, drapeSize) {
+      async function paintNaipDrapeSource(data, region, source, out, drapeSize) {
         const image = await resolveGeotiffSource(source, {
           concurrencyLimiter: s1mDrapeConcurrencyLimiter,
         });
-        const level = chooseDrapeImageLevel(image, source, tile.bbox, drapeSize);
+        const level = chooseDrapeImageLevel(image, source, region.bbox, drapeSize);
         const [tw, th] = [level.tileWidth, level.tileHeight];
         const sourceBbox = source.bbox;
         const toPixel = await drapePixelMapper(image, level);
-        const nw = s1mLngLatForUv(data, 0, 0);
-        const ne = s1mLngLatForUv(data, 1, 0);
-        const se = s1mLngLatForUv(data, 1, 1);
-        const sw = s1mLngLatForUv(data, 0, 1);
+        const toLngLat = (u, v) => s1mLngLatForSubUv(data, region.uvRect, u, v);
+        const nw = toLngLat(0, 0);
+        const ne = toLngLat(1, 0);
+        const se = toLngLat(1, 1);
+        const sw = toLngLat(0, 1);
         const sampleCorners = [
           toPixel(nw[0], nw[1]),
           toPixel(ne[0], ne[1]),
@@ -2188,7 +2195,7 @@
           const v = drapeSize > 1 ? y / (drapeSize - 1) : 0;
           for (let x = 0; x < drapeSize; x++) {
             const u = drapeSize > 1 ? x / (drapeSize - 1) : 0;
-            const [lon, lat] = s1mLngLatForUv(data, u, v);
+            const [lon, lat] = toLngLat(u, v);
             const dst = (y * drapeSize + x) * 4;
             if (out[dst + 3] > 0) continue;
             if (
@@ -2219,35 +2226,148 @@
         }
       }
 
-      async function buildNaipDrapeImage(data, tile, sources, drapeSize) {
+      async function buildNaipDrapeImage(data, region, sources, drapeSize) {
         const out = new Uint8ClampedArray(drapeSize * drapeSize * 4);
         for (const source of sources) {
-          await paintNaipDrapeSource(data, tile, source, out, drapeSize);
+          await paintNaipDrapeSource(data, region, source, out, drapeSize);
         }
         return new ImageData(out, drapeSize, drapeSize);
       }
 
-      function ensureS1MDrape(cache, tile, schedulePaint, seq) {
-        if (document.getElementById("ter-surface")?.value !== "naip" || cache.drapeImage) return;
-        const sources = drapeSourcesForTile(tile);
+      // --- NAIP drape sub-tiling -------------------------------------------------
+      // A single S1M tile covers ~10 km, so one stretched texture is coarse. In
+      // GPU + NAIP-drape mode each tile is split into an N×N grid of sub-tiles
+      // (N from projected screen size), each carrying its own 512² NAIP texture
+      // and a *sliced* elevation sub-grid -- both addressed by the same local
+      // 0..1 TEXCOORD_0, so TerrainMeshLayer/TerrainDisplace need no changes.
+      // Only sub-tiles intersecting the viewport are draped, so cost tracks the
+      // visible area rather than the whole (mostly off-screen) tile.
+
+      // Power-of-two subdivision so splits are clean and the cache key is stable.
+      function s1mSubdiv(tile) {
+        const px = s1mProjectedTilePixels(tile);
+        if (px >= 3000) return Math.min(8, S1M_SUBDIV_MAX);
+        if (px >= 1500) return Math.min(4, S1M_SUBDIV_MAX);
+        if (px >= 760) return Math.min(2, S1M_SUBDIV_MAX);
+        return 1;
+      }
+
+      // N+1 shared grid-index boundaries across [0..count-1]; adjacent sub-tiles
+      // share an edge row/col so meshes abut with no crack.
+      function s1mSubBoundaries(count, n) {
+        const b = [];
+        for (let i = 0; i <= n; i++) b.push(Math.round((i * (count - 1)) / n));
+        return b;
+      }
+
+      // Axis-aligned lon/lat bbox enclosing a sub-grid (the tile is slightly
+      // rotated by Albers convergence, so take the envelope of the four corners).
+      function s1mSubTileBbox(data, c0, c1, r0, r1) {
+        const W = data.width, H = data.height;
+        const corners = [
+          s1mLngLatForUv(data, c0 / (W - 1), r0 / (H - 1)),
+          s1mLngLatForUv(data, c1 / (W - 1), r0 / (H - 1)),
+          s1mLngLatForUv(data, c1 / (W - 1), r1 / (H - 1)),
+          s1mLngLatForUv(data, c0 / (W - 1), r1 / (H - 1)),
+        ];
+        const lons = corners.map((p) => p[0]);
+        const lats = corners.map((p) => p[1]);
+        return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+      }
+
+      // Sliced flat draped sub-mesh: POSITION in tile-centre ENU metres (same
+      // formula as s1mGpuMesh, so sub-tiles share the tile coordinateOrigin),
+      // TEXCOORD_0 local 0..1 across the sub-grid.
+      function s1mGpuSubMesh(data, c0, c1, r0, r1) {
+        const W = data.width, H = data.height;
+        const sx = data.step[0], sy = data.step[1];
+        const gw = c1 - c0 + 1, gh = r1 - r0 + 1;
+        const N = gw * gh;
+        const positions = new Float32Array(N * 3);
+        const texCoords = new Float32Array(N * 2);
+        const g = s1mConvergenceRad(data.center_lnglat[0]);
+        const cg = Math.cos(g), sg = Math.sin(g);
+        for (let r = r0; r <= r1; r++) {
+          for (let c = c0; c <= c1; c++) {
+            const i = (r - r0) * gw + (c - c0);
+            const ex = (c - (W - 1) / 2) * sx;
+            const ny = ((H - 1) / 2 - r) * sy;
+            positions[i * 3] = ex * cg + ny * sg;
+            positions[i * 3 + 1] = -ex * sg + ny * cg;
+            texCoords[i * 2] = gw > 1 ? (c - c0) / (gw - 1) : 0;
+            texCoords[i * 2 + 1] = gh > 1 ? (r - r0) / (gh - 1) : 0;
+          }
+        }
+        const idx = [];
+        for (let r = 0; r < gh - 1; r++) {
+          for (let c = 0; c < gw - 1; c++) {
+            const a = r * gw + c, b = a + 1, d = a + gw, e = d + 1;
+            idx.push(a, d, b, b, d, e);
+          }
+        }
+        return {
+          gw, gh,
+          mesh: {
+            indices: { value: new Uint32Array(idx), size: 1 },
+            attributes: {
+              POSITION: { value: positions, size: 3 },
+              TEXCOORD_0: { value: texCoords, size: 2 },
+            },
+          },
+          positions64Low: new Float32Array(N * 3),
+        };
+      }
+
+      // Build (once, cached on the tile entry) a sub-tile's geometry: sliced
+      // elevation sub-array + mesh + bbox + uvRect into the full tile.
+      function ensureSubTile(cache, ix, iy, n, bx, by) {
+        const subKey = `${n}:${ix},${iy}`;
+        if (!cache.subtiles) cache.subtiles = new Map();
+        let sub = cache.subtiles.get(subKey);
+        if (sub) return sub;
+        const data = cache.data;
+        const W = data.width, H = data.height;
+        const c0 = bx[ix], c1 = bx[ix + 1], r0 = by[iy], r1 = by[iy + 1];
+        const m = s1mGpuSubMesh(data, c0, c1, r0, r1);
+        const elev = new Float32Array(m.gw * m.gh);
+        for (let r = r0; r <= r1; r++) {
+          for (let c = c0; c <= c1; c++) {
+            elev[(r - r0) * m.gw + (c - c0)] = cache.elevations[r * W + c];
+          }
+        }
+        sub = {
+          ix, iy, N: n, c0, c1, r0, r1,
+          gpuMesh: m, gw: m.gw, gh: m.gh, elev,
+          bbox: s1mSubTileBbox(data, c0, c1, r0, r1),
+          uvRect: [c0 / (W - 1), r0 / (H - 1), c1 / (W - 1), r1 / (H - 1)],
+          drapeImage: null, drapeKey: null, drapePending: null,
+        };
+        cache.subtiles.set(subKey, sub);
+        return sub;
+      }
+
+      // Async-build a sub-tile's 512² NAIP texture (shared promise cache + drape
+      // metrics, like the old whole-tile path). Re-builds when imagery changes
+      // (revision is in the key).
+      function ensureSubTileDrape(data, sub, schedulePaint, seq) {
+        const region = { bbox: sub.bbox, uvRect: sub.uvRect };
+        const sources = drapeSourcesForTile(region);
         if (!sources.length) return;
-        const drapeSize = s1mDrapeSize();
-        cache.drapeSourceId = sources.map((source) => source.id).join(",");
-        const hrefKey = sources.map((source) => source.assets?.image?.href || source.id).join("|");
-        const key = `${tile.dataset}@${tile.size}@${hrefKey}@${imageryRevision}@${drapeSize}`;
+        const hrefKey = sources.map((s) => s.assets?.image?.href || s.id).join("|");
+        const key = `${data.dataset}@sub${sub.N}:${sub.ix},${sub.iy}@${hrefKey}@${imageryRevision}@${S1M_SUBTILE_DRAPE_SIZE}`;
+        if (sub.drapeKey === key || sub.drapePending === key) return;
         let pending = s1mDrapeCache.get(key);
         if (!pending) {
-          const tileStartedAt = performance.now();
-          const firstHref = sources[0]?.assets?.image?.href || null;
+          const startedAt = performance.now();
           s1mDrapeMetrics.tilesStarted += 1;
           s1mDrapeMetrics.tileSourceRefs += sources.length;
-          s1mDrapeMetrics.analyticRefs += sources.filter((source) => source?.assets?.image?.href?.startsWith("s3://naip-analytic/")).length;
+          s1mDrapeMetrics.analyticRefs += sources.filter((s) => s?.assets?.image?.href?.startsWith("s3://naip-analytic/")).length;
           s1mDrapeMetrics.lastSourceRefs = sources.length;
-          s1mDrapeMetrics.lastHref = firstHref;
+          s1mDrapeMetrics.lastHref = sources[0]?.assets?.image?.href || null;
           renderS1MDrapeMetrics();
-          pending = buildNaipDrapeImage(cache.data, tile, sources, drapeSize)
+          pending = buildNaipDrapeImage(data, region, sources, S1M_SUBTILE_DRAPE_SIZE)
             .then((imageData) => {
-              const elapsed = performance.now() - tileStartedAt;
+              const elapsed = performance.now() - startedAt;
               s1mDrapeMetrics.tilesCompleted += 1;
               s1mDrapeMetrics.totalTileMs += elapsed;
               s1mDrapeMetrics.lastTileMs = elapsed;
@@ -2256,21 +2376,90 @@
             })
             .catch((error) => {
               s1mDrapeMetrics.tilesFailed += 1;
-              s1mDrapeMetrics.lastTileMs = performance.now() - tileStartedAt;
+              s1mDrapeMetrics.lastTileMs = performance.now() - startedAt;
               renderS1MDrapeMetrics();
               throw error;
             });
           s1mDrapeCache.set(key, pending);
         }
+        sub.drapePending = key;
         pending.then((imageData) => {
           if (seq !== s1mRefreshSeq) return;
-          cache.drapeImage = imageData;
-          cache.drapeKey = key;
+          sub.drapeImage = imageData;
+          sub.drapeKey = key;
+          if (sub.drapePending === key) sub.drapePending = null;
           schedulePaint?.();
         }).catch((error) => {
-          cache.drapeError = error?.message || String(error);
-          console.error("Drape tile failed:", error);
+          if (sub.drapePending === key) sub.drapePending = null;
+          sub.drapeError = error?.message || String(error);
+          console.error("Drape sub-tile failed:", error);
         });
+      }
+
+      function buildS1MSubTileLayerGPU(data, sub, exag, range) {
+        const [zmin, zmax] = range || data.z_range;
+        const [clon, clat] = data.center_lnglat;
+        return new TerrainMeshLayerClass({
+          id: `s1m-terrain-${data.dataset}-${sub.N}-${sub.ix}-${sub.iy}`,
+          coordinateSystem: S1M_COORD.METER_OFFSETS,
+          coordinateOrigin: [clon, clat, 0],
+          mesh: sub.gpuMesh.mesh,
+          data: { length: 1, attributes: { positions64Low: sub.gpuMesh.positions64Low } },
+          elevationData: sub.elev,
+          gridWidth: sub.gw, gridHeight: sub.gh,
+          stepX: data.step[0], stepY: data.step[1],
+          exag, zmin, zspan: Math.max(1e-6, zmax - zmin), nodata: data.nodata,
+          drapeImage: sub.drapeImage || null,
+          wireframe: false,
+          parameters: { cullMode: "none" },
+          pickable: false,
+        });
+      }
+
+      // Layers for one S1M tile during a refresh: sub-tiled in GPU+NAIP-drape
+      // mode (viewport-culled, draping triggered for visible sub-tiles), else the
+      // single whole-tile layer (shaded GPU or CPU wireframe) as before.
+      function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, seq) {
+        const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
+        const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
+        const wantsDrape = document.getElementById("ter-surface")?.value === "naip";
+        if (!(gpu && !wireframe && wantsDrape) || !cache.elevations) {
+          return [s1mBuildTileLayer(cache, exag, range)];
+        }
+        const n = s1mSubdiv(tile);
+        const data = cache.data;
+        const bx = s1mSubBoundaries(data.width, n);
+        const by = s1mSubBoundaries(data.height, n);
+        // Prune sub-tiles from a previous subdivision / no longer in view.
+        if (cache.subtiles) {
+          for (const [k, s] of [...cache.subtiles]) {
+            if (s.N !== n || !bboxIntersects(s.bbox, viewBbox)) cache.subtiles.delete(k);
+          }
+        }
+        const layers = [];
+        for (let iy = 0; iy < n; iy++) {
+          for (let ix = 0; ix < n; ix++) {
+            const bbox = s1mSubTileBbox(data, bx[ix], bx[ix + 1], by[iy], by[iy + 1]);
+            if (!bboxIntersects(bbox, viewBbox)) continue;   // viewport cull
+            const sub = ensureSubTile(cache, ix, iy, n, bx, by);
+            ensureSubTileDrape(data, sub, schedulePaint, seq);
+            layers.push(buildS1MSubTileLayerGPU(data, sub, exag, range));
+          }
+        }
+        return layers.length ? layers : [s1mBuildTileLayer(cache, exag, range)];
+      }
+
+      // Rebuild a tile's layers from whatever is already cached (exag / colour /
+      // mode toggles -- no refetch, no new draping). Uses existing sub-tiles when
+      // present so exaggeration stays a free uniform update.
+      function s1mTileLayersFromCache(cache, exag, range) {
+        const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
+        const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
+        const wantsDrape = document.getElementById("ter-surface")?.value === "naip";
+        if (gpu && !wireframe && wantsDrape && cache.subtiles?.size) {
+          return [...cache.subtiles.values()].map((s) => buildS1MSubTileLayerGPU(cache.data, s, exag, range));
+        }
+        return [s1mBuildTileLayer(cache, exag, range)];
       }
 
       function clearS1MDrapeImages() {
@@ -2280,6 +2469,13 @@
           delete cache.drapeKey;
           delete cache.drapeError;
           delete cache.drapeSourceId;
+          if (cache.subtiles) {
+            for (const sub of cache.subtiles.values()) {
+              sub.drapeImage = null;
+              sub.drapeKey = null;
+              sub.drapePending = null;
+            }
+          }
         }
       }
 
@@ -2412,7 +2608,7 @@
         const exag = Number(document.getElementById("ter-exag").value) || 2;
         const range = s1mColorRange();
         s1mLayers = [...s1mTileCache.values()]
-          .map((c) => (c.layer = s1mBuildTileLayer(c, exag, range)))
+          .flatMap((c) => s1mTileLayersFromCache(c, exag, range))
           .filter(Boolean);
         updateImageryLayers();
       }
@@ -2465,47 +2661,37 @@
           paintQueued = false;
           if (seq !== s1mRefreshSeq) return;
           const range = s1mColorRange();  // absolute: fixed; adaptive: grows as tiles arrive
-          s1mLayers = [...desired.keys()]
-            .map((k) => {
-              const tile = desired.get(k);
-              if (!tile) return null;
-
-              // Find the best cached entry for this tile
-              let c = s1mTileCache.get(k); // try exact match first
-              if (!c) {
-                // Fallback to any other LOD size of the same dataset currently in cache
-                for (const cacheKey of s1mTileCache.keys()) {
-                  if (cacheKey.startsWith(tile.dataset + "@")) {
-                    c = s1mTileCache.get(cacheKey);
-                    break;
-                  }
-                }
+          const built = [];
+          let tilesDrawn = 0, subTotal = 0, subTextured = 0;
+          for (const k of desired.keys()) {
+            const tile = desired.get(k);
+            if (!tile) continue;
+            // Find the best cached entry for this tile (exact LOD, else any LOD).
+            let c = s1mTileCache.get(k);
+            if (!c) {
+              for (const cacheKey of s1mTileCache.keys()) {
+                if (cacheKey.startsWith(tile.dataset + "@")) { c = s1mTileCache.get(cacheKey); break; }
               }
-
-              if (c) {
-                // If it is the exact LOD match, ensure drape is loaded
-                if (c === s1mTileCache.get(k)) {
-                  ensureS1MDrape(c, tile, schedulePaint, seq);
-                }
-                return (c.layer = s1mBuildTileLayer(c, exag, range));
-              }
-              return null;
-            })
-            .filter(Boolean);
+            }
+            if (!c) continue;
+            const tileLayers = s1mBuildTileLayers(c, tile, exag, range, terrainBbox, schedulePaint, seq);
+            if (tileLayers.length) tilesDrawn += 1;
+            built.push(...tileLayers);
+            if (c.subtiles) {
+              for (const s of c.subtiles.values()) { subTotal += 1; if (s.drapeImage) subTextured += 1; }
+            }
+          }
+          s1mLayers = built;
           updateImageryLayers();
           const sizes = [...new Set([...desired.values()].map((t) => t.size))].sort((a, b) => a - b);
           const sizeText = sizes.length <= 1 ? `${sizes[0] ?? "-"}` : `${sizes[0]}-${sizes[sizes.length - 1]}`;
-          const drapedCount = [...desired.keys()].filter((k) => s1mTileCache.get(k)?.drapeImage).length;
           const canRenderDrape = !!document.getElementById("ter-gpu")?.checked &&
-            document.getElementById("ter-mode")?.value !== "wireframe";
-          const drapeText = canRenderDrape && document.getElementById("ter-surface")?.value === "naip"
-            ? ` · ${drapedCount}/${desired.size} textured`
-            : "";
-          const drapeErrorText = canRenderDrape && document.getElementById("ter-surface")?.value === "naip" && s1mDrapeSourceError
-            ? ` · drape search failed`
-            : "";
+            document.getElementById("ter-mode")?.value !== "wireframe" &&
+            document.getElementById("ter-surface")?.value === "naip";
+          const drapeText = canRenderDrape ? ` · ${subTextured}/${subTotal} drape sub-tiles` : "";
+          const drapeErrorText = canRenderDrape && s1mDrapeSourceError ? ` · drape search failed` : "";
           summaryEl.textContent = desired.size
-            ? `${s1mLayers.length}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}`
+            ? `${tilesDrawn}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}`
             : "No S1M coverage in view (CONUS only, still expanding).";
           // Re-seat footprints as elevation tiles arrive so bases catch up to the relief.
           if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();
@@ -2540,8 +2726,7 @@
                   s1mTileCache.delete(cacheKey);
                 }
               }
-              ensureS1MDrape(s1mTileCache.get(key), t, schedulePaint, seq);
-              schedulePaint();
+              schedulePaint();  // paint() sub-tiles + drapes the new tile
             } catch (_) { /* skip this tile */ }
           }
         };
