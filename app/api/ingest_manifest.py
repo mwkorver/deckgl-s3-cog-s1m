@@ -47,7 +47,7 @@ MANIFEST_PATH = Path(
 MANIFEST_INDEX_PATH = os.environ.get(
     "S3_COG_MANIFEST_INDEX",
     str(_CACHE_DIR / "manifest_index"),
-)
+).rstrip("/")
 
 FILENAME_RE = re.compile(
     r"^(?:m_)?(\d{7})_(ne|nw|se|sw)_(\d{1,2})_([a-z0-9]+)(?:_(\d{8})(?:_(\d{8}))?)?\.tif$",
@@ -798,5 +798,4 @@ def process_cog_headers_generic(rows, max_workers=8, request_payer=None, access=
                 failed.append((row["asset_href"], str(e)))
                 print(f"Failed to parse COG header for {row['asset_href']}: {e}", flush=True)
     return results, failed
-
 

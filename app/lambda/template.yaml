@@ -86,10 +86,10 @@ Resources:
           # s3:// prefix flips on the httpfs + credential_chain + requester-pays
           # branch in get_lake_duckdb(). /health proves the extension LOAD works
           # without needing the bucket populated.
-          # App output (footprint lake; SAM 3 detections later) lives under lake/
+          # App output (footprint lake) lives under lake/
           # in THIS deployer's single per-account bucket -- the viewer bucket --
           # not a separate lake bucket. The viewer bucket policy denies public
-          # read on lake/ + detections/, so app output stays private while the
+          # read on lake/, so app output stays private while the
           # same bucket serves the public viewer. S3_COG_MANIFEST_INDEX stays on the
           # shared, author-published cog-stac-catalog bucket (read-only, below).
           S3_COG_LAKE_ROOT: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"
@@ -110,7 +110,7 @@ Resources:
           # function. /environment surfaces this so the ingest panel POSTs there.
           S3_COG_INGEST_URL: !Ref IngestUrl
       Policies:
-        # App output (lake/ footprints, detections/ later) lives in THIS
+        # App output (lake/ footprints) lives in THIS
         # deployer's viewer bucket. /search only reads it -> read-only, scoped to
         # those prefixes (not the whole bucket, which also serves the public
         # viewer). ListBucket is needed for DuckDB's read_parquet glob expansion.
@@ -122,7 +122,6 @@ Resources:
               Action: s3:GetObject
               Resource:
                 - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/*"
-                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/detections/*"
         # Read-only on the SHARED, author-published bucket holding the prebuilt
         # manifest index (S3_COG_MANIFEST_INDEX = s3://cog-stac-catalog/manifest-index).
         # Deployers read this to skip the 404MB manifest download + index build;
@@ -181,7 +180,7 @@ Resources:
       BuildMethod: makefile
 
   # NOTE: there is no separate lake bucket. The app's PRIVATE output (lake/
-  # footprints, detections/ later) lives under prefixes in the per-account
+  # footprints) lives under prefixes in the per-account
   # viewer bucket, kept non-public by the foundation stack's bucket policy.
 
   # Static viewer hosting. The viewer (api/viewer) is pure HTML/JS that calls
@@ -192,8 +191,8 @@ Resources:
   # HTTP page calling the HTTPS Function URL is allowed (mixed-content blocking
   # only applies the other way). Add CloudFront later for HTTPS/custom domain.
   # NOTE: the per-account bucket (cog-stac-viewer-<acct>-<region>) is NOT
-  # declared here. It holds the app's PRIVATE data (lake/ footprints,
-  # detections/) and must OUTLIVE the stack -- a `sam delete` (shutdown/pause)
+  # declared here. It holds the app's PRIVATE data (lake/ footprints) and must
+  # OUTLIVE the stack -- a `sam delete` (shutdown/pause)
   # tears down the Lambdas but must never touch the bucket or its data -- and a
   # fresh `sam deploy` must reference an already-existing bucket instead of
   # colliding on the global S3 name. It is created and retained by the separate
@@ -250,5 +249,5 @@ Outputs:
     Description: Base invoke URL configured for the separately deployed COG STAC ingest function.
     Value: !Ref IngestUrl
   LakeRoot:
-    Description: Where the app writes its private GeoParquet output (footprint lake + SAM 3 detections) -- the lake/ prefix of this deployer's single per-account bucket (the viewer bucket).
+    Description: Where the app writes its private GeoParquet output -- the lake/ prefix of this deployer's single per-account bucket (the viewer bucket).
     Value: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"

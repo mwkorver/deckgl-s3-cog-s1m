@@ -39,7 +39,7 @@ DEFAULT_MANIFEST = os.environ.get(
 )
 DEFAULT_OUT = os.environ.get(
     "S3_COG_MANIFEST_INDEX", str(_CACHE_DIR / "manifest_index")
-)
+).rstrip("/")
 
 # ASCII unit separator: a byte that never appears in an S3 key, so read_csv
 # treats each line as a single 'key' column instead of splitting on commas.

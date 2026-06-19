@@ -2,7 +2,7 @@
 # BEFORE the per-account SAM app stack (cog-stac-read) is ever deployed:
 #
 #   1. the viewer S3 bucket  (cog-stac-viewer-<acct>-<region>)  -- public static
-#      viewer + the app's PRIVATE output (lake/ footprints, detections/).
+#      viewer + the app's PRIVATE output (lake/ footprints).
 #   2. the CloudFront CORS + cache proxy in front of the PUBLIC source COG buckets
 #      (KyFromAbove, New Jersey) -- adds CORS for browser range-reads and edge-
 #      caches tiles. (NAIP is requester-pays and stays on the presigned path.)
@@ -58,7 +58,7 @@ Rules:
 Resources:
 
   # ----- 1. Viewer / app-output bucket -------------------------------------
-  # Retain on stack delete: this holds the lake + detections the app wrote, so a
+  # Retain on stack delete: this holds the lake the app wrote, so a
   # `cloudformation delete-stack` (or `sam delete` of the app stack) must never
   # take the data with it.
   ViewerBucket:
@@ -88,7 +88,7 @@ Resources:
           Value: deck.gl-s3-cog
 
   # Public-read the viewer files, but DENY public reads of the app's PRIVATE
-  # output (lake/ + detections/). Anonymous requests carry no aws:PrincipalAccount,
+  # output (lake/). Anonymous requests carry no aws:PrincipalAccount,
   # so StringNotEquals matches and denies them; in-account principals (the Lambda
   # exec roles, the deployer) are unaffected and read via their own IAM.
   ViewerBucketPolicy:
@@ -109,7 +109,6 @@ Resources:
             Action: s3:GetObject
             Resource:
               - !Sub "arn:aws:s3:::${ViewerBucket}/lake/*"
-              - !Sub "arn:aws:s3:::${ViewerBucket}/detections/*"
             Condition:
               StringNotEquals:
                 aws:PrincipalAccount: !Ref "AWS::AccountId"

@@ -72,23 +72,6 @@
       .tab-panel.active {
         display: block;
       }
-      /* SAM Detect: resolution-feasibility chip (grounded in the imagery GSD). */
-      .feas-chip {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-size: 11px;
-        font-weight: 600;
-        line-height: 1.6;
-      }
-      .feas-yes { background: #064e3b; color: #6ee7b7; }
-      .feas-maybe { background: #4a3c0a; color: #fcd34d; }
-      .feas-no { background: #4c1d1d; color: #fca5a5; }
-      .det-row {
-        display: flex; justify-content: space-between; gap: 8px;
-        padding: 3px 0; border-bottom: 1px solid #1f2937; font-size: 13px;
-      }
-      .det-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; }
       .controls {
         display: grid;
         gap: 8px;
@@ -381,9 +364,6 @@
         <div class="section">
           <div class="tabs">
             <button class="tab-button active" data-tab="viewer">Viewer</button>
-            <button class="tab-button" data-tab="detect">Detect (SAM 3)</button>
-            <button class="tab-button" data-tab="terrain">Terrain (S1M)</button>
-            <button class="tab-button" data-tab="similar">Similar</button>
             <button class="tab-button" data-tab="ingest">Data Ingest</button>
             <button class="tab-button" data-tab="environment">Environment</button>
           </div>
@@ -401,10 +381,9 @@
           <div class="section">
             <h2>COG Footprints</h2>
             <div class="controls">
-              <label class="small">
-                Collection
-                <select id="collection"></select>
-              </label>
+              <div id="active-collection-summary" class="small muted">
+                Search collection follows the selected searchable collection above.
+              </div>
               <label class="small">
                 Region
                 <select id="state">
@@ -465,168 +444,10 @@
           </div>
 
           <div class="section">
-            <h2>Result summary</h2>
-            <div id="summary" class="muted">No search yet.</div>
-            <div id="timing-summary" class="small muted" style="margin-top:8px;">
-              Timing unavailable.
-            </div>
-            <div id="imagery-status" class="small status-warn" style="margin-top:8px;">
-              Imagery not requested yet.
-            </div>
-            <div id="resolution-debug" class="small muted" style="margin-top:8px;">
-              Resolution debug unavailable.
-            </div>
-          </div>
-
-          <div class="section">
-            <h2>Ordered sources</h2>
-            <div id="results"></div>
-          </div>
-        </div>
-
-        <div id="tab-detect" class="tab-panel">
-          <div class="section">
-            <h2>Concept</h2>
-            <div class="controls">
-              <label class="small">
-                Concept(s) to find <span class="muted">— comma-separated for higher recall</span>
-                <input id="det-concept" type="text" placeholder="e.g. building, rooftop, house" autocomplete="off" />
-              </label>
-              <div id="det-feasibility" class="small muted">
-                Enter a concept — feasibility is judged from the imagery resolution in view.
-                Multiple comma-separated concepts share one image encode and are merged (deduped).
-              </div>
-              <label class="small">
-                Detect area
-                <select id="det-chip">
-                  <option value="">Native 1008 px (small objects)</option>
-                  <option value="600">~600 m</option>
-                  <option value="1000">~1 km</option>
-                  <option value="2000">~2 km (big targets)</option>
-                </select>
-              </label>
-              <label class="small">
-                Min score <span id="det-score-val" class="muted">0.50</span>
-                <input id="det-score" type="range" min="0" max="1" step="0.05" value="0.5" />
-              </label>
-              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                <button id="det-run" class="search-active">Detect center chip</button>
-                <button id="det-clear">Clear</button>
-              </div>
-              <div id="det-encode-hint" class="small muted" style="display:none;"></div>
-            </div>
-          </div>
-          <div class="section">
-            <h2>Results</h2>
-            <div id="det-summary" class="muted">No detection run yet.</div>
-            <div id="det-results"></div>
-          </div>
-        </div>
-
-        <div id="tab-similar" class="tab-panel">
-          <div class="section">
-            <h2>Find similar (Clay embeddings)</h2>
+            <h2>Terrain (S1M)</h2>
             <div class="controls">
               <div class="small muted">
-                Pick a point on the map. The chip covering it is looked up in the
-                embedding lake and every chip in scope is ranked by cosine
-                similarity — semantic search, no GPU.
-              </div>
-              <label class="small">
-                Results (k) <span id="sim-k-val" class="muted">50</span>
-                <input id="sim-k" type="range" min="10" max="500" step="10" value="50" />
-              </label>
-              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                <button id="sim-pick" class="search-active">Pick point</button>
-                <button id="sim-clear">Clear</button>
-              </div>
-              <div class="small muted">
-                Scoped by the Viewer tab's state/year filters when set (blank = whole lake).
-              </div>
-            </div>
-          </div>
-          <div class="section">
-            <h2>Results</h2>
-            <div id="sim-summary" class="muted">No similarity search run yet.</div>
-            <div id="sim-results"></div>
-          </div>
-          <div class="section">
-            <h2>Verify candidates (SAM 3)</h2>
-            <div class="controls">
-              <div class="small muted">
-                Run text-prompted segmentation on the top candidates against the
-                newest imagery covering each chip — the stale-index /
-                fresh-verifier cascade.
-              </div>
-              <label class="small">
-                Concept
-                <input id="sim-verify-concept" type="text" placeholder="e.g. swimming pool, parking lot" autocomplete="off" />
-              </label>
-              <label class="small">
-                Top candidates to verify <span id="sim-verify-n-val" class="muted">3</span>
-                <input id="sim-verify-n" type="range" min="1" max="10" step="1" value="3" />
-              </label>
-              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                <button id="sim-verify-run" class="search-active">Verify candidates</button>
-              </div>
-              <div id="sim-verify-status" class="small muted"></div>
-            </div>
-          </div>
-        </div>
-
-        <div id="tab-ingest" class="tab-panel">
-          <div class="section">
-            <h2>Options</h2>
-            <div class="controls">
-              <label class="small">
-                Collection
-                <select id="ingest-collection"></select>
-              </label>
-              <button id="refresh-ingest-options">Find data to ingest (this view)</button>
-              <label class="small">
-                Region
-                <select id="ingest-state">
-                  <option value="">Select region</option>
-                </select>
-              </label>
-              <label class="small">
-                Year
-                <select id="ingest-year">
-                  <option value="">Select year</option>
-                </select>
-              </label>
-              <label class="small">
-                Strategy
-                <select id="ingest-strategy">
-                  <option value="manifest-cog-headers">Manifest + COG headers (complete)</option>
-                  <option value="manifest-earthsearch">Manifest + EarthSearch STAC (may be incomplete)</option>
-                </select>
-              </label>
-              <label class="small">
-                Max per partition (0 = unlimited)
-                <input id="ingest-limit" type="number" value="500" min="0" max="500" title="Set to 0 for unlimited (keeps going until finished)" />
-              </label>
-              <button id="run-ingest">Run ingest</button>
-            </div>
-          </div>
-          <div class="section">
-            <h2>Status</h2>
-            <div id="ingest-summary" class="muted">No ingest started.</div>
-          </div>
-          <div class="section">
-            <h2>Logs</h2>
-            <pre id="ingest-logs" class="log-box">No logs yet.</pre>
-          </div>
-        </div>
-
-        <div id="tab-terrain" class="tab-panel">
-          <div class="section">
-            <h2>USGS 3DEP Seamless 1m (S1M)</h2>
-            <div class="controls">
-              <div class="small muted">
-                Fills the viewport with S1M DEM tiles as a 3D mesh (not imagery)
-                and refreshes as you pan/zoom. Grid detail adapts to zoom. CONUS
-                only, still expanding. Pitch the map to see relief.
+                Viewport-tiled USGS 3DEP S1M DEM mesh. CONUS only; pitch the map to see relief.
               </div>
               <label class="small">
                 Vertical exaggeration <span id="ter-exag-val" class="muted">2.0&times;</span>
@@ -661,6 +482,10 @@
                   <option value="absolute">Absolute (fixed scale)</option>
                 </select>
               </label>
+              <label class="small" style="display:flex; align-items:center; gap:6px;">
+                <input id="ter-buildings" type="checkbox" />
+                Show buildings (3D) <span id="ter-buildings-status" class="muted">— Overture, footprints in the current view</span>
+              </label>
               <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                 <button id="ter-run" class="search-active">Show terrain in view</button>
                 <button id="ter-clear">Clear</button>
@@ -668,6 +493,76 @@
               <div id="ter-summary" class="muted">No terrain loaded.</div>
               <div id="ter-metrics" class="small muted">Drape metrics unavailable.</div>
             </div>
+          </div>
+
+          <div class="section">
+            <h2>Result summary</h2>
+            <div id="summary" class="muted">No search yet.</div>
+            <div id="timing-summary" class="small muted" style="margin-top:8px;">
+              Timing unavailable.
+            </div>
+            <div id="imagery-status" class="small status-warn" style="margin-top:8px;">
+              Imagery not requested yet.
+            </div>
+            <div id="resolution-debug" class="small muted" style="margin-top:8px;">
+              Resolution debug unavailable.
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Ordered sources</h2>
+            <div id="results"></div>
+          </div>
+        </div>
+
+        <div id="tab-ingest" class="tab-panel">
+          <div class="section">
+            <h2>Options</h2>
+            <div class="controls">
+              <label class="small">
+                S3 bucket
+                <input id="ingest-source-bucket" type="text" value="kyfromabove" placeholder="kyfromabove" />
+              </label>
+              <label class="small">
+                S3 prefix
+                <input id="ingest-source-prefix" type="text" value="imagery/orthos/Phase2/KY_KYAPED_2022_6IN/" placeholder="imagery/orthos/Phase2/KY_KYAPED_2022_6IN/" />
+              </label>
+              <label class="small">
+                Region
+                <input id="ingest-source-region" type="text" value="ky" maxlength="16" placeholder="ky" />
+              </label>
+              <label class="small">
+                Year
+                <input id="ingest-source-year" type="number" value="2022" min="1900" max="2100" />
+              </label>
+              <label class="small">
+                Access
+                <select id="ingest-source-access">
+                  <option value="public" selected>Public</option>
+                  <option value="private">Private/signed</option>
+                  <option value="requester-pays">Requester pays</option>
+                </select>
+              </label>
+              <label class="small">
+                Strategy
+                <select id="ingest-strategy">
+                  <option value="manifest-cog-headers" selected>COG headers</option>
+                </select>
+              </label>
+              <label class="small">
+                Max per partition (0 = unlimited)
+                <input id="ingest-limit" type="number" value="500" min="0" max="500" title="Set to 0 for unlimited (keeps going until finished)" />
+              </label>
+              <button id="run-ingest">Run ingest</button>
+            </div>
+          </div>
+          <div class="section">
+            <h2>Status</h2>
+            <div id="ingest-summary" class="muted">No ingest started.</div>
+          </div>
+          <div class="section">
+            <h2>Logs</h2>
+            <pre id="ingest-logs" class="log-box">No logs yet.</pre>
           </div>
         </div>
 
@@ -844,10 +739,12 @@
       // drive the closure-scoped map (jumpTo, fire) without UI gymnastics.
       window.__map = map;
 
-      const collectionEl = document.getElementById("collection");
       const stateEl = document.getElementById("state");
       const yearEl = document.getElementById("year");
-      const activeCollection = () => collectionEl.value || "naip";
+      const activeCollectionSummaryEl = document.getElementById("active-collection-summary");
+      let activeSearchCollectionId = "naip";
+      let searchableCollectionIds = new Set(["naip"]);
+      const activeCollection = () => activeSearchCollectionId || "naip";
       // The COG-imagery toggle renders the ACTIVE collection's tiles, so its label
       // tracks the selection (only one collection is "hot" at a time).
       function updateCogLayerLabel() {
@@ -856,6 +753,14 @@
         const id = activeCollection();
         const title = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
         el.textContent = `${title} Imagery (COG Tiles)`;
+      }
+      function renderActiveCollectionSummary() {
+        if (!activeCollectionSummaryEl) return;
+        const id = activeCollection();
+        const p = collectionById[id];
+        const title = (p && p.title) || id.toUpperCase();
+        activeCollectionSummaryEl.innerHTML =
+          `Search collection: <strong>${title}</strong> <span class="muted">(${id})</span>`;
       }
       const limitEl = document.getElementById("limit");
       // Default search `limit` (max footprints per /search). One source maps to
@@ -867,6 +772,8 @@
       const toggleCogEl = document.getElementById("toggle-cog-layer");
       const toggleUsgsNaipWmsLayerEl = document.getElementById("toggle-usgs-naip-wms-layer");
       const terBordersEl = document.getElementById("ter-borders");
+      const terBuildingsEl = document.getElementById("ter-buildings");
+      const terBuildingsStatusEl = document.getElementById("ter-buildings-status");
       const brightnessEl = document.getElementById("brightness");
       const brightnessValueEl = document.getElementById("brightness-value");
       const contrastEl = document.getElementById("contrast");
@@ -899,10 +806,11 @@
       const refreshEnvironmentBtn = document.getElementById("refresh-environment");
       const environmentChecksEl = document.getElementById("environment-checks");
       const environmentConfigEl = document.getElementById("environment-config");
-      const refreshIngestOptionsBtn = document.getElementById("refresh-ingest-options");
-      const ingestCollectionEl = document.getElementById("ingest-collection");
-      const ingestStateEl = document.getElementById("ingest-state");
-      const ingestYearEl = document.getElementById("ingest-year");
+      const ingestSourceBucketEl = document.getElementById("ingest-source-bucket");
+      const ingestSourcePrefixEl = document.getElementById("ingest-source-prefix");
+      const ingestSourceRegionEl = document.getElementById("ingest-source-region");
+      const ingestSourceYearEl = document.getElementById("ingest-source-year");
+      const ingestSourceAccessEl = document.getElementById("ingest-source-access");
       const ingestStrategyEl = document.getElementById("ingest-strategy");
       const ingestLimitEl = document.getElementById("ingest-limit");
       // Server-side sync ingest hard cap (S3_COG_SYNC_INGEST_MAX_LIMIT). Sending a
@@ -988,8 +896,11 @@
           // s3://<bucket>/<key> -> <TILE_BASE>/<bucket>/<key> (CF strips /<bucket>).
           const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3href);
           if (m) {
-            if (window.S3_COG_TILE_BASE) {
-              return `${String(window.S3_COG_TILE_BASE).replace(/\/+$/, "")}/${m[1]}/${m[2]}`;
+            const localTileBase =
+              ["localhost", "127.0.0.1", "::1"].includes(location.hostname) ? `${location.origin}/tiles` : "";
+            const tileBase = window.S3_COG_TILE_BASE || localTileBase;
+            if (tileBase) {
+              return `${String(tileBase).replace(/\/+$/, "")}/${m[1]}/${m[2]}`;
             }
             throw new Error("Public COG tile proxy is not configured (S3_COG_TILE_BASE)");
           }
@@ -1023,7 +934,6 @@
         }
         return pending;
       }
-      let ingestOptionsStateYears = {};
       let activeIngestJobId = null;
       let ingestStatusPollId = null;
       // "async" (thread+subprocess + polling) or "sync" (in-process,
@@ -1066,7 +976,7 @@
         return _memoImagerySources;
       }
       function getTerrainDrapeSources() {
-        return s1mDrapeSourceKey ? s1mDrapeSources : getImagerySources();
+        return s1mDrapeSourceKey && s1mDrapeSources.length ? s1mDrapeSources : getImagerySources();
       }
       function resetS1MDrapeMetrics() {
         s1mDrapeMetrics.mode = "analytic RGBIR";
@@ -1499,6 +1409,10 @@
       const S1M_MAX_DRAPE_SOURCES_PER_TILE = 16;
       let s1mMoveHandler = null;
       let s1mRefreshSeq = 0;              // guards against stale async refreshes
+      let buildingFootprintSeq = 0;
+      let buildingFootprintKey = "";
+      let buildingFeatureData = null;     // raw lon/lat FC from the API, pre terrain-seating
+      const BUILDING_MAX_FEATURES = 12000;  // viewport-scoped, so this is only a safety cap
 
       function updateImageryLayers() {
         if (!deckOverlay || !MosaicLayerClass || !COGLayerClass) {
@@ -1519,7 +1433,6 @@
               id: "naip-imagery",
               sources: imagerySources,
               revision: imageryRevision,
-              beforeId: "sam-det-fill",
               // Keep the default per-origin concurrency limiter (6 requests).
               // It's what queues the COG range fetches so MosaicLayer's
               // getPriority (distance to viewport center) can pull central
@@ -1867,6 +1780,192 @@
         });
       }
 
+      function emptyFeatureCollection() {
+        return { type: "FeatureCollection", features: [] };
+      }
+
+      function ensureBuildingFootprintLayers() {
+        if (!map.isStyleLoaded || !map.isStyleLoaded()) {
+          map.once("idle", ensureBuildingFootprintLayers);
+          return;
+        }
+        if (!map.getSource("overture-buildings")) {
+          map.addSource("overture-buildings", {
+            type: "geojson",
+            data: emptyFeatureCollection(),
+          });
+          // Extruded 3D buildings. base_z / top_z are baked per feature by
+          // applyBuildingExtrusionZ: the footprint is sampled against the loaded
+          // S1M elevation grids and lifted to sit on the displayed (exaggerated)
+          // terrain surface, so bases follow the ground instead of sea level.
+          // Colour is driven by the building's own height (top_z - base_z), which
+          // is terrain-offset independent.
+          map.addLayer({
+            id: "overture-buildings-fill",
+            type: "fill-extrusion",
+            source: "overture-buildings",
+            paint: {
+              "fill-extrusion-color": [
+                "interpolate", ["linear"],
+                ["-", ["get", "top_z"], ["get", "base_z"]],
+                0, "#0e7490",
+                15, "#22d3ee",
+                60, "#a5f3fc",
+              ],
+              "fill-extrusion-height": ["get", "top_z"],
+              "fill-extrusion-base": ["get", "base_z"],
+              "fill-extrusion-opacity": 0.85,
+              "fill-extrusion-vertical-gradient": true,
+            },
+          });
+          // No separate outline layer: MapLibre line layers drape flat at z=0 and
+          // would detach from the extrusions once they are lifted onto the terrain.
+        }
+      }
+
+      function setBuildingFootprints(fc) {
+        ensureBuildingFootprintLayers();
+        const source = map.getSource("overture-buildings");
+        if (source) source.setData(fc || emptyFeatureCollection());
+      }
+
+      function clearBuildingFootprints() {
+        buildingFootprintKey = "";
+        buildingFeatureData = null;
+        setBuildingFootprints(emptyFeatureCollection());
+        if (terBuildingsStatusEl) {
+          terBuildingsStatusEl.textContent = "— Overture, footprints in the current view";
+        }
+      }
+
+      function buildingBboxKey(bboxes) {
+        return JSON.stringify(bboxes.map((bbox) => bbox.map((value) => Number(value.toFixed(5)))));
+      }
+
+      // Bilinearly sample the loaded S1M elevation grids at a lon/lat, returning
+      // the ground elevation in metres (NAVD88), or null if no in-view tile covers
+      // the point. Inverts the same ENU/Albers-convergence placement the terrain
+      // mesh uses (see buildS1MTerrainLayer) so the sample lands where the tile is
+      // actually drawn. Decoded elevation arrays are cached per tile entry.
+      function sampleS1MGroundElevation(lng, lat) {
+        for (const c of s1mTileCache.values()) {
+          const d = c.data;
+          if (!d) continue;
+          const [clon, clat] = d.center_lnglat;
+          const W = d.width, H = d.height;
+          const [sx, sy] = d.step;
+          const mPerDegLat = 111320;
+          const mPerDegLon = 111320 * Math.cos((clat * Math.PI) / 180);
+          const east = (lng - clon) * mPerDegLon;
+          const north = (lat - clat) * mPerDegLat;
+          const g = s1mConvergenceRad(clon);
+          const cosG = Math.cos(g), sinG = Math.sin(g);
+          // Invert px = ex*cosG + ny*sinG, py = -ex*sinG + ny*cosG (px=east, py=north).
+          const ex = cosG * east - sinG * north;
+          const ny = sinG * east + cosG * north;
+          const col = ex / sx + (W - 1) / 2;
+          const row = (H - 1) / 2 - ny / sy;
+          if (col < 0 || col > W - 1 || row < 0 || row > H - 1) continue;
+          if (!c._elev) c._elev = s1mB64ToFloat32(d.elev_b64);
+          const elev = c._elev, nd = d.nodata;
+          const c0 = Math.floor(col), r0 = Math.floor(row);
+          const c1 = Math.min(W - 1, c0 + 1), r1 = Math.min(H - 1, r0 + 1);
+          const fc2 = col - c0, fr = row - r0;
+          const val = (rr, cc) => {
+            const z = elev[rr * W + cc];
+            return (z === nd || !Number.isFinite(z)) ? null : z;
+          };
+          const v00 = val(r0, c0), v01 = val(r0, c1), v10 = val(r1, c0), v11 = val(r1, c1);
+          const present = [v00, v01, v10, v11].filter((z) => z !== null);
+          if (!present.length) continue;
+          if (v00 === null || v01 === null || v10 === null || v11 === null) {
+            return present.reduce((a, b) => a + b, 0) / present.length;  // partial void: nearest-ish
+          }
+          const top = v00 * (1 - fc2) + v01 * fc2;
+          const bot = v10 * (1 - fc2) + v11 * fc2;
+          return top * (1 - fr) + bot * fr;
+        }
+        return null;
+      }
+
+      // Bake fill-extrusion base_z / top_z onto each cached footprint. Ground is
+      // sampled per building and mapped into the terrain's displayed altitude --
+      // (ground - zmin) * exag, matching the mesh baseline -- then the real
+      // building height/min_height ride on top so buildings sit on the relief.
+      // Returns how many footprints were seated on sampled terrain.
+      function applyBuildingExtrusionZ() {
+        if (!buildingFeatureData) return 0;
+        const exag = Number(document.getElementById("ter-exag")?.value) || 1;
+        const zmin = s1mColorRange()[0];
+        const haveTerrain = s1mTileCache.size > 0;
+        let seated = 0;
+        const features = (buildingFeatureData.features || []).map((f) => {
+          const p = f.properties || {};
+          const rawH = Number(p.height);
+          const height = Number.isFinite(rawH)
+            ? rawH
+            : (Number(p.num_floors) ? Number(p.num_floors) * 3.2 : 4);
+          const minH = Number(p.min_height) || 0;
+          let ground = 0;
+          if (haveTerrain && Array.isArray(f.bbox) && f.bbox.length === 4) {
+            const e = sampleS1MGroundElevation((f.bbox[0] + f.bbox[2]) / 2, (f.bbox[1] + f.bbox[3]) / 2);
+            if (e !== null) { ground = (e - zmin) * exag; seated++; }
+          }
+          return { ...f, properties: { ...p, base_z: ground + minH, top_z: ground + height } };
+        });
+        setBuildingFootprints({ type: "FeatureCollection", features });
+        return seated;
+      }
+
+      async function refreshBuildingFootprints() {
+        if (!terBuildingsEl?.checked) {
+          clearBuildingFootprints();
+          return;
+        }
+        if (!s1mActive) {
+          buildingFeatureData = null;
+          buildingFootprintKey = "";
+          setBuildingFootprints(emptyFeatureCollection());
+          if (terBuildingsStatusEl) terBuildingsStatusEl.textContent = "— enable terrain first";
+          return;
+        }
+        const b = map.getBounds();
+        const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+        const key = buildingBboxKey([bbox]);
+        if (key === buildingFootprintKey) return;
+        buildingFootprintKey = key;
+        const seq = ++buildingFootprintSeq;
+        if (terBuildingsStatusEl) terBuildingsStatusEl.textContent = "— loading footprints in view...";
+        try {
+          const response = await apiFetch("/buildings/overture", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ bboxes: [bbox], limit: BUILDING_MAX_FEATURES }),
+          });
+          if (!response.ok) {
+            let detail = `${response.status}`;
+            try { detail += ` ${await response.text()}`; } catch (_) { /* ignore */ }
+            throw new Error(detail);
+          }
+          const fc = await response.json();
+          if (seq !== buildingFootprintSeq) return;
+          buildingFeatureData = fc;
+          const seated = applyBuildingExtrusionZ();
+          const count = (fc.features || []).length;
+          if (terBuildingsStatusEl) {
+            const capped = count >= BUILDING_MAX_FEATURES ? "+" : "";
+            terBuildingsStatusEl.textContent =
+              `— ${count.toLocaleString()}${capped} in view${seated ? `, ${seated.toLocaleString()} on terrain` : ""}`;
+          }
+        } catch (error) {
+          if (seq !== buildingFootprintSeq) return;
+          buildingFeatureData = null;
+          setBuildingFootprints(emptyFeatureCollection());
+          if (terBuildingsStatusEl) terBuildingsStatusEl.textContent = `— failed: ${error?.message || error}`;
+          console.error("Building footprints failed:", error);
+        }
+      }
+
       async function ensureS1MDrapeSources(bbox, seq, schedulePaint) {
         if (document.getElementById("ter-surface")?.value !== "naip") return getTerrainDrapeSources();
         const body = s1mDrapeSearchBody(bbox);
@@ -1880,10 +1979,15 @@
           return s1mDrapeSourcePending || s1mDrapeSources;
         }
 
+        const fallbackSources = mostRecentNaipSources(getImagerySources());
         s1mDrapeSourceKey = key;
-        s1mDrapeSources = [];
+        s1mDrapeSources = fallbackSources;
         s1mDrapeSourceError = null;
         resetS1MDrapeMetrics();
+        if (fallbackSources.length) {
+          s1mDrapeMetrics.sourceRawCount = fallbackSources.length;
+          s1mDrapeMetrics.sourceCount = fallbackSources.length;
+        }
         clearS1MDrapeImages();
         const sourceSearchStartedAt = performance.now();
         s1mDrapeSourcePending = apiFetch("/search", {
@@ -1892,7 +1996,13 @@
           body: JSON.stringify(body),
         }).then(async (response) => {
           if (!response.ok) {
-            throw new Error(`terrain drape search failed: ${response.status}`);
+            let detail = "";
+            try {
+              detail = await response.text();
+            } catch (_) {
+              detail = "";
+            }
+            throw new Error(`terrain drape search failed: ${response.status}${detail ? ` ${detail.slice(0, 180)}` : ""}`);
           }
           const data = await response.json();
           const rawSources = (data.features || []).filter(
@@ -1912,14 +2022,16 @@
           return sources;
         }).catch((error) => {
           if (s1mDrapeSourceKey === key) {
-            s1mDrapeSourceError = error?.message || String(error);
+            s1mDrapeSources = fallbackSources;
+            s1mDrapeSourceError = fallbackSources.length ? null : (error?.message || String(error));
             s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
             s1mDrapeMetrics.sourceError = s1mDrapeSourceError;
-            s1mDrapeSources = [];
+            s1mDrapeMetrics.sourceRawCount = fallbackSources.length;
+            s1mDrapeMetrics.sourceCount = fallbackSources.length;
             renderS1MDrapeMetrics();
             if (seq === s1mRefreshSeq) schedulePaint?.();
           }
-          return [];
+          return fallbackSources;
         }).finally(() => {
           if (s1mDrapeSourceKey === key) {
             s1mDrapeSourcePending = null;
@@ -2333,6 +2445,7 @@
           const size = s1mLodSize(t);
           return [`${t.dataset}@${size}`, { ...t, size }];
         }));
+        refreshBuildingFootprints();
 
         // desired preserves the server's centre-out order (Map keeps insertion order).
         const desired = s1mActiveTiles;
@@ -2394,6 +2507,8 @@
           summaryEl.textContent = desired.size
             ? `${s1mLayers.length}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}`
             : "No S1M coverage in view (CONUS only, still expanding).";
+          // Re-seat footprints as elevation tiles arrive so bases catch up to the relief.
+          if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();
         };
         const schedulePaint = () => { if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); } };
 
@@ -2476,6 +2591,7 @@
         s1mDrapeSourceError = null;
         resetS1MDrapeMetrics();
         s1mLayers = [];
+        clearBuildingFootprints();
         updateImageryLayers();
         const el = document.getElementById("ter-summary");
         if (el) el.textContent = "No terrain loaded.";
@@ -2608,7 +2724,6 @@
         tabPanels.forEach((panel) => {
           panel.classList.toggle("active", panel.id === `tab-${tabName}`);
         });
-        if (typeof updateDetectChip === "function") updateDetectChip();
       }
 
       function renderKeyValue(target, values) {
@@ -2687,96 +2802,34 @@
         }
       }
 
-      function updateIngestYears() {
-        const years = ingestOptionsStateYears[ingestStateEl.value] || [];
-        ingestYearEl.innerHTML = '<option value="">Select year</option>';
-        years.forEach((year) => {
-          const option = document.createElement("option");
-          option.value = String(year);
-          option.textContent = String(year);
-          ingestYearEl.appendChild(option);
-        });
+      function sanitizeCollectionId(value) {
+        return (value || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "s3-source";
       }
 
-      function ingestCollection() { return ingestCollectionEl.value || "naip"; }
-
-      async function refreshIngestOptions() {
-        ingestSummaryEl.textContent = "Finding data to ingest in this view…";
-        const previousState = ingestStateEl.value;
-        const previousYear = ingestYearEl.value;
-        try {
-          const response = await apiFetch("/ingest/options", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ bbox: currentBbox(), collection: ingestCollection() }),
-          });
-          const data = await response.json();
-          // Populate the Collection dropdown from the ingestable collections the
-          // backend reports (first call / when it changes).
-          const cols = data.collections || ["naip"];
-          if (cols.join(",") !== Array.from(ingestCollectionEl.options).map((o) => o.value).join(",")) {
-            const prevCol = ingestCollection();
-            ingestCollectionEl.innerHTML = "";
-            cols.forEach((id) => {
-              const o = document.createElement("option");
-              o.value = id;
-              o.textContent = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
-              ingestCollectionEl.appendChild(o);
-            });
-            ingestCollectionEl.value = cols.includes(prevCol) ? prevCol : cols[0];
-          }
-          ingestOptionsStateYears = {};
-          ingestStateEl.innerHTML = '<option value="">Select region</option>';
-          (data.states || []).forEach((entry) => {
-            ingestOptionsStateYears[entry.state] = entry.years || [];
-            const option = document.createElement("option");
-            option.value = entry.state;
-            option.textContent = `${entry.state.toUpperCase()} (${(entry.years || []).join(", ")})`;
-            ingestStateEl.appendChild(option);
-          });
-          
-          if (previousState && ingestOptionsStateYears[previousState]) {
-            ingestStateEl.value = previousState;
-          }
-          // Single-region collection (e.g. KyFromAbove = just "ky"): auto-select
-          // it so the Year dropdown populates without making the user pick the lone
-          // region. (NAIP has many regions -> leave on "Select region".)
-          const regionIds = (data.states || []).map((e) => e.state);
-          if (!ingestStateEl.value && regionIds.length === 1) {
-            ingestStateEl.value = regionIds[0];
-          }
-
-          const strategyOptions = {};
-          (data.strategies || []).forEach((strategy) => {
-            strategyOptions[strategy.id] = strategy;
-          });
-          // Disable strategies the backend did NOT offer for this collection
-          // (e.g. EarthSearch is NAIP-only; an S3-prefix collection like
-          // KyFromAbove returns only COG-headers, so EarthSearch must be off,
-          // not silently a no-op).
-          Array.from(ingestStrategyEl.options).forEach((option) => {
-            const strategy = strategyOptions[option.value];
-            option.disabled = strategy ? !strategy.available : true;
-            option.textContent = strategy?.detail && !strategy.available
-              ? `${strategy.label} (unavailable)`
-              : strategy?.label || option.textContent;
-          });
-          // If the current selection is now disabled, fall back to the first
-          // enabled strategy so we never submit an unsupported one.
-          if (ingestStrategyEl.selectedOptions[0]?.disabled) {
-            const firstEnabled = Array.from(ingestStrategyEl.options).find((o) => !o.disabled);
-            if (firstEnabled) ingestStrategyEl.value = firstEnabled.value;
-          }
-          updateIngestYears();
-          
-          if (previousState && ingestOptionsStateYears[previousState] && ingestOptionsStateYears[previousState].map(String).includes(previousYear)) {
-            ingestYearEl.value = previousYear;
-          }
-          
-          ingestSummaryEl.textContent = `Loaded ${(data.states || []).length} states from current view.`;
-        } catch (error) {
-          ingestSummaryEl.textContent = `Failed to load ingest options: ${error?.message || error}`;
-        }
+      function ingestSourcePayload() {
+        const bucket = ingestSourceBucketEl.value.trim();
+        const prefix = ingestSourcePrefixEl.value.trim().replace(/^\/+/, "");
+        const region = ingestSourceRegionEl.value.trim().toLowerCase();
+        const yearRaw = ingestSourceYearEl.value.trim();
+        const year = yearRaw ? Number(yearRaw) : NaN;
+        if (!bucket) throw new Error("Enter an S3 bucket.");
+        if (!region) throw new Error("Enter a region partition, for example ky.");
+        if (!Number.isInteger(year)) throw new Error("Enter a numeric year.");
+        return {
+          collection: sanitizeCollectionId(bucket.startsWith("s3://") ? bucket.slice(5).split("/")[0] : bucket),
+          source_bucket: bucket,
+          source_prefix: prefix,
+          source_region: region,
+          source_year: year,
+          source_access: ingestSourceAccessEl.value || "public",
+          state: region,
+          year,
+          strategy: ingestStrategyEl.value || "manifest-cog-headers",
+          limit_per_partition: ingestLimitPerPartition(),
+        };
       }
 
       async function pollIngestStatus(jobId) {
@@ -2792,7 +2845,6 @@
           } else {
             ingestStatusPollId = null;
             await refreshEnvironment();
-            await refreshIngestOptions();
             // A completed ingest adds a state/year to the lake, so refresh the
             // Viewer's State->Year availability dropdowns to surface it (the
             // currently-selected state is preserved by refreshAvailability).
@@ -2844,12 +2896,11 @@
       }
 
       async function runIngest() {
-        if (!ingestStateEl.value) {
-          ingestSummaryEl.textContent = "Select a state before running ingest.";
-          return;
-        }
-        if (!ingestYearEl.value) {
-          ingestSummaryEl.textContent = "Select a year before running ingest.";
+        let payload;
+        try {
+          payload = ingestSourcePayload();
+        } catch (error) {
+          ingestSummaryEl.textContent = error?.message || String(error);
           return;
         }
         if (ingestStatusPollId) {
@@ -2881,13 +2932,7 @@
           const response = await apiFetch("/ingest/run", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              collection: ingestCollection(),
-              state: ingestStateEl.value,
-              year: Number(ingestYearEl.value),
-              strategy: ingestStrategyEl.value,
-              limit_per_partition: ingestLimitPerPartition(),
-            }),
+            body: JSON.stringify(payload),
           });
           if (!response.ok) {
             const text = await response.text();
@@ -2911,16 +2956,11 @@
         ingestSummaryEl.textContent = "Running ingest (synchronous)…";
         ingestLogsEl.textContent = "Running ingest (synchronous)…";
         try {
+          const payload = ingestSourcePayload();
           const response = await fetch(`${baseUrl || API_BASE}/ingest/run-sync`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              collection: ingestCollection(),
-              state: ingestStateEl.value,
-              year: Number(ingestYearEl.value),
-              strategy: ingestStrategyEl.value,
-              limit_per_partition: ingestLimitPerPartition(),
-            }),
+            body: JSON.stringify(payload),
           });
           const data = await response.json();
           if (!response.ok) {
@@ -2937,7 +2977,6 @@
             `Completed · ${data.state} ${data.year} · ${data.rows_ingested} rows · ${data.elapsed_ms} ms`;
           ingestLogsEl.textContent = JSON.stringify(data, null, 2);
           await refreshEnvironment();
-          await refreshIngestOptions();
           await refreshAvailability();
         } catch (error) {
           console.error("Sync ingest failed:", error);
@@ -3413,24 +3452,22 @@
         }
       }
 
-      // Populate the Collection dropdown from the collections actually present in
-      // the lake (/collections), labeled via the registry (collections.geojson)
-      // when known. Default to naip.
+      // Populate the set of collections actually present in the lake
+      // (/collections). The "Collections in View" rows are the selector.
       async function refreshCollections() {
         try {
           const response = await apiFetch(`/collections`);
           const data = await response.json();
           const ids = (data.collections || []).map((c) => c.id);
           if (!ids.length) ids.push("naip");
-          const prev = collectionEl.value;
-          collectionEl.innerHTML = "";
-          ids.forEach((id) => {
-            const o = document.createElement("option");
-            o.value = id;
-            o.textContent = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
-            collectionEl.appendChild(o);
-          });
-          collectionEl.value = ids.includes(prev) ? prev : (ids.includes("naip") ? "naip" : ids[0]);
+          searchableCollectionIds = new Set(ids);
+          const prev = activeSearchCollectionId;
+          activeSearchCollectionId = ids.includes(prev) ? prev : (ids.includes("naip") ? "naip" : ids[0]);
+          if (!selectedCollectionId || !collectionById[selectedCollectionId]) {
+            selectedCollectionId = activeSearchCollectionId;
+          }
+          renderActiveCollectionSummary();
+          updateCollectionsHere();
         } catch (error) {
           console.error("collections fetch failed:", error);
         }
@@ -3440,6 +3477,16 @@
         const prevState = stateEl.value;
         try {
           const response = await apiFetch(`/availability?collection=${encodeURIComponent(activeCollection())}`);
+          if (!response.ok) {
+            let detail = `${response.status}`;
+            try {
+              const payload = await response.json();
+              detail += payload?.detail ? ` ${payload.detail}` : "";
+            } catch (_) {
+              try { detail += ` ${await response.text()}`; } catch (_) { /* ignore */ }
+            }
+            throw new Error(detail);
+          }
           const data = await response.json();
           searchAvailability = (data && data.states) || {};
           searchAvailabilityGsd = (data && data.gsd) || {};
@@ -3456,16 +3503,22 @@
           if (prevState && searchAvailability[prevState]) stateEl.value = prevState;
           else stateEl.value = "";
           populateSearchYears();
+          return true;
         } catch (error) {
           console.error("availability fetch failed:", error);
+          searchAvailability = {};
+          searchAvailabilityGsd = {};
+          searchAvailabilityExtent = {};
+          stateEl.innerHTML = '<option value="">Availability failed</option>';
+          yearEl.innerHTML = '<option value="">Unavailable</option>';
+          summaryEl.innerHTML = `
+            <span style="color:#f87171; font-weight:bold;">Availability failed for ${activeCollection()}.</span>
+            <div class="small muted" style="margin-top:4px;">${error?.message || error}</div>
+          `;
+          return false;
         }
       }
 
-      collectionEl.addEventListener("change", async () => {
-        updateCogLayerLabel();
-        await refreshAvailability();   // repopulate Region/Year for the new collection
-        queueSearch("auto");
-      });
       stateEl.addEventListener("change", () => {
         populateSearchYears();
         queueSearch("auto");
@@ -3478,204 +3531,9 @@
         button.addEventListener("click", () => switchTab(button.dataset.tab));
       });
       refreshEnvironmentBtn.addEventListener("click", refreshEnvironment);
-      refreshIngestOptionsBtn.addEventListener("click", refreshIngestOptions);
-      ingestCollectionEl.addEventListener("change", refreshIngestOptions);
-      ingestStateEl.addEventListener("change", updateIngestYears);
       runIngestBtn.addEventListener("click", runIngest);
 
-      // ===== Detect (SAM 3) tab =============================================
-      // POST /detect: DuckDB picks the covering COG, rasterio reads a chip,
-      // SAM 3 subprocess runs with a text prompt, pixel bboxes are reprojected
-      // to EPSG:4326 and returned as a GeoJSON FeatureCollection.
-      const detConceptEl = document.getElementById("det-concept");
-      const detFeasEl = document.getElementById("det-feasibility");
-      const detScoreEl = document.getElementById("det-score");
-      const detScoreValEl = document.getElementById("det-score-val");
-      const detChipEl = document.getElementById("det-chip");
-      // Ground meters of the detect window, or null for a native 1008px chip.
-      function detectChipMeters() {
-        const v = Number(detChipEl.value);
-        return Number.isFinite(v) && v > 0 ? v : null;
-      }
-      const detRunEl = document.getElementById("det-run");
-      const detClearEl = document.getElementById("det-clear");
-      const detSummaryEl = document.getElementById("det-summary");
-      const detResultsEl = document.getElementById("det-results");
-      const detEncodeHintEl = document.getElementById("det-encode-hint");
-
-      // Typical smallest meaningful dimension (m) per concept -> feasibility + box size.
-      const CONCEPT_SIZES = {
-        "car": 4.5, "truck": 8, "bus": 12, "swimming pool": 6, "pool": 6,
-        "boat": 6, "ship": 30, "rooftop": 12, "roof": 12, "building": 12,
-        "house": 10, "solar panel": 1.6, "solar farm": 50, "tree": 6,
-        "parking lot": 30, "tennis court": 11, "shipping container": 2.5,
-        "storage tank": 15, "grain silo": 8, "airplane": 30,
-        "rooftop hvac unit": 1.5, "hvac": 1.5, "road": 6, "sidewalk": 1.5,
-      };
-      function conceptSizeM(concept) {
-        const c = (concept || "").toLowerCase().trim();
-        if (!c) return null;
-        if (CONCEPT_SIZES[c]) return CONCEPT_SIZES[c];
-        for (const k in CONCEPT_SIZES) if (c.includes(k) || k.includes(c)) return CONCEPT_SIZES[k];
-        return 5;
-      }
-      function currentGsd() {
-        const f = lastSearchFeatures && lastSearchFeatures[0];
-        const g = Number(f && (f.properties ? f.properties.gsd : f.gsd));
-        return Number.isFinite(g) && g > 0 ? g : 0.6; // default 60 cm
-      }
-      function colorForConcept(concept) {
-        let h = 0; for (const ch of (concept || "x")) h = (h * 31 + ch.charCodeAt(0)) % 360;
-        return `hsl(${h}, 80%, 55%)`;
-      }
-      // /detect reads a fixed 1008-px window centered on the viewport center
-      // (server collapses the bbox to its midpoint), so draw that exact chip
-      // footprint while the Detect tab is open. Ground size = 1008 * GSD.
-      const DETECT_CHIP_PX = 1008;
-      function detectChipFeature() {
-        const c = map.getCenter();
-        // chip_m if set, else the native 1008px window's ground size.
-        const groundM = detectChipMeters() || (DETECT_CHIP_PX * currentGsd());
-        const halfM = groundM / 2;
-        const dLat = halfM / 111320;
-        const dLon = halfM / (111320 * Math.cos(c.lat * Math.PI / 180));
-        const [w, e, s, n] = [c.lng - dLon, c.lng + dLon, c.lat - dLat, c.lat + dLat];
-        return { type: "Feature",
-          geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
-          properties: {} };
-      }
-      function updateDetectChip() {
-        const active = document.querySelector('.tab-button[data-tab="detect"]').classList.contains("active");
-        if (!map.isStyleLoaded || !map.isStyleLoaded()) { map.once("idle", updateDetectChip); return; }
-        const fc = active
-          ? { type: "FeatureCollection", features: [detectChipFeature()] }
-          : { type: "FeatureCollection", features: [] };
-        if (!map.getSource("detect-chip")) {
-          map.addSource("detect-chip", { type: "geojson", data: fc });
-          map.addLayer({ id: "detect-chip-line", type: "line", source: "detect-chip",
-            paint: { "line-color": "#00e5ff", "line-width": 2, "line-dasharray": [2, 1] } });
-        } else {
-          map.getSource("detect-chip").setData(fc);
-          if (map.getLayer("detect-chip-line")) map.moveLayer("detect-chip-line");
-        }
-      }
-      function updateFeasibility() {
-        const concept = detConceptEl.value.trim();
-        const gsd = currentGsd();
-        const size = conceptSizeM(concept);
-        if (!concept) {
-          detFeasEl.innerHTML = "Enter a concept — feasibility is judged from the imagery resolution in view.";
-          return;
-        }
-        const minDet = 10 * gsd, marginal = 6 * gsd;
-        let cls, label;
-        if (size >= minDet) { cls = "feas-yes"; label = "feasible"; }
-        else if (size >= marginal) { cls = "feas-maybe"; label = "marginal"; }
-        else { cls = "feas-no"; label = "too small at this resolution"; }
-        detFeasEl.innerHTML =
-          `<span class="feas-chip ${cls}">${label}</span> ` +
-          `<span class="muted">~${size} m object · imagery ${gsd.toFixed(2)} m/px ` +
-          `(≈${(size / gsd).toFixed(0)} px)</span>`;
-      }
-      let lastDetAoiKey = null;
-      async function detect() {
-        const concept = detConceptEl.value.trim();
-        if (!concept) { detSummaryEl.textContent = "Enter a concept first."; return; }
-        const bbox = currentBbox();
-        const score = Number(detScoreEl.value);
-        const color = colorForConcept(concept);
-
-        detSummaryEl.textContent = "Running SAM 3 inference...";
-        detResultsEl.innerHTML = "";
-        detEncodeHintEl.style.display = "none";
-        detRunEl.disabled = true;
-
-        const body = {
-          bbox: bbox,
-          concept: concept,
-          score_thresh: score,
-          collection: activeCollection(),
-          region: stateEl.value || null,
-          year: yearEl.value ? Number(yearEl.value) : null,
-          chip_m: detectChipMeters()
-        };
-
-        try {
-          const response = await apiFetch("/detect", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body)
-          });
-
-          if (!response.ok) {
-            const text = await response.text();
-            detSummaryEl.textContent = `Error: ${response.status} ${text}`;
-            return;
-          }
-
-          const fc = await response.json();
-          drawDetections(fc);
-
-          const count = fc.features.length;
-          // Group by concept (multi-prompt union returns mixed concepts, deduped).
-          const byConcept = {};
-          for (const f of fc.features) {
-            const c = f.properties.concept || concept;
-            byConcept[c] = (byConcept[c] || 0) + 1;
-          }
-          detSummaryEl.innerHTML =
-            `<strong>${count}</strong> detected · score ≥ ${score.toFixed(2)}` +
-            (Object.keys(byConcept).length > 1 ? ` · union of ${Object.keys(byConcept).length} concepts (deduped)` : "");
-          detResultsEl.innerHTML = Object.entries(byConcept)
-            .sort((a, b) => b[1] - a[1])
-            .map(([c, n]) =>
-              `<div class="det-row"><span><span class="det-swatch" style="background:${colorForConcept(c)}"></span>${c}</span><span>${n}</span></div>`)
-            .join("");
-
-          const aoiKey = bbox.map((v) => v.toFixed(3)).join(",");
-          if (aoiKey === lastDetAoiKey) {
-            detEncodeHintEl.style.display = "";
-            detEncodeHintEl.textContent = "AOI already encoded ✓ — extra concepts here are ~4× faster (decode only).";
-          } else {
-            detEncodeHintEl.style.display = "";
-            detEncodeHintEl.textContent = "AOI encoded — try another concept (no re-encode needed).";
-            lastDetAoiKey = aoiKey;
-          }
-          updateFeasibility();
-        } catch (error) {
-          console.error("Detect failed:", error);
-          detSummaryEl.textContent = `Error: ${error.message}`;
-        } finally {
-          detRunEl.disabled = false;
-        }
-      }
       function emptyFC() { return { type: "FeatureCollection", features: [] }; }
-      function drawDetections(fc) {
-        if (!map.isStyleLoaded || !map.isStyleLoaded()) { map.once("idle", () => drawDetections(fc)); return; }
-        if (map.getSource("sam-detections")) { 
-          map.getSource("sam-detections").setData(fc); 
-          if (map.getLayer("sam-det-fill")) map.moveLayer("sam-det-fill");
-          if (map.getLayer("sam-det-line")) map.moveLayer("sam-det-line");
-          return; 
-        }
-        map.addSource("sam-detections", { type: "geojson", data: fc });
-        map.addLayer({ id: "sam-det-fill", type: "fill", source: "sam-detections",
-          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.35 } });
-        map.addLayer({ id: "sam-det-line", type: "line", source: "sam-detections",
-          paint: { "line-color": ["get", "color"], "line-width": 1.5 } });
-      }
-      function clearDetections() {
-        if (map.getSource("sam-detections")) map.getSource("sam-detections").setData(emptyFC());
-        detSummaryEl.textContent = "No detection run yet.";
-        detResultsEl.innerHTML = "";
-        detEncodeHintEl.style.display = "none";
-        lastDetAoiKey = null;
-      }
-      detConceptEl.addEventListener("input", updateFeasibility);
-      detChipEl.addEventListener("change", updateDetectChip);
-      detScoreEl.addEventListener("input", () => { detScoreValEl.textContent = Number(detScoreEl.value).toFixed(2); });
-      detRunEl.addEventListener("click", detect);
-      detClearEl.addEventListener("click", clearDetections);
 
       // --- Terrain (S1M DEM -> 3D mesh, viewport-tiled) ---
       const terExagEl = document.getElementById("ter-exag");
@@ -3683,6 +3541,7 @@
       if (terExagEl) terExagEl.addEventListener("input", () => {
         terExagValEl.textContent = `${Number(terExagEl.value).toFixed(1)}×`;
         rebuildS1MLayers();  // live exaggeration: rebuild cached tiles, no refetch
+        if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();  // keep bases on the relief
       });
       function normalizeS1MSurfaceControls(changed) {
         const surfaceEl = document.getElementById("ter-surface");
@@ -3709,216 +3568,14 @@
         normalizeS1MSurfaceControls("mode");
         rebuildS1MLayers();
       });   // shaded <-> wireframe
-      document.getElementById("ter-color")?.addEventListener("change", rebuildS1MLayers);  // adaptive <-> absolute
+      document.getElementById("ter-color")?.addEventListener("change", () => {
+        rebuildS1MLayers();  // adaptive <-> absolute changes the displacement baseline (zmin)
+        if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();
+      });
       document.getElementById("ter-borders")?.addEventListener("change", updateImageryLayers);
+      document.getElementById("ter-buildings")?.addEventListener("change", refreshBuildingFootprints);
       document.getElementById("ter-run")?.addEventListener("click", enableS1MTerrain);
       document.getElementById("ter-clear")?.addEventListener("click", clearS1MTerrain);
-
-      // --- Similar (Stage-0 semantic retrieval over the embedding lake) ---
-      const simPickEl = document.getElementById("sim-pick");
-      const simClearEl = document.getElementById("sim-clear");
-      const simKEl = document.getElementById("sim-k");
-      const simKValEl = document.getElementById("sim-k-val");
-      const simSummaryEl = document.getElementById("sim-summary");
-      const simResultsEl = document.getElementById("sim-results");
-      let simPicking = false;
-      let lastSimilarFeatures = [];
-
-      function setSimPicking(on) {
-        simPicking = on;
-        simPickEl.textContent = on ? "Click the map..." : "Pick point";
-        simPickEl.classList.toggle("search-active", !on);
-        map.getCanvas().style.cursor = on ? "crosshair" : "";
-      }
-
-      function drawSimilar(fc, queryChip) {
-        if (!map.isStyleLoaded || !map.isStyleLoaded()) { map.once("idle", () => drawSimilar(fc, queryChip)); return; }
-        // Normalize sim into [0,1] per result set so the color ramp uses the
-        // full range even when sims cluster (e.g. 0.85-0.99).
-        const sims = fc.features.map((f) => f.properties.sim);
-        const lo = Math.min(...sims), hi = Math.max(...sims);
-        const span = hi - lo || 1;
-        for (const f of fc.features) f.properties.simNorm = (f.properties.sim - lo) / span;
-
-        const queryFC = queryChip
-          ? { type: "FeatureCollection", features: [{
-              type: "Feature",
-              geometry: { type: "Polygon", coordinates: [[
-                [queryChip.bbox[0], queryChip.bbox[1]], [queryChip.bbox[2], queryChip.bbox[1]],
-                [queryChip.bbox[2], queryChip.bbox[3]], [queryChip.bbox[0], queryChip.bbox[3]],
-                [queryChip.bbox[0], queryChip.bbox[1]],
-              ]] },
-              properties: { naip_item: queryChip.naip_item },
-            }] }
-          : emptyFC();
-
-        if (!map.getSource("similar-chips")) {
-          map.addSource("similar-chips", { type: "geojson", data: fc });
-          map.addLayer({ id: "similar-fill", type: "fill", source: "similar-chips",
-            paint: {
-              "fill-color": ["interpolate", ["linear"], ["get", "simNorm"],
-                0, "#fee08b", 0.5, "#fc8d59", 1, "#d53e4f"],
-              "fill-opacity": 0.45,
-            } });
-          map.addLayer({ id: "similar-line", type: "line", source: "similar-chips",
-            paint: { "line-color": "#d53e4f", "line-width": 0.8 } });
-          map.addSource("similar-query", { type: "geojson", data: queryFC });
-          map.addLayer({ id: "similar-query-line", type: "line", source: "similar-query",
-            paint: { "line-color": "#00e5ff", "line-width": 2.5 } });
-        } else {
-          map.getSource("similar-chips").setData(fc);
-          map.getSource("similar-query").setData(queryFC);
-          for (const id of ["similar-fill", "similar-line", "similar-query-line"]) {
-            if (map.getLayer(id)) map.moveLayer(id);
-          }
-        }
-      }
-
-      async function runSimilar(lon, lat) {
-        const k = Number(simKEl.value);
-        simSummaryEl.textContent = "Searching the embedding lake...";
-        simResultsEl.innerHTML = "";
-        const body = {
-          lon, lat, k,
-          region: stateEl.value || null,
-          year: yearEl.value ? Number(yearEl.value) : null,
-        };
-        try {
-          const response = await apiFetch("/similar", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          if (!response.ok) {
-            let detail = `${response.status}`;
-            try { detail += ` ${(await response.json()).detail}`; } catch (_) { /* body not json */ }
-            simSummaryEl.textContent = `Error: ${detail}`;
-            return;
-          }
-          const sqlMs = Number(response.headers.get("x-similar-sql-ms"));
-          const data = await response.json();
-          lastSimilarFeatures = data.features;
-          drawSimilar(data, data.query && data.query.chip);
-
-          const chip = data.query.chip;
-          const top = data.features[0];
-          simSummaryEl.innerHTML =
-            `<strong>${data.features.length}</strong> similar chips · query chip ` +
-            `<code>${chip.naip_item}</code> (${chip.year})` +
-            (Number.isFinite(sqlMs) ? ` · ${(sqlMs / 1000).toFixed(1)} s` : "") +
-            (top ? ` · top sim ${top.properties.sim.toFixed(3)}` : "");
-          simResultsEl.innerHTML = data.features.slice(0, 15).map((f, i) => {
-            const p = f.properties;
-            const cx = ((f.bbox[0] + f.bbox[2]) / 2).toFixed(6);
-            const cy = ((f.bbox[1] + f.bbox[3]) / 2).toFixed(6);
-            return `<div class="det-row sim-row" data-lon="${cx}" data-lat="${cy}" data-sim="${p.sim}" style="cursor:pointer;">` +
-              `<span>${i + 1}. ${p.naip_item}</span><span>${p.sim.toFixed(3)}</span></div>`;
-          }).join("");
-          for (const row of simResultsEl.querySelectorAll(".sim-row")) {
-            row.addEventListener("click", () => {
-              map.flyTo({ center: [Number(row.dataset.lon), Number(row.dataset.lat)], zoom: 16 });
-            });
-          }
-        } catch (error) {
-          console.error("Similar failed:", error);
-          simSummaryEl.textContent = `Error: ${error.message}`;
-        }
-      }
-
-      function clearSimilar() {
-        if (map.getSource("similar-chips")) map.getSource("similar-chips").setData(emptyFC());
-        if (map.getSource("similar-query")) map.getSource("similar-query").setData(emptyFC());
-        simSummaryEl.textContent = "No similarity search run yet.";
-        simResultsEl.innerHTML = "";
-        setSimPicking(false);
-      }
-
-      simKEl.addEventListener("input", () => { simKValEl.textContent = simKEl.value; });
-      simPickEl.addEventListener("click", () => setSimPicking(!simPicking));
-      simClearEl.addEventListener("click", clearSimilar);
-      map.on("click", (e) => {
-        if (!simPicking) return;
-        setSimPicking(false);
-        runSimilar(e.lngLat.lng, e.lngLat.lat);
-      });
-
-      // --- Verify candidates: SAM 3 against the newest imagery per chip ---
-      const simVerifyConceptEl = document.getElementById("sim-verify-concept");
-      const simVerifyNEl = document.getElementById("sim-verify-n");
-      const simVerifyNValEl = document.getElementById("sim-verify-n-val");
-      const simVerifyRunEl = document.getElementById("sim-verify-run");
-      const simVerifyStatusEl = document.getElementById("sim-verify-status");
-
-      simVerifyNEl.addEventListener("input", () => { simVerifyNValEl.textContent = simVerifyNEl.value; });
-
-      async function verifyCandidates() {
-        const concept = simVerifyConceptEl.value.trim();
-        if (!concept) { simVerifyStatusEl.textContent = "Enter a concept first."; return; }
-        if (!lastSimilarFeatures.length) { simVerifyStatusEl.textContent = "Run a similarity search first."; return; }
-        const n = Math.min(Number(simVerifyNEl.value), lastSimilarFeatures.length);
-        const color = colorForConcept(concept);
-        simVerifyRunEl.disabled = true;
-        const detections = [];
-        let failures = 0;
-        try {
-          for (let i = 0; i < n; i++) {
-            const f = lastSimilarFeatures[i];
-            simVerifyStatusEl.textContent =
-              `Verifying candidate ${i + 1}/${n} (${f.properties.naip_item})... ` +
-              `SAM 3 runs per chip; the first chip also loads the model.`;
-            const body = {
-              bbox: f.bbox,
-              concept,
-              score_thresh: 0.5,
-              collection: activeCollection(),
-              region: f.properties.region || null,
-              // year intentionally omitted: /detect picks the newest COG over
-              // the chip, so 2021-index candidates verify on current imagery.
-            };
-            const row = simResultsEl.children[i];
-            try {
-              const response = await apiFetch("/detect", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(body),
-              });
-              if (!response.ok) {
-                failures += 1;
-                if (row) row.lastElementChild.textContent = `${Number(row.dataset.sim).toFixed(3)} · error ${response.status}`;
-                continue;
-              }
-              const fc = await response.json();
-              detections.push(...fc.features);
-              if (row) row.lastElementChild.textContent =
-                `${Number(row.dataset.sim).toFixed(3)} · ${fc.features.length} ${fc.features.length === 1 ? "hit" : "hits"}`;
-              drawDetections({ type: "FeatureCollection", features: detections });
-            } catch (error) {
-              console.error("Verify failed:", error);
-              failures += 1;
-              if (row) row.lastElementChild.textContent = `${Number(row.dataset.sim).toFixed(3)} · error`;
-            }
-          }
-        } finally {
-          simVerifyRunEl.disabled = false;
-        }
-        simVerifyStatusEl.innerHTML =
-          `<strong>${detections.length}</strong> <span style="color:${color}">${concept}</span> ` +
-          `detections across ${n} verified chips` + (failures ? ` · ${failures} failed` : "");
-      }
-      simVerifyRunEl.addEventListener("click", verifyCandidates);
-
-      // A confirmed detection becomes the next similarity query: clicking a
-      // SAM 3 polygon switches to the Similar tab and searches from that spot
-      // (the Detect -> Similar hand-off, so calibration flows into scale-out
-      // without re-picking the point).
-      map.on("mouseenter", "sam-det-fill", () => { if (!simPicking) map.getCanvas().style.cursor = "pointer"; });
-      map.on("mouseleave", "sam-det-fill", () => { if (!simPicking) map.getCanvas().style.cursor = ""; });
-      map.on("click", "sam-det-fill", (e) => {
-        if (simPicking) return;   // explicit pick mode wins
-        if (!(e.features && e.features.length)) return;
-        switchTab("similar");
-        runSimilar(e.lngLat.lng, e.lngLat.lat);
-      });
 
       toggleCogEl.addEventListener("change", () => {
         updateImagery(lastSearchFeatures);
@@ -3977,9 +3634,8 @@
       // --- Collections registry (layer 0): which collections cover the viewport ---
       // Compiled from collections/registry.yaml by build_collections_geojson.py.
       // SEARCHABLE = collections actually present in the lake -> exactly the
-      // options in the Collection selector (populated from /collections).
-      const isSearchableCollection = (id) =>
-        Array.from(collectionEl.options).some((o) => o.value === id);
+      // rows that can become the active COG Footprints collection.
+      const isSearchableCollection = (id) => searchableCollectionIds.has(id);
       let collectionFeatures = [];
       let collectionById = {};
       let selectedCollectionId = null;
@@ -4050,11 +3706,15 @@
         updateCollectionsHere();
         renderCollectionDetail(id);
         // Tie layer 0 -> layer 1: if this collection is actually searchable
-        // (present in the lake / selector), make it the active search collection.
-        if (isSearchableCollection(id) && collectionEl.value !== id) {
-          collectionEl.value = id;
+        // (present in the lake), make it the active search collection.
+        if (isSearchableCollection(id)) {
+          const changed = activeSearchCollectionId !== id;
+          activeSearchCollectionId = id;
           updateCogLayerLabel();
-          refreshAvailability().then(() => queueSearch("auto"));
+          renderActiveCollectionSummary();
+          refreshAvailability().then((ok) => {
+            if (ok && (changed || autoSearchEl.checked || toggleCogEl.checked)) queueSearch("auto");
+          });
         }
       }
       function renderCollectionDetail(id) {
@@ -4091,7 +3751,6 @@
       map.on("moveend", () => {
         updateLayerNumberControl();
         updateCollectionsHere();
-        updateDetectChip();
         if (!mapReady) {
           return;
         }
@@ -4113,35 +3772,10 @@
               queueSearch("auto");
             }
           }
-          refreshIngestOptions();
         }, 250);
       });
       map.on("load", async () => {
         map.showTileBoundaries = false;
-
-        // Initialize SAM Detections layers early so they reside at the top of the layer stack
-        map.addSource("sam-detections", {
-          type: "geojson",
-          data: emptyFC()
-        });
-        map.addLayer({
-          id: "sam-det-fill",
-          type: "fill",
-          source: "sam-detections",
-          paint: {
-            "fill-color": ["get", "color"],
-            "fill-opacity": 0.35
-          }
-        });
-        map.addLayer({
-          id: "sam-det-line",
-          type: "line",
-          source: "sam-detections",
-          paint: {
-            "line-color": ["get", "color"],
-            "line-width": 1.5
-          }
-        });
 
         updateLayerNumberControl();
         await loadCollectionsRegistry();
@@ -4182,12 +3816,11 @@
 
         await initImagerySupport();
         await refreshEnvironment();
-        await refreshIngestOptions();
         updateImageryLayers();
         await refreshCollections();
         updateCogLayerLabel();
-        await refreshAvailability();
-        await queueSearch("manual");
+        const availabilityOk = await refreshAvailability();
+        if (availabilityOk) await queueSearch("manual");
         mapReady = true;
       });
 

@@ -116,12 +116,12 @@ for name in "${MODULES[@]}"; do
 done
 
 # 3. Publish (remove stale VIEWER objects with --delete).
-# CRITICAL: this bucket also holds the app's PRIVATE output (lake/ footprints,
-# detections/ later). --delete removes anything in the bucket NOT in the viewer
+# CRITICAL: this bucket also holds the app's PRIVATE output (lake/ footprints).
+# --delete removes anything in the bucket NOT in the viewer
 # staging dir, so WITHOUT these excludes it wipes the lake on every republish
 # (it did, once). Excluding those prefixes protects them from the delete sweep.
 aws s3 sync "$STAGE" "s3://$BUCKET/" --delete --region "$REGION" \
-  --exclude "lake/*" --exclude "detections/*"
+  --exclude "lake/*"
 
 # The module URLs are intentionally stable. Force browsers to revalidate them so
 # a renderer update cannot leave an older WebGL/COG implementation cached.

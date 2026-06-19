@@ -83,7 +83,7 @@ TILE_BASE=https://d3otm97s6tpvta.cloudfront.net ./deploy.sh --read-only
 The viewer contract is unchanged: it calls the read API's `/environment`
 endpoint, which returns the configured ingest URL.
 
-> The shared, author-published catalog (`s3://cog-stac-catalog/manifest-index`,
+> The shared, author-published catalog (`s3://naip-stac-catalog/manifest-index`,
 > read-only) is consumed cross-account; deployers never write to it.
 
 **Prerequisites** (one-time setup before first deploy):
@@ -152,60 +152,6 @@ docker-compose up --build
 The Docker image builds the required JavaScript package outputs itself, then
 copies the resulting `packages/*/dist` artifacts into the Python API image. A
 host-side `pnpm build` is no longer required for self-deploy.
-
-### Synchronous SAM 3 detection (host development only)
-
-The `/detect` prototype uses two Python environments: this API environment
-contains rasterio and NumPy 2.x to cut a COG chip, while the companion
-[`sam-concept-worker`](https://github.com/mwkorver/sam-concept-worker) environment
-contains SAM 3 and NumPy 1.x. Configure the subprocess explicitly:
-
-```bash
-python3.12 -m venv .venv-detect
-source .venv-detect/bin/activate
-python -m pip install -r api/requirements-detect.txt
-
-export SAM3_PYTHON="$HOME/.venvs/sam3/bin/python"
-export SAM3_SCRIPT="$HOME/working/sam-concept-worker/dev/run_sam3_json.py"
-export SAM3_TIMEOUT_SECONDS=300
-
-uvicorn api.app:app --host 0.0.0.0 --port 8089 --reload
-```
-
-Run Uvicorn on the host for this path so both configured files are visible.
-Docker Compose remains the normal API/viewer workflow, but its container does
-not include the separate SAM environment. The endpoint is synchronous and
-returns GeoJSON directly; SQS dispatch and persisted detections are future work.
-
-#### Warm worker (faster local iteration)
-
-The subprocess path above rebuilds SAM 3 on every `/detect` call, re-paying the
-model load each time. For interactive work, run the **warm worker** instead: a
-long-lived process that loads the model once and serves chips over localhost
-HTTP. Start it in its own terminal (in the `sam-concept-worker` checkout, with
-that repo's SAM 3 environment active):
-
-```bash
-PYTORCH_ENABLE_MPS_FALLBACK=1 python dev/serve_sam3.py --port 8765
-```
-
-Then point the API at it and start uvicorn as usual:
-
-```bash
-export SAM3_WORKER_URL="http://127.0.0.1:8765"   # takes precedence over SAM3_SCRIPT
-uvicorn api.app:app --host 0.0.0.0 --port 8089 --reload
-```
-
-Because the worker is a separate process on a fixed port, it stays warm across
-API `--reload` restarts -- you load SAM 3 once and iterate on the API freely.
-When `SAM3_WORKER_URL` is unset, `/detect` falls back to the cold subprocess.
-
-The warm worker also enables **tiled detection**: a large `chip_m` is covered by
-a grid of native 1008px tiles (no decimation -- full small-object detail across
-the whole area) run in a single `/infer_batch`, then stitched and deduped in
-world space. Tune with `DEFAULT_TILE_OVERLAP_PX` (seam overlap, sized to the
-largest object) and `MAX_TILES` (fan-out cap). Without a worker, a large
-`chip_m` falls back to one decimated read (no tiling).
 
 ## AWS credentials
 

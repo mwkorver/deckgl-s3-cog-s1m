@@ -46,7 +46,7 @@ if [ "$KEEP_BUCKET" != true ]; then
   if aws s3api head-bucket --bucket "$BUCKET" --region "$REGION" 2>/dev/null; then
     N="$(aws s3 ls --recursive "s3://$BUCKET" --region "$REGION" 2>/dev/null | wc -l | tr -d ' ')"
     echo "!!! This permanently deletes s3://$BUCKET and ALL $N objects in it"
-    echo "    (the viewer files AND your private lake/ + detections/ output)."
+    echo "    (the viewer files AND your private lake/ output)."
     printf 'Type the bucket name to confirm: '
     read -r CONFIRM
     [ "$CONFIRM" = "$BUCKET" ] || die "confirmation did not match the bucket name; aborting (nothing deleted)."

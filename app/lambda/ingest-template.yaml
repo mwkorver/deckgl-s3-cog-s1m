@@ -46,7 +46,6 @@ Resources:
                 - s3:DeleteObject
               Resource:
                 - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/*"
-                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/detections/*"
         - Statement:
             - Effect: Allow
               Action:

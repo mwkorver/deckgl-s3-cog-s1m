@@ -24,29 +24,19 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from uuid import uuid4
 
-from pydantic import BaseModel
 import boto3
 from botocore.exceptions import BotoCoreError, CredentialRetrievalError, ClientError
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import StreamingResponse
 
 COLLECTION_ID = os.environ.get("S3_COG_COLLECTION_ID", "naip")
 # Root of the GeoParquet lake (written by ingest_duckdb.py). Every read path
 # (/search, /availability) queries this tree directly with an in-process DuckDB
 # connection -- there is no database server. The api container mounts ./cache at
 # /cache, so this resolves to local Parquet files (or an s3:// prefix on Lambda).
-LAKE_ROOT = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb")
-# Root of the embedding lake (written by the embedding-harvester repo). Same
-# hive layout as the imagery lake (collection=/region=/year=), one file per
-# 1-degree block, schema per that repo's LAKE_SCHEMA.md. /similar queries it
-# with the same in-process DuckDB connection.
-EMBED_LAKE_ROOT = os.environ.get("S3_COG_EMBED_LAKE_ROOT", "s3://naip-stac-catalog/embeddings")
-EMBED_COLLECTION_ID = os.environ.get("S3_COG_EMBED_COLLECTION_ID", "clay-naip-v15")
-# Embedding dimension of the default collection (Clay v1.5 = 1024). Parquet
-# stores the vector as a list; queries cast to FLOAT[EMBED_DIM] for
-# array_cosine_similarity.
-EMBED_DIM = int(os.environ.get("S3_COG_EMBED_DIM", "1024"))
+LAKE_ROOT = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb").rstrip("/")
 # On Lambda (AWS_LAMBDA_FUNCTION_NAME is set by the runtime) the only viable
 # ingest is the synchronous in-process path; locally/Docker the async
 # thread+subprocess path with polling is fine. S3_COG_INGEST_MODE overrides this:
@@ -92,7 +82,11 @@ EARTHSEARCH_API = os.environ.get("S3_COG_EARTHSEARCH_API", "https://earth-search
 EARTHSEARCH_PAGE_SIZE = int(os.environ.get("S3_COG_EARTHSEARCH_PAGE_SIZE", "500"))
 # The partitioned Parquet manifest index (local path or s3://). Ingest reads it
 # to select assets; the /environment probe confirms it is reachable.
-MANIFEST_INDEX = os.environ.get("S3_COG_MANIFEST_INDEX", "/cache/manifest_index")
+MANIFEST_INDEX = os.environ.get("S3_COG_MANIFEST_INDEX", "/cache/manifest_index").rstrip("/")
+OVERTURE_BUILDINGS_PARQUET = os.environ.get(
+    "S3_COG_OVERTURE_BUILDINGS_PARQUET",
+    "/cache/overture/buildings_nj.parquet",
+)
 # The published flat NAIP manifest (requester-pays). The index is derived from
 # it, so comparing its LastModified to the newest index object tells us whether
 # AWS has republished the manifest (new COGs) since the index was last built.
@@ -100,23 +94,6 @@ MANIFEST_SOURCE = os.environ.get("S3_COG_MANIFEST_SOURCE", "s3://naip-analytic/m
 # The single ingest path: reads the manifest index and writes GeoParquet to
 # LAKE_ROOT (no Postgres, no staging table).
 INGEST_SCRIPT_PATH = Path(__file__).parent / "ingest_duckdb.py"
-# Local synchronous SAM 3 adapter. The raster-reading API and SAM 3 intentionally
-# use separate Python environments because their NumPy requirements conflict.
-SAM3_PYTHON = os.environ.get("SAM3_PYTHON", "")
-SAM3_SCRIPT = os.environ.get("SAM3_SCRIPT", "")
-SAM3_TIMEOUT_SECONDS = max(1, int(os.environ.get("SAM3_TIMEOUT_SECONDS", "300")))
-# Optional warm-worker URL (dev/serve_sam3.py in sam-concept-worker). When set,
-# /detect POSTs chips to the already-loaded model instead of spawning a cold
-# subprocess per call -- the model load is paid once, not on every request. When
-# unset, /detect falls back to the SAM3_PYTHON/SAM3_SCRIPT subprocess path.
-SAM3_WORKER_URL = os.environ.get("SAM3_WORKER_URL", "").rstrip("/")
-# Tiling (warm-worker only). A large chip_m is covered by a grid of native
-# 1008px tiles instead of one decimated read. DEFAULT_TILE_OVERLAP_PX (~12.5%)
-# lets seam-straddling objects land whole in a neighbor; MAX_TILES caps the
-# grid so a runaway area can't fan out into hundreds of inferences.
-TILE_PX = 1008
-DEFAULT_TILE_OVERLAP_PX = max(0, int(os.environ.get("DEFAULT_TILE_OVERLAP_PX", "126")))
-MAX_TILES = max(1, int(os.environ.get("MAX_TILES", "36")))
 
 STATE_BBOXES = {
     "al": [-88.473227, 30.223334, -84.88908, 35.008028],
@@ -264,7 +241,7 @@ def get_lake_duckdb():
                 # credential_chain + requester-pays. See duckdb_s3 for the full
                 # rationale; the helper is shared with the ingest path so reads
                 # and writes configure DuckDB identically.
-                duckdb_s3.configure(con, LAKE_ROOT, EMBED_LAKE_ROOT, spatial=True)
+                duckdb_s3.configure(con, LAKE_ROOT, spatial=True)
 
                 _lake_duckdb_con = con
                 _lake_duckdb_access_key = access_key
@@ -562,6 +539,30 @@ def _validate_signable_s3_href(href: str):
             detail="S3 object is not an allowed collection source asset",
         )
     return parsed, key
+
+
+def _descriptor_for_source(bucket: str, key: str):
+    import descriptors
+
+    for descriptor in descriptors._REGISTRY.values():
+        if descriptor.bucket == bucket and descriptor.key_filter(key):
+            return descriptor
+    return None
+
+
+def _s3_params_for_source(bucket: str, key: str, range_header: str | None = None):
+    descriptor = _descriptor_for_source(bucket, key)
+    if descriptor is None:
+        raise HTTPException(
+            status_code=403,
+            detail="S3 object is not an allowed collection source asset",
+        )
+    params: dict[str, Any] = {"Bucket": bucket, "Key": key}
+    if range_header:
+        params["Range"] = range_header
+    if descriptor.request_payer:
+        params["RequestPayer"] = descriptor.request_payer
+    return descriptor, params
 
 
 def _sign_s3_href_uncached(href: str):
@@ -1116,9 +1117,20 @@ def _run_ingest_job(
     strategy: str,
     limit_per_partition: int | None = None,
     collection: str = COLLECTION_ID,
+    source_bucket: str | None = None,
+    source_prefix: str | None = None,
+    source_access: str | None = None,
 ):
     command = [sys.executable, str(INGEST_SCRIPT_PATH),
                "--collection", collection, "--states", state, "--strategy", strategy]
+    if source_bucket:
+        command.extend(["--source-bucket", source_bucket, "--source-region", state])
+        if source_prefix:
+            command.extend(["--source-prefix", source_prefix])
+        if source_access:
+            command.extend(["--source-access", source_access])
+        if year is not None:
+            command.extend(["--source-year", str(year)])
     if year is not None:
         command.extend(["--years", str(year)])
     # 0 / None means "all" (the CLI default), so only pass the flag when a
@@ -1156,13 +1168,18 @@ def _run_ingest_job(
 
 @app.post("/ingest/run")
 def ingest_run(body: dict[str, Any]):
-    state = str(body.get("state") or "").strip().lower()
+    source_bucket = str(body.get("source_bucket") or "").strip()
+    source_prefix = str(body.get("source_prefix") or "").strip()
+    source_access = str(body.get("source_access") or "public").strip() or "public"
+    if source_access not in {"public", "private", "requester-pays"}:
+        raise HTTPException(status_code=400, detail=f"invalid source_access: {source_access!r}")
+    state = str(body.get("source_region") or body.get("state") or "").strip().lower()
     if not state:
-        raise HTTPException(status_code=400, detail="state is required")
+        raise HTTPException(status_code=400, detail="source_region is required")
     # Require a single explicit year. Ingesting "all years" fans out into one
     # EarthSearch STAC query per page across every year -- too aggressive on the
     # public endpoint -- so the panel must pick exactly one year at a time.
-    year = body.get("year")
+    year = body.get("source_year", body.get("year"))
     if year in (None, "", "latest", "all"):
         raise HTTPException(
             status_code=400,
@@ -1176,7 +1193,13 @@ def ingest_run(body: dict[str, Any]):
     # no third-party STAC dependency. manifest-earthsearch can silently drop tiles
     # (it once ingested 430 of WA-2023's 5,720) and is kept only as opt-in.
     strategy = str(body.get("strategy") or "manifest-cog-headers")
-    collection = str(body.get("collection") or COLLECTION_ID)
+    if source_bucket.startswith("s3://") and not source_prefix:
+        rest = source_bucket[len("s3://"):]
+        bucket_name, _, key_prefix = rest.partition("/")
+        source_bucket = bucket_name
+        source_prefix = key_prefix
+    collection = str(body.get("collection") or (source_bucket if source_bucket else COLLECTION_ID))
+    collection = "".join(ch for ch in collection.lower() if ch.isalnum() or ch in "-_") or COLLECTION_ID
     # Optional per-partition cap; absent/0 means "all" (CLI default).
     raw_limit = body.get("limit_per_partition")
     try:
@@ -1192,6 +1215,9 @@ def ingest_run(body: dict[str, Any]):
             "id": job_id,
             "status": "running",
             "collection": collection,
+            "source_bucket": source_bucket or None,
+            "source_prefix": source_prefix or None,
+            "source_access": source_access if source_bucket else None,
             "state": state,
             "year": year,
             "strategy": strategy,
@@ -1201,7 +1227,7 @@ def ingest_run(body: dict[str, Any]):
     )
     thread = Thread(
         target=_run_ingest_job,
-        args=(job_id, state, year, strategy, limit_per_partition, collection),
+        args=(job_id, state, year, strategy, limit_per_partition, collection, source_bucket or None, source_prefix or None, source_access if source_bucket else None),
         daemon=True,
     )
     thread.start()
@@ -1243,12 +1269,23 @@ def ingest_run_sync(body: dict[str, Any]):
             detail="ingest is not available on this deployment (read-only)",
         )
 
-    state = str(body.get("state") or "").strip().lower()
+    source_bucket = str(body.get("source_bucket") or "").strip()
+    source_prefix = str(body.get("source_prefix") or "").strip()
+    source_access = str(body.get("source_access") or "public").strip() or "public"
+    if source_access not in {"public", "private", "requester-pays"}:
+        raise HTTPException(status_code=400, detail=f"invalid source_access: {source_access!r}")
+    if source_bucket.startswith("s3://") and not source_prefix:
+        rest = source_bucket[len("s3://"):]
+        bucket_name, _, key_prefix = rest.partition("/")
+        source_bucket = bucket_name
+        source_prefix = key_prefix
+
+    state = str(body.get("source_region") or body.get("state") or "").strip().lower()
     if not state:
-        raise HTTPException(status_code=400, detail="state is required")
+        raise HTTPException(status_code=400, detail="source_region is required")
 
     # Same single-year guard as /ingest/run: one explicit year, no fan-out.
-    year = body.get("year")
+    year = body.get("source_year", body.get("year"))
     if year in (None, "", "latest", "all"):
         raise HTTPException(
             status_code=400,
@@ -1285,7 +1322,8 @@ def ingest_run_sync(body: dict[str, Any]):
     import ingest_duckdb as ig
     from types import SimpleNamespace
 
-    collection = str(body.get("collection") or COLLECTION_ID)
+    collection = str(body.get("collection") or (source_bucket if source_bucket else COLLECTION_ID))
+    collection = "".join(ch for ch in collection.lower() if ch.isalnum() or ch in "-_") or COLLECTION_ID
     args = SimpleNamespace(
         collection=collection,
         states=[state],
@@ -1298,6 +1336,11 @@ def ingest_run_sync(body: dict[str, Any]):
         row_group_size=2000,
         single_file=False,
         strict_completeness=False,  # warn-only in the API path (CLI gets it from argparse)
+        source_bucket=source_bucket or None,
+        source_prefix=source_prefix,
+        source_access=source_access,
+        source_region=state,
+        source_year=year,
     )
 
     started = monotonic()
@@ -1313,11 +1356,13 @@ def ingest_run_sync(body: dict[str, Any]):
             "status": "no_data",
             "state": state,
             "year": year,
+            "source_bucket": source_bucket or None,
+            "source_prefix": source_prefix or None,
             "strategy": strategy,
             "limit_per_partition": limit,
             "rows_ingested": 0,
             "elapsed_ms": round((monotonic() - started) * 1000, 1),
-            "detail": "no assets found for this state/year in the manifest index",
+            "detail": "no assets found for this source region/year",
         }
 
     try:
@@ -1334,6 +1379,8 @@ def ingest_run_sync(body: dict[str, Any]):
         "status": "completed",
         "state": state,
         "year": year,
+        "source_bucket": source_bucket or None,
+        "source_prefix": source_prefix or None,
         "strategy": strategy,
         "limit_per_partition": limit,
         "rows_ingested": len(payloads),
@@ -1407,8 +1454,7 @@ def availability(collection: str = COLLECTION_ID):
     states: dict[str, list[int]] = {}
     # Per region/year best (finest) gsd in meters, so the viewer can annotate
     # the Year dropdown ("2023 - 30 cm"). min() rather than assuming uniformity:
-    # a mixed-resolution state-year shows its finest, which is also what
-    # /detect's `order by gsd asc` would pick.
+    # a mixed-resolution state-year shows its finest available imagery.
     gsd: dict[str, dict[str, float]] = {}
     # Per region/year footprint extent [xmin, ymin, xmax, ymax] (EPSG:4326),
     # so the viewer can fly to a Collection/Region/Year selection.
@@ -1421,7 +1467,8 @@ def availability(collection: str = COLLECTION_ID):
         "group by region, year"
     )
     try:
-        for state, year, year_gsd, xmin, ymin, xmax, ymax in get_lake_duckdb().cursor().execute(lake_sql).fetchall():
+        rows = lake_query(lambda cur: cur.execute(lake_sql).fetchall())
+        for state, year, year_gsd, xmin, ymin, xmax, ymax in rows:
             if state is not None and year is not None:
                 region = str(state).strip().lower()
                 states.setdefault(region, []).append(int(year))
@@ -1440,6 +1487,131 @@ def availability(collection: str = COLLECTION_ID):
             return {"engine": "duckdb", "states": {}}
         raise HTTPException(status_code=500, detail=f"availability query failed: {exc}")
     return {"engine": "duckdb", "states": dict(sorted(states.items())), "gsd": gsd, "extent": extent}
+
+
+@app.post("/buildings/overture")
+def overture_buildings(body: dict[str, Any]):
+    """Return Overture building footprints intersecting one or more lon/lat bboxes.
+
+    The viewer sends active S1M tile bboxes, already transformed to OGC:CRS84.
+    The local Overture file carries explicit bbox columns, so DuckDB can filter
+    cheaply before the exact geometry intersection.
+    """
+    path = Path(OVERTURE_BUILDINGS_PARQUET)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Overture buildings parquet not found: {path}")
+
+    raw_bboxes = body.get("bboxes") or []
+    bboxes: list[tuple[int, float, float, float, float]] = []
+    for idx, bbox in enumerate(raw_bboxes[:32]):
+        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+            continue
+        try:
+            west, south, east, north = [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            continue
+        if west >= east or south >= north:
+            continue
+        bboxes.append((idx, west, south, east, north))
+    if not bboxes:
+        return {"type": "FeatureCollection", "features": [], "links": []}
+
+    try:
+        limit = int(body.get("limit") or 30000)
+    except (TypeError, ValueError):
+        limit = 30000
+    limit = max(1, min(limit, 100000))
+
+    values_sql = ",\n".join(
+        f"({idx}, {west:.12f}, {south:.12f}, {east:.12f}, {north:.12f})"
+        for idx, west, south, east, north in bboxes
+    )
+    parquet_path = str(path).replace("'", "''")
+    import duckdb
+
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute("LOAD spatial")
+        rows = con.execute(
+            f"""
+            with boxes(idx, west, south, east, north) as (
+              values {values_sql}
+            ),
+            hits as (
+              select
+                b.id,
+                b.height,
+                b.min_height,
+                b.num_floors,
+                b.subtype,
+                b.class,
+                b.has_parts,
+                b.bbox_xmin,
+                b.bbox_ymin,
+                b.bbox_xmax,
+                b.bbox_ymax,
+                ST_AsGeoJSON(b.geometry) as geom_json,
+                row_number() over (partition by b.id order by boxes.idx) as rn
+              from read_parquet('{parquet_path}') b
+              join boxes
+                on b.bbox_xmax >= boxes.west
+               and b.bbox_xmin <= boxes.east
+               and b.bbox_ymax >= boxes.south
+               and b.bbox_ymin <= boxes.north
+              where ST_Intersects(
+                b.geometry,
+                ST_MakeEnvelope(boxes.west, boxes.south, boxes.east, boxes.north)
+              )
+            )
+            select *
+            from hits
+            where rn = 1
+            limit {limit}
+            """
+        ).fetchall()
+    finally:
+        con.close()
+
+    features = []
+    for row in rows:
+        (
+            bid,
+            height,
+            min_height,
+            num_floors,
+            subtype,
+            building_class,
+            has_parts,
+            xmin,
+            ymin,
+            xmax,
+            ymax,
+            geom_json,
+            _rn,
+        ) = row
+        props = {
+            "id": bid,
+            "height": height,
+            "min_height": min_height,
+            "num_floors": num_floors,
+            "subtype": subtype,
+            "class": building_class,
+            "has_parts": has_parts,
+        }
+        features.append({
+            "type": "Feature",
+            "id": bid,
+            "geometry": json.loads(geom_json),
+            "bbox": [xmin, ymin, xmax, ymax],
+            "properties": {k: v for k, v in props.items() if v is not None},
+        })
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "links": [],
+        "limit": limit,
+        "bboxes": len(bboxes),
+    }
 
 
 def _lake_read_path(collection: str, safe_region: str | None, year: int | None) -> str:
@@ -1585,554 +1757,57 @@ def sign(href: str):
     return {"href": href, "signed": signed, "expires_in": expires_in if SIGN_ASSET_URLS else 0}
 
 
-class DetectRequest(BaseModel):
-    bbox: list[float]
-    concept: str
-    score_thresh: float = 0.5
-    collection: str = "naip"
-    region: str | None = None
-    year: int | None = None
-    # Ground size (meters) of the detection area. None/small -> a single native
-    # 1008px chip (best for small objects: cars, pools). A larger value, when a
-    # warm worker is configured, is covered by a grid of native 1008px tiles
-    # (no decimation -- full small-object detail everywhere), each run through
-    # SAM 3 and stitched in world space. Without a warm worker, a large chip_m
-    # falls back to one decimated <=2016px read (coarser, but no tiling fan-out).
-    chip_m: float | None = None
-    # Tile overlap in native pixels (warm-worker tiling only). Adjacent tiles
-    # overlap this much so an object on a seam still lands whole in >=1 tile;
-    # size it to the largest expected object (~84px/25m small building,
-    # ~252px/75m big-box at 0.3m GSD). None -> DEFAULT_TILE_OVERLAP_PX.
-    overlap_px: int | None = None
+def _tile_proxy_headers(obj: dict[str, Any], *, partial: bool) -> dict[str, str]:
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range, ETag, Last-Modified",
+    }
+    content_type = obj.get("ContentType")
+    if content_type:
+        headers["Content-Type"] = content_type
+    for source, target in (
+        ("ContentLength", "Content-Length"),
+        ("ContentRange", "Content-Range"),
+        ("ETag", "ETag"),
+        ("LastModified", "Last-Modified"),
+    ):
+        value = obj.get(source)
+        if value is not None:
+            headers[target] = value.isoformat() if hasattr(value, "isoformat") else str(value)
+    if partial and obj.get("ContentLength") is not None:
+        headers["Content-Length"] = str(obj["ContentLength"])
+    return headers
 
 
-def color_for_concept(concept: str) -> str:
-    h = 0
-    for ch in (concept or "x"):
-        h = (h * 31 + ord(ch)) % 360
-    return f"hsl({h}, 80%, 55%)"
-
-
-def _tile_grid_origins(center_col, center_row, target_px, tile_px, overlap_px):
-    """Top-left (col, row) pixel of each native tile covering a target_px-square
-    area centered on (center_col, center_row), with overlap_px shared between
-    neighbors. n_side tiles per axis; stride = tile_px - overlap_px. A target
-    that fits in one tile yields a single tile centered on the click (so small
-    chips reproduce the non-tiled path exactly). Pure integer math -- unit-test
-    without rasterio."""
-    stride = max(1, tile_px - overlap_px)
-    if target_px <= tile_px:
-        n = 1
-    else:
-        n = (target_px - tile_px + stride - 1) // stride + 1  # ceil division
-    span = (n - 1) * stride + tile_px
-    start_col = center_col - span // 2
-    start_row = center_row - span // 2
-    origins = [
-        (start_col + i * stride, start_row + j * stride)
-        for j in range(n) for i in range(n)
-    ]
-    return origins, n
-
-
-# --- Concept-aware regularization: square building footprints to their dominant
-# angle (the mask outline is faithful but organic; built structures read better
-# orthogonalized). Pure-python except the final rotate, which lazy-imports
-# shapely so the read-only Lambda (no shapely) is unaffected. ---
-_BUILDING_CONCEPTS = ("building", "rooftop", "roof", "house", "warehouse",
-                      "shed", "barn", "garage", "hangar", "structure", "hall")
-
-
-def _is_building_concept(concept: str) -> bool:
-    c = (concept or "").lower()
-    return any(k in c for k in _BUILDING_CONCEPTS)
-
-
-def _dominant_angle(coords) -> float:
-    """Length-weighted circular mean of edge angles folded to [0, 90deg)."""
-    import math
-    sx = sy = 0.0
-    for (x0, y0), (x1, y1) in zip(coords, coords[1:]):
-        dx, dy = x1 - x0, y1 - y0
-        L = math.hypot(dx, dy)
-        if L < 1e-9:
-            continue
-        a4 = 4 * math.atan2(dy, dx)   # period pi/2 -> map onto the full circle
-        sx += L * math.cos(a4); sy += L * math.sin(a4)
-    if sx == 0 and sy == 0:
-        return 0.0
-    return math.degrees(math.atan2(sy, sx) / 4.0)
-
-
-def _snap_rectilinear(coords):
-    """Open ring (~axis-aligned) -> orthogonal ring. Merge same-orientation edge
-    runs into alternating H/V segments, give each a constant coordinate, and
-    reconstruct vertices. None if it isn't cleanly rectilinear (caller falls
-    back to the organic outline). Preserves L/T shapes, not just boxes."""
-    n = len(coords)
-    if n < 4:
-        return None
-    edges = []
-    for i in range(n):
-        x0, y0 = coords[i]; x1, y1 = coords[(i + 1) % n]
-        edges.append("H" if abs(x1 - x0) >= abs(y1 - y0) else "V")
-    start = 0
-    for k in range(n):
-        if edges[k] != edges[(k - 1) % n]:
-            start = k; break
-    order = [(start + k) % n for k in range(n)]
-    segs = []
-    cur = edges[order[0]]; members = []
-    for idx in order:
-        if edges[idx] == cur:
-            members.append(idx)
-        else:
-            segs.append((cur, members)); cur = edges[idx]; members = [idx]
-    segs.append((cur, members))
-    m = len(segs)
-    if m < 4 or m % 2 != 0:
-        return None
-    if any(segs[i][0] == segs[(i + 1) % m][0] for i in range(m)):
-        return None
-    consts = []
-    for cls, members in segs:
-        vs = [coords[k] for k in members] + [coords[(members[-1] + 1) % n]]
-        if cls == "H":
-            consts.append(("H", sum(v[1] for v in vs) / len(vs)))
-        else:
-            consts.append(("V", sum(v[0] for v in vs) / len(vs)))
-    out = []
-    for i in range(m):
-        prev_cls, prev_c = consts[i - 1]
-        cls, c = consts[i]
-        out.append((c, prev_c) if (prev_cls == "H" and cls == "V") else (prev_c, c))
-    return out
-
-
-def regularize_building(geom):
-    """Orthogonalize a building footprint to its dominant angle. Returns
-    (geom, regularized_bool); on any failure or implausible area change, returns
-    the input unchanged so a complex roofline stays faithful rather than mangled."""
-    from shapely import affinity
-    from shapely.geometry import Polygon
-    if geom.geom_type != "Polygon" or len(geom.exterior.coords) < 5:
-        return geom, False
-    cen = geom.centroid
-    theta = _dominant_angle(list(geom.exterior.coords))
-    rot = affinity.rotate(geom, -theta, origin=cen)
-    snapped = _snap_rectilinear(list(rot.exterior.coords)[:-1])
-    if not snapped:
-        return geom, False
+@app.head("/tiles/{bucket}/{key:path}")
+def tile_proxy_head(bucket: str, key: str):
+    _, params = _s3_params_for_source(bucket, key)
+    params.pop("Range", None)
     try:
-        poly = affinity.rotate(Polygon(snapped), theta, origin=cen)
-    except Exception:
-        return geom, False
-    if poly.is_empty or not poly.is_valid or not (0.6 < poly.area / geom.area < 1.6):
-        return geom, False
-    return poly, True
+        obj = get_s3_direct_client().head_object(**params)
+    except ClientError as exc:
+        code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 502)
+        raise HTTPException(status_code=code if 400 <= code < 600 else 502, detail=str(exc)) from exc
+    return Response(status_code=200, headers=_tile_proxy_headers(obj, partial=False))
 
 
-@app.post("/detect")
-def detect_endpoint(req: DetectRequest):
-    """Run SAM 3 segmentation on a cropped imagery chip.
-    Queries DuckDB to find the covering COG and range-reads native 1008px chips:
-    one window for a small chip_m, or (with a warm worker) a grid of overlapping
-    1008px tiles for a large chip_m -- full small-object detail everywhere
-    instead of one decimated read. SAM 3 runs via the warm worker (SAM3_WORKER_URL,
-    one /infer_batch for the grid) if configured, else a cold per-call subprocess
-    (SAM3_PYTHON/SAM3_SCRIPT). Each tile's masks reproject through its own
-    transform; the pooled detections are deduped in world space (greedy NMS,
-    collapsing both synonym hits and tile-seam duplicates) and returned as an
-    EPSG:4326 GeoJSON FeatureCollection."""
-    # Warm worker takes precedence: a single long-lived process holds the model,
-    # so we skip the subprocess-runner config check entirely when it is set.
-    sam3_python = Path(SAM3_PYTHON).expanduser() if SAM3_PYTHON else None
-    sam3_script = Path(SAM3_SCRIPT).expanduser() if SAM3_SCRIPT else None
-    if not SAM3_WORKER_URL:
-        if not sam3_python or not sam3_script:
-            raise HTTPException(
-                status_code=503,
-                detail="Synchronous detection is not configured. Set SAM3_WORKER_URL, or SAM3_PYTHON and SAM3_SCRIPT.",
-            )
-        if not sam3_python.is_file() or not sam3_script.is_file():
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Synchronous detection runner is unavailable. "
-                    f"SAM3_PYTHON={sam3_python} SAM3_SCRIPT={sam3_script}"
-                ),
-            )
-
-    # 1. Determine center point
-    lon = (req.bbox[0] + req.bbox[2]) / 2.0
-    lat = (req.bbox[1] + req.bbox[3]) / 2.0
-
-    # 2. Pick covering COG using in-process DuckDB
-    safe_region = "".join(c for c in req.region.lower() if c.isalnum()) if req.region else None
-    base = f"{LAKE_ROOT}/collection={req.collection}"
-    if safe_region and req.year:
-        glob = f"{base}/region={safe_region}/year={req.year}/**/*.parquet"
-    elif safe_region:
-        glob = f"{base}/region={safe_region}/**/*.parquet"
-    elif req.year:
-        glob = f"{base}/*/year={req.year}/**/*.parquet"
-    else:
-        glob = f"{base}/**/*.parquet"
-
-    filters = [
-        f"bbox_xmin <= {lon} and bbox_xmax >= {lon}",
-        f"bbox_ymin <= {lat} and bbox_ymax >= {lat}",
-        f"ST_Intersects(geometry, ST_Point({lon}, {lat}))",
-    ]
-    if req.year:
-        filters.append(f"year = {req.year}")
-    if safe_region:
-        filters.append(f"region = '{safe_region}'")
-
-    sql = f"""
-        select asset_href, source_key, region, year, gsd,
-               proj_epsg, proj_shape, proj_transform
-        from read_parquet('{glob}', hive_partitioning=true)
-        where {' and '.join(filters)}
-        order by year desc, gsd asc nulls last, source_key asc
-        limit 1
-    """
+@app.get("/tiles/{bucket}/{key:path}")
+def tile_proxy_get(bucket: str, key: str, range: str | None = Header(default=None)):
+    """Restricted local COG proxy for registered source assets only."""
+    _, params = _s3_params_for_source(bucket, key, range)
     try:
-        # lake_query self-heals an expired S3 token (and refreshes the cached
-        # creds the rasterio read below reuses) instead of hard-failing.
-        row = lake_query(lambda cur: cur.execute(sql).fetchone())
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "no files found" in msg or "no files matched" in msg:
-            row = None
-        else:
-            raise HTTPException(status_code=500, detail=f"DuckDB search failed: {exc}")
-
-    if not row:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No COG covers center ({lon}, {lat}) for collection={req.collection}"
-        )
-
-    asset_href = row[0]
-    row_gsd = row[4] if len(row) > 4 and row[4] else None
-
-    # 3. Read window using rasterio
-    import rasterio
-    from rasterio.env import Env
-    from rasterio.warp import transform as warp_transform
-    import numpy as np
-    from PIL import Image
-
-    creds = get_aws_credentials()
-    
-    # Generate unique filenames to allow concurrent requests
-    chips_dir = MODULE_DIR.parent / "cache" / "chips"
-    chips_dir.mkdir(parents=True, exist_ok=True)
-    job_id = uuid4().hex
-    out_json_path = chips_dir / f"result_{job_id}.json"
-    chip_specs = []  # [(chip_path, win_transform), ...] -- one per tile
-
-    try:
-        from rasterio.session import AWSSession
-        session_kwargs = {}
-        if creds.get("aws_access_key_id"):
-            session_kwargs["aws_access_key_id"] = creds["aws_access_key_id"]
-        if creds.get("aws_secret_access_key"):
-            session_kwargs["aws_secret_access_key"] = creds["aws_secret_access_key"]
-        if creds.get("aws_session_token"):
-            session_kwargs["aws_session_token"] = creds["aws_session_token"]
-        session_kwargs["region_name"] = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
-        
-        session = AWSSession(**session_kwargs)
-        with Env(
-            session=session,
-            AWS_REQUEST_PAYER="requester",
-            GDAL_DISABLE_READDIR_ON_OPEN="YES",
-        ):
-            vsi = "/vsis3/" + asset_href[len("s3://"):]
-            with rasterio.open(vsi) as src:
-                xs, ys = warp_transform("EPSG:4326", src.crs, [lon], [lat])
-                row_idx, col_idx = src.index(xs[0], ys[0])
-                gsd_native = float(row_gsd) if row_gsd else abs(src.transform.a)
-                src_crs = src.crs
-                src_transform = src.transform
-                src_w, src_h = src.width, src.height
-
-                MAX_READ_PX = 2016
-                chip_m = min(float(req.chip_m), 5000.0) if (req.chip_m and req.chip_m > 0) else 0.0
-                target_px = int(round(chip_m / gsd_native)) if chip_m else 0
-                overlap_px = req.overlap_px if req.overlap_px is not None else DEFAULT_TILE_OVERLAP_PX
-                overlap_px = max(0, min(int(overlap_px), TILE_PX - 1))
-
-                # Tiling needs the warm batch path: a large chip_m is covered by a
-                # grid of native 1008px tiles (full detail everywhere). Without a
-                # worker -- or for a chip that fits one tile -- read a single
-                # window (decimated to <=MAX_READ_PX for big no-worker chips).
-                if SAM3_WORKER_URL and target_px > TILE_PX:
-                    origins, _ = _tile_grid_origins(col_idx, row_idx, target_px, TILE_PX, overlap_px)
-                    if len(origins) > MAX_TILES:
-                        stride_m = (TILE_PX - overlap_px) * gsd_native
-                        max_m = int(TILE_PX * gsd_native + (int(MAX_TILES ** 0.5) - 1) * stride_m)
-                        raise HTTPException(
-                            status_code=413,
-                            detail=(f"Tiled detection needs {len(origins)} tiles "
-                                    f"(> MAX_TILES={MAX_TILES}). Reduce chip_m to "
-                                    f"~{max_m}m or raise MAX_TILES."),
-                        )
-                    effective_gsd = gsd_native  # native everywhere; no decimation
-                    for (c0, r0) in origins:
-                        # Skip tiles entirely outside the COG footprint (all nodata).
-                        if c0 + TILE_PX <= 0 or r0 + TILE_PX <= 0 or c0 >= src_w or r0 >= src_h:
-                            continue
-                        win = rasterio.windows.Window(c0, r0, TILE_PX, TILE_PX)
-                        arr = src.read([1, 2, 3], window=win, boundless=True, fill_value=0)
-                        if not arr.any():
-                            continue  # window landed on a fully nodata patch
-                        wt = rasterio.windows.transform(win, src_transform)
-                        cp = chips_dir / f"chip_{job_id}_{len(chip_specs)}.png"
-                        Image.fromarray(np.transpose(arr, (1, 2, 0))).save(cp)
-                        chip_specs.append((cp, wt))
-                    if not chip_specs:
-                        raise HTTPException(
-                            status_code=404,
-                            detail="Detection area falls entirely outside the COG footprint.",
-                        )
-                else:
-                    # Single window. Native 1008px for a small chip (best for small
-                    # objects); a big no-worker chip_m decimates to <=MAX_READ_PX
-                    # via overviews (SAM downsamples to 1008 anyway).
-                    native_px = max(TILE_PX, target_px) if target_px > TILE_PX else TILE_PX
-                    read_px = min(native_px, MAX_READ_PX)
-                    half = native_px // 2
-                    win = rasterio.windows.Window(col_idx - half, row_idx - half, native_px, native_px)
-                    arr = src.read([1, 2, 3], window=win, boundless=True, fill_value=0,
-                                   out_shape=(3, read_px, read_px))
-                    scale = native_px / read_px
-                    wt = rasterio.windows.transform(win, src_transform) * rasterio.Affine.scale(scale)
-                    effective_gsd = gsd_native * scale
-                    cp = chips_dir / f"chip_{job_id}_0.png"
-                    Image.fromarray(np.transpose(arr, (1, 2, 0))).save(cp)
-                    chip_specs.append((cp, wt))
-
-        # 4. Run SAM 3 -- warm worker (one /infer per chip, or one /infer_batch
-        # for a tile grid) if configured, else cold subprocess (single chip).
-        # Every path yields the same per-instance JSON shape, so the vectorize/
-        # dedup code below is identical. tile_results pairs each result with the
-        # transform of the tile it came from (so masks reproject correctly).
-        tile_results = []  # [(result_data, win_transform), ...]
-        if SAM3_WORKER_URL:
-            import urllib.error
-            import urllib.request
-
-            def _worker_post(path, body):
-                wreq = urllib.request.Request(
-                    f"{SAM3_WORKER_URL}{path}", data=json.dumps(body).encode(),
-                    headers={"Content-Type": "application/json"},
-                )
-                try:
-                    with urllib.request.urlopen(wreq, timeout=SAM3_TIMEOUT_SECONDS) as resp:
-                        return json.loads(resp.read())
-                except urllib.error.HTTPError as exc:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"SAM 3 warm worker error ({exc.code}): {exc.read().decode(errors='replace')}",
-                    ) from exc
-                except (urllib.error.URLError, TimeoutError) as exc:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"SAM 3 warm worker unreachable at {SAM3_WORKER_URL}: {exc}",
-                    ) from exc
-
-            common = {"prompt": req.concept, "score_thresh": req.score_thresh, "masks": True}
-            if len(chip_specs) == 1:
-                rd = _worker_post("/infer", {"chip": str(chip_specs[0][0]), **common})
-                tile_results.append((rd, chip_specs[0][1]))
-            else:
-                batch = _worker_post("/infer_batch", {"chips": [str(cp) for cp, _ in chip_specs], **common})
-                results = batch.get("results", [])
-                if len(results) != len(chip_specs):
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"Warm worker returned {len(results)} results for {len(chip_specs)} chips.",
-                    )
-                for (cp, wt), rd in zip(chip_specs, results):
-                    tile_results.append((rd, wt))
-        else:
-            # Cold subprocess fallback: a fresh process (pays the model load).
-            # Tiling is gated on the worker, so there is exactly one chip here.
-            cp, wt = chip_specs[0]
-            cmd = [
-                str(sam3_python),
-                str(sam3_script),
-                "--chip", str(cp),
-                "--prompt", req.concept,
-                "--score-thresh", str(req.score_thresh),
-                "--out", str(out_json_path),
-                "--masks",  # emit a binary mask RLE per instance for polygonization
-            ]
-
-            env = os.environ.copy()
-            env["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-
-            try:
-                res = subprocess.run(
-                    cmd,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=SAM3_TIMEOUT_SECONDS,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise HTTPException(
-                    status_code=504,
-                    detail=f"SAM 3 inference exceeded {SAM3_TIMEOUT_SECONDS} seconds.",
-                ) from exc
-            if res.returncode != 0:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"SAM 3 inference subprocess failed with code {res.returncode}. Stderr: {res.stderr}"
-                )
-
-            # Read results written by the subprocess.
-            if not out_json_path.exists():
-                raise HTTPException(
-                    status_code=500,
-                    detail="SAM 3 inference completed but output JSON was not written."
-                )
-
-            with open(out_json_path, "r") as f:
-                tile_results.append((json.load(f), wt))
-
-        features = []
-
-        # Vectorize each instance's SAM mask into a generalized polygon. The mask
-        # grid == its tile's 1008px window, so that tile's win_transform maps it
-        # straight to the COG CRS; simplification runs there (meters) before
-        # reprojecting to 4326. Instances without a mask fall back to the bbox.
-        import numpy as np
-        import rasterio.features
-        from shapely.geometry import shape as shapely_shape, box as shapely_box
-        from shapely.ops import transform as shapely_transform
-        from pyproj import Transformer
-
-        to_4326 = Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True).transform
-        gsd_m = effective_gsd                 # read-grid resolution (native when tiled)
-        simplify_tol = 1.5 * gsd_m            # ~1.5 px: de-stair without distorting
-        min_area_m2 = (4 * gsd_m) ** 2        # drop specks/holes below ~4px square
-
-        def _mask_polygon(rle, win_transform):
-            counts = rle.get("counts") or []
-            h, w = rle.get("size", [0, 0])
-            if not counts or h * w == 0:
-                return None
-            vals = np.zeros(sum(counts), dtype=np.uint8)
-            pos, bit = 0, 0
-            for c in counts:
-                if bit:
-                    vals[pos:pos + c] = 1
-                pos += c
-                bit ^= 1
-            mask = vals.reshape(h, w)
-            if not mask.any():
-                return None
-            # shapes() with transform= returns rings already in the COG CRS.
-            polys = [
-                shapely_shape(geom)
-                for geom, val in rasterio.features.shapes(
-                    mask, mask=mask.astype(bool), transform=win_transform)
-                if val == 1
-            ]
-            polys = [p for p in polys if p.area >= min_area_m2]
-            if not polys:
-                return None
-            geom = max(polys, key=lambda p: p.area).simplify(simplify_tol, preserve_topology=True)
-            return geom if not geom.is_empty else None
-
-        # Gather candidates across every tile and every concept into one pool.
-        # Tiling (synonyms via multi-prompt union, plus the same physical object
-        # seen in adjacent tiles' overlap) all collapses in the shared world-space
-        # dedup below. Each tile's instances reproject with its own transform.
-        candidates = []  # (geom_crs, score, concept, regularized)
-        for result_data, win_transform in tile_results:
-            concept_results = result_data.get("concepts")
-            if not concept_results:  # back-compat with single-concept output
-                concept_results = [{
-                    "concept": result_data.get("concept", req.concept),
-                    "instances": result_data.get("instances", []),
-                }]
-            for cres in concept_results:
-                concept = cres.get("concept", req.concept)
-                regularize = _is_building_concept(concept)
-                for inst in cres.get("instances", []):
-                    geom_crs = _mask_polygon(inst["mask_rle"], win_transform) if inst.get("mask_rle") else None
-                    from_bbox = geom_crs is None
-                    if from_bbox:
-                        x0, y0, x1, y1 = inst["bbox_px"]
-                        (X0, Y1), (X1, Y0) = win_transform * (x0, y0), win_transform * (x1, y1)
-                        geom_crs = shapely_box(min(X0, X1), min(Y0, Y1), max(X0, X1), max(Y0, Y1))
-                    regularized = False
-                    if regularize and not from_bbox:
-                        geom_crs, regularized = regularize_building(geom_crs)
-                    candidates.append((geom_crs, float(inst["score"]), concept, regularized))
-
-        # World-space dedup: greedy NMS by score; a candidate is dropped if it
-        # overlaps an already-kept one by IoU > 0.5 (the same building found by
-        # both "building" and "rooftop", or the same object straddling a tile
-        # seam and caught in two tiles). bbox quick-reject keeps it cheap.
-        candidates.sort(key=lambda c: c[1], reverse=True)
-        kept = []
-        for geom_crs, score, concept, regularized in candidates:
-            b = geom_crs.bounds
-            dup = False
-            for kg, *_ in kept:
-                kb = kg.bounds
-                if b[2] < kb[0] or b[0] > kb[2] or b[3] < kb[1] or b[1] > kb[3]:
-                    continue
-                inter = geom_crs.intersection(kg).area
-                if inter and inter / (geom_crs.area + kg.area - inter) > 0.5:
-                    dup = True
-                    break
-            if not dup:
-                kept.append((geom_crs, score, concept, regularized))
-
-        for geom_crs, score, concept, regularized in kept:
-            geom_4326 = shapely_transform(to_4326, geom_crs)
-            features.append({
-                "type": "Feature",
-                "properties": {
-                    "color": color_for_concept(concept),
-                    "concept": concept,
-                    "score": round(score, 4),
-                    "area_m2": round(geom_crs.area, 1),
-                    "regularized": regularized,
-                },
-                "geometry": geom_4326.__geo_interface__,
-            })
-
-        return {
-            "type": "FeatureCollection",
-            "features": features
-        }
-
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
-        
-    finally:
-        # Clean up temporary files (one chip per tile, plus the subprocess JSON).
-        for cp, _ in chip_specs:
-            if cp.exists():
-                try:
-                    cp.unlink()
-                except Exception:
-                    pass
-        if out_json_path.exists():
-            try:
-                out_json_path.unlink()
-            except Exception:
-                pass
+        obj = get_s3_direct_client().get_object(**params)
+    except ClientError as exc:
+        code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 502)
+        raise HTTPException(status_code=code if 400 <= code < 600 else 502, detail=str(exc)) from exc
+    status_code = 206 if obj.get("ContentRange") else 200
+    return StreamingResponse(
+        obj["Body"].iter_chunks(),
+        status_code=status_code,
+        headers=_tile_proxy_headers(obj, partial=status_code == 206),
+        media_type=obj.get("ContentType") or "application/octet-stream",
+    )
 
 
 @app.post("/search")
@@ -2159,159 +1834,6 @@ def search(body: dict[str, Any], response: Response):
     sql_seconds = monotonic() - sql_started_at
 
     return _finalize_lake_result(rows, response, request_started_at, sql_seconds, "duckdb-direct-lake")
-
-
-def _embed_read_path(collection: str, safe_region: str | None, year: int | None) -> str:
-    """Narrowest read_parquet glob for the embedding lake. Same rationale as
-    _lake_read_path: scoping the glob to the known partition prefix keeps the
-    S3 LIST to that subtree. The embedding lake stores one file per 1-degree
-    block directly under year=."""
-    base = f"{EMBED_LAKE_ROOT}/collection={collection}"
-    if safe_region and year is not None:
-        return f"{base}/region={safe_region}/year={year}/*.parquet"
-    if safe_region:
-        return f"{base}/region={safe_region}/**/*.parquet"
-    if year is not None:
-        return f"{base}/*/year={year}/*.parquet"
-    return f"{base}/**/*.parquet"
-
-
-def make_similar_feature(row, collection: str) -> dict[str, Any]:
-    (naip_item, block, geom_json, xmin, ymin, xmax, ymax,
-     naip_date, gsd, src_uri, region, year, sim) = row
-    geometry = json.loads(geom_json) if isinstance(geom_json, str) else geom_json
-    props = {
-        'sim': round(float(sim), 4),
-        'naip_item': naip_item,
-        'block': block,
-        'datetime': f"{naip_date.isoformat()}T00:00:00Z" if naip_date else None,
-        'gsd': gsd,
-        'region': region,
-        'year': year,
-    }
-    return {
-        'type': 'Feature',
-        'id': f"{naip_item}/{xmin:.6f},{ymin:.6f}",
-        'collection': collection,
-        'geometry': geometry,
-        'bbox': [xmin, ymin, xmax, ymax],
-        'properties': {k: v for k, v in props.items() if v is not None},
-        'assets': {
-            'source_image': {
-                'href': src_uri,
-                'type': 'image/tiff; application=geotiff; profile=cloud-optimized',
-                'roles': ['data'],
-            }
-        },
-    }
-
-
-@app.post("/similar")
-def similar(body: dict[str, Any], response: Response):
-    """Stage-0 semantic retrieval over the embedding lake: take the chip
-    covering a query point, rank every chip in the scoped partition by cosine
-    similarity to it, return the top K as chip-footprint features. Brute-force
-    DuckDB scan (~1 GB per RI-sized state-year) -- no vector index, no GPU.
-    The query chip itself is echoed under `query` and excluded from results."""
-    request_started_at = monotonic()
-
-    try:
-        lon = float(body["lon"])
-        lat = float(body["lat"])
-    except (KeyError, TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="lon and lat are required and must be numeric")
-
-    collection = body.get("collection", EMBED_COLLECTION_ID)
-    collection = "".join(ch for ch in str(collection).lower() if ch.isalnum() or ch in "-_") or EMBED_COLLECTION_ID
-
-    safe_region = None
-    region = body.get("region")
-    if region is not None:
-        safe_region = "".join(ch for ch in str(region).lower() if ch.isalnum()) or None
-
-    year = body.get("year")
-    try:
-        year_int = int(year) if year is not None else None
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="year must be an integer")
-
-    try:
-        k = max(1, min(int(body.get("k", 25)), 500))
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="k must be an integer")
-
-    read_path = _embed_read_path(collection, safe_region, year_int)
-    point_filter = (
-        f"bbox_xmin <= {lon} and bbox_xmax >= {lon} "
-        f"and bbox_ymin <= {lat} and bbox_ymax >= {lat}"
-    )
-    # Newest chip covering the point is the query vector; ties broken by item
-    # for determinism. Hive columns (region/year) survive the scoped glob.
-    query_chip_sql = f"""
-      select naip_item, block, bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax,
-             naip_date, gsd, region, year
-      from read_parquet('{read_path}', hive_partitioning=true)
-      where {point_filter}
-      order by year desc, naip_date desc, naip_item asc
-      limit 1
-    """
-
-    sql_started_at = monotonic()
-    try:
-        chip = lake_query(lambda cur: cur.execute(query_chip_sql).fetchone())
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "no files found" in msg or "no files matched" in msg:
-            raise HTTPException(status_code=404, detail=f"no embeddings harvested for {read_path}")
-        raise
-    if chip is None:
-        raise HTTPException(status_code=404, detail="no embedding chip covers that point in the requested scope")
-    (q_item, q_block, q_xmin, q_ymin, q_xmax, q_ymax, q_date, q_gsd, q_region, q_year) = chip
-
-    knn_sql = f"""
-      with q as (
-        select embedding::FLOAT[{EMBED_DIM}] as qe
-        from read_parquet('{read_path}', hive_partitioning=true)
-        where {point_filter}
-        order by year desc, naip_date desc, naip_item asc
-        limit 1
-      )
-      select t.naip_item, t.block, ST_AsGeoJSON(t.geometry) as geom_json,
-             t.bbox_xmin, t.bbox_ymin, t.bbox_xmax, t.bbox_ymax,
-             t.naip_date, t.gsd, t.src_uri, t.region, t.year,
-             array_cosine_similarity(t.embedding::FLOAT[{EMBED_DIM}], q.qe) as sim
-      from read_parquet('{read_path}', hive_partitioning=true) t, q
-      where not (t.naip_item = '{q_item}'
-                 and t.bbox_xmin = {q_xmin} and t.bbox_ymin = {q_ymin})
-      order by sim desc
-      limit {k}
-    """
-    rows = lake_query(lambda cur: cur.execute(knn_sql).fetchall())
-    sql_seconds = monotonic() - sql_started_at
-
-    features = [make_similar_feature(row, collection) for row in rows]
-    result = {
-        'type': 'FeatureCollection',
-        'features': features,
-        'query': {
-            'lon': lon, 'lat': lat, 'k': k, 'collection': collection,
-            'chip': {
-                'naip_item': q_item,
-                'block': q_block,
-                'bbox': [q_xmin, q_ymin, q_xmax, q_ymax],
-                'datetime': f"{q_date.isoformat()}T00:00:00Z" if q_date else None,
-                'gsd': q_gsd,
-                'region': q_region,
-                'year': q_year,
-            },
-        },
-        'links': [],
-    }
-    total_seconds = monotonic() - request_started_at
-    response.headers["x-similar-feature-count"] = str(len(features))
-    response.headers["x-similar-sql-ms"] = f"{sql_seconds * 1000:.1f}"
-    response.headers["x-similar-total-ms"] = f"{total_seconds * 1000:.1f}"
-    return result
 
 
 # AWS Lambda entry point. Mangum adapts the ASGI app to the Lambda event/response
