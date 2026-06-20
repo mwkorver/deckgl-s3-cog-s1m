@@ -969,6 +969,7 @@
       let s1mDrapeSources = [];
       let s1mDrapeSourcePending = null;
       let s1mDrapeSourceError = null;
+      const s1mDrapeSourceCache = new Map(); // S1M/subtile bbox search key -> {sources, pending, error}
       const s1mDrapeMetrics = {
         mode: "analytic RGBIR",
         sourceSearchMs: null,
@@ -1036,6 +1037,8 @@
             decodedCogTileMax: S1M_COG_TILE_CACHE_MAX,
             geotiffSources: geotiffSourceCache.size,
             geotiffSourceMax: GEOTIFF_SOURCE_CACHE_MAX,
+            drapeSourceQueries: s1mDrapeSourceCache.size,
+            drapeSourceQueryMax: S1M_DRAPE_SOURCE_CACHE_MAX,
           },
           cacheEvictions: {
             drapeImages: s1mBench.drapeEvict,
@@ -1137,6 +1140,26 @@
       function getTerrainDrapeSources() {
         return s1mDrapeSourceKey ? s1mDrapeSources : getImagerySources();
       }
+      function s1mDrapeSourceCacheStats() {
+        let pending = 0, ready = 0, failed = 0, sources = 0, rawSources = 0;
+        for (const entry of s1mDrapeSourceCache.values()) {
+          if (entry.pending) pending += 1;
+          if (entry.sources) {
+            ready += 1;
+            sources += entry.sources.length;
+            rawSources += entry.rawCount || entry.sources.length;
+          }
+          if (entry.error) failed += 1;
+        }
+        return { pending, ready, failed, sources, rawSources };
+      }
+      function clearS1MDrapeSourceCache() {
+        s1mDrapeSourceCache.clear();
+        s1mDrapeSourceKey = null;
+        s1mDrapeSources = [];
+        s1mDrapeSourcePending = null;
+        s1mDrapeSourceError = null;
+      }
       function resetS1MDrapeMetrics() {
         s1mDrapeMetrics.mode = "analytic RGBIR";
         s1mDrapeMetrics.sourceSearchMs = null;
@@ -1173,6 +1196,8 @@
           : null;
         const errorText = s1mDrapeMetrics.sourceError ? ` · source error: ${s1mDrapeMetrics.sourceError}` : "";
         const bucketText = ` · analytic refs ${s1mDrapeMetrics.analyticRefs}`;
+        const sourceStats = s1mDrapeSourceCacheStats();
+        const sourceQueryText = ` · source bboxes ${sourceStats.ready}/${s1mDrapeSourceCache.size} ready (${sourceStats.pending} pending, ${sourceStats.failed} failed)`;
         const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${S1M_SUBDIV_MAX}×) · sources ${S1M_INITIAL_DRAPE_SOURCES_PER_TILE}/${S1M_MAX_DRAPE_SOURCES_PER_TILE}`;
         const cacheText =
           ` · cache drape ${s1mDrapeCache.size}/${S1M_DRAPE_CACHE_MAX} (${fmtPct(s1mDrapeCache.size, S1M_DRAPE_CACHE_MAX)})` +
@@ -1191,6 +1216,7 @@
           ` · max sources/tile ${s1mDrapeMetrics.maxSourceRefs}` +
           ` · no-data fallback ${s1mDrapeMetrics.noDataSourceFallbacks}` +
           bucketText +
+          sourceQueryText +
           textureText +
           cacheText +
           hrefText +
@@ -1600,6 +1626,7 @@
       const S1M_SUBTILE_DRAPE_SIZE = 384; // per NAIP drape sub-tile; effective res = subdiv × this
       const S1M_SUBDIV_MAX = 6;           // cap on per-tile N×N drape sub-tiling
       const S1M_DRAPE_CACHE_MAX = 48;     // 384px RGBA ImageData ~= 0.56 MB each; keep bounded during pans
+      const S1M_DRAPE_SOURCE_CACHE_MAX = 192; // one small /search result per rendered S1M bbox
       const s1mTerrainPending = new Map();  // tile key -> {seq, dataset, size, startedAt}
       const s1mTerrainFailures = new Map(); // tile key -> {seq, dataset, size, message, at}
       let s1mMoveHandler = null;
@@ -1674,6 +1701,7 @@
             }
           }
         }
+        const sourceStats = s1mDrapeSourceCacheStats();
         return {
           active: s1mActive,
           refreshSeq: s1mRefreshSeq,
@@ -1691,9 +1719,13 @@
             stale: s1mFillMetrics.terrainStale,
           },
           drape: {
-            sourcePending: !!s1mDrapeSourcePending,
+            sourcePending: !!s1mDrapeSourcePending || sourceStats.pending > 0,
             sourceError: s1mDrapeSourceError,
-            sources: s1mDrapeSources.length,
+            sources: sourceStats.sources || s1mDrapeSources.length,
+            sourceQueries: s1mDrapeSourceCache.size,
+            sourceQueriesReady: sourceStats.ready,
+            sourceQueriesPending: sourceStats.pending,
+            sourceQueriesFailed: sourceStats.failed,
             subtiles: drapeTotal,
             textured: drapeTextured,
             pending: drapePending,
@@ -2017,6 +2049,24 @@
         return w * h;
       }
 
+      function bboxArea(bbox) {
+        if (!Array.isArray(bbox)) return 0;
+        return Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1]);
+      }
+
+      function bboxOverlapFraction(a, b) {
+        const area = bboxArea(a);
+        return area ? bboxIntersectionArea(a, b) / area : 0;
+      }
+
+      function bboxCombinedOverlapFraction(target, candidates) {
+        const area = bboxArea(target);
+        if (!area) return 0;
+        let covered = 0;
+        for (const candidate of candidates) covered += bboxIntersectionArea(target, candidate);
+        return Math.min(1, covered / area);
+      }
+
       function drapeSourcesForTile(tile, sources = getTerrainDrapeSources()) {
         const bbox = tile?.bbox;
         if (!Array.isArray(bbox)) return [];
@@ -2325,6 +2375,114 @@
         return s1mDrapeSourcePending;
       }
 
+      function pruneS1MDrapeSourceCache() {
+        while (s1mDrapeSourceCache.size > S1M_DRAPE_SOURCE_CACHE_MAX) {
+          let deleteKey = null;
+          for (const [key, entry] of s1mDrapeSourceCache.entries()) {
+            if (!entry.pending) { deleteKey = key; break; }
+          }
+          if (!deleteKey) deleteKey = s1mDrapeSourceCache.keys().next().value;
+          if (!deleteKey) break;
+          s1mDrapeSourceCache.delete(deleteKey);
+        }
+      }
+
+      function s1mDrapeSourcesForBbox(bbox, seq, schedulePaint) {
+        if (document.getElementById("ter-surface")?.value !== "naip") return getTerrainDrapeSources();
+        if (!Array.isArray(bbox)) return [];
+        const body = s1mDrapeSearchBody(bbox);
+        const key = s1mDrapeSearchKey(body);
+        let entry = s1mDrapeSourceCache.get(key);
+        if (entry?.sources) return entry.sources;
+        if (entry?.pending) {
+          if (entry.notifySeq !== seq) {
+            entry.notifySeq = seq;
+            entry.pending.then(() => {
+              if (seq === s1mRefreshSeq) schedulePaint?.();
+            });
+          }
+          return null;
+        }
+
+        const fallbackSources = drapeSourcesForTile({ bbox }, mostRecentNaipSources(getImagerySources()));
+        entry = {
+          key,
+          bbox,
+          sources: null,
+          rawCount: 0,
+          pending: null,
+          error: null,
+        };
+        s1mDrapeSourceCache.set(key, entry);
+        pruneS1MDrapeSourceCache();
+        s1mDrapeSourceKey = key;
+        s1mDrapeSources = [];
+        s1mDrapeSourceError = null;
+        const sourceSearchStartedAt = performance.now();
+        entry.pending = apiFetch("/search", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }).then(async (response) => {
+          if (!response.ok) {
+            let detail = "";
+            try {
+              detail = await response.text();
+            } catch (_) {
+              detail = "";
+            }
+            throw new Error(`terrain drape search failed: ${response.status}${detail ? ` ${detail.slice(0, 180)}` : ""}`);
+          }
+          const data = await response.json();
+          const rawSources = (data.features || []).filter(
+            (feature) => feature?.assets?.image?.href && Array.isArray(feature?.bbox),
+          );
+          const sources = mostRecentNaipSources(rawSources);
+          entry.sources = sources;
+          entry.rawCount = rawSources.length;
+          entry.error = null;
+          s1mDrapeSourceKey = key;
+          s1mDrapeSources = sources;
+          s1mDrapeSourceError = null;
+          s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
+          s1mDrapeMetrics.sourceRawCount = rawSources.length;
+          s1mDrapeMetrics.sourceCount = sources.length;
+          s1mDrapeMetrics.sourceError = null;
+          renderS1MDrapeMetrics();
+          if (seq === s1mRefreshSeq) {
+            schedulePaint?.();
+          } else if (s1mActive) {
+            requestAnimationFrame(() => { if (s1mActive) refreshS1MTerrain(); });
+          }
+          return sources;
+        }).catch((error) => {
+          const message = error?.message || String(error);
+          entry.sources = fallbackSources;
+          entry.rawCount = fallbackSources.length;
+          entry.error = fallbackSources.length ? null : message;
+          s1mDrapeSourceKey = key;
+          s1mDrapeSources = fallbackSources;
+          s1mDrapeSourceError = entry.error;
+          s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
+          s1mDrapeMetrics.sourceError = entry.error;
+          s1mDrapeMetrics.sourceRawCount = fallbackSources.length;
+          s1mDrapeMetrics.sourceCount = fallbackSources.length;
+          renderS1MDrapeMetrics();
+          if (seq === s1mRefreshSeq) {
+            schedulePaint?.();
+          } else if (s1mActive) {
+            requestAnimationFrame(() => { if (s1mActive) refreshS1MTerrain(); });
+          }
+          return fallbackSources;
+        }).finally(() => {
+          entry.pending = null;
+          pruneS1MDrapeSourceCache();
+          renderS1MDrapeMetrics();
+        });
+        schedulePaint?.();
+        return null;
+      }
+
       function displayDrapeRgbaBytes(array, source, image) {
         const width = array.width;
         const height = array.height;
@@ -2630,6 +2788,7 @@
         s1mDrapeCache.clear();
         s1mCogTileCache.clear();
         geotiffSourceCache.clear();
+        clearS1MDrapeSourceCache();
         drapeProjectionCache = new WeakMap();
         for (const cache of s1mTileCache.values()) {
           if (!cache.subtiles) continue;
@@ -2770,10 +2929,23 @@
       // Async-build a sub-tile's 512² NAIP texture (shared promise cache + drape
       // metrics, like the old whole-tile path). Re-builds when imagery changes
       // (revision is in the key).
-      function ensureSubTileDrape(data, sub, schedulePaint, seq) {
+      function ensureSubTileDrape(data, tile, sub, schedulePaint, seq) {
         const region = { bbox: sub.bbox, uvRect: sub.uvRect };
-        const sources = drapeSourcesForTile(region).slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
-        if (!sources.length) return;
+        const sourceBbox = Array.isArray(tile?.bbox) ? tile.bbox : sub.bbox;
+        const sourcePool = s1mDrapeSourcesForBbox(sourceBbox, seq, schedulePaint);
+        const sourceBody = s1mDrapeSearchBody(sourceBbox);
+        const sourceKey = `sources:${s1mDrapeSearchKey(sourceBody)}`;
+        if (!sourcePool) {
+          sub.drapePending = sourceKey;
+          return;
+        }
+        if (sub.drapePending === sourceKey) sub.drapePending = null;
+        const sources = drapeSourcesForTile(region, sourcePool).slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
+        if (!sources.length) {
+          sub.drapeError = "no NAIP sources intersect S1M subtile";
+          return;
+        }
+        sub.drapeError = null;
         const hrefKey = sources.map((s) => s.assets?.image?.href || s.id).join("|");
         const key = `${data.dataset}@sub${sub.N}:${sub.ix},${sub.iy}@${hrefKey}@${imageryRevision}@${S1M_SUBTILE_DRAPE_SIZE}`;
         if (sub.drapeKey === key || sub.drapePending === key) return;
@@ -2810,13 +2982,16 @@
         const oldDrapeKey = sub.drapeKey;
         sub.drapePending = key;
         pending.then((imageData) => {
-          if (seq !== s1mRefreshSeq) return;
           sub.drapeImage = imageData;
           sub.drapeKey = key;
           if (sub.drapePending === key) sub.drapePending = null;
           if (oldDrapeKey && oldDrapeKey !== key) s1mDrapeCache.delete(oldDrapeKey);
           pruneS1MDrapeCache();
-          schedulePaint?.();
+          if (s1mActive && seq === s1mRefreshSeq) {
+            schedulePaint?.();
+          } else if (s1mActive) {
+            requestAnimationFrame(() => { if (s1mActive) refreshS1MTerrain(); });
+          }
         }).catch((error) => {
           if (sub.drapePending === key) sub.drapePending = null;
           sub.drapeError = error?.message || String(error);
@@ -2858,20 +3033,49 @@
         const data = cache.data;
         const bx = s1mSubBoundaries(data.width, n);
         const by = s1mSubBoundaries(data.height, n);
-        // Prune sub-tiles from a previous subdivision / no longer in view.
+        // Keep already-draped sub-tiles as visual fallbacks during pan/zoom.
+        // Undraped stale entries can be dropped because they only show shaded
+        // terrain and cannot hide a refresh gap.
         if (cache.subtiles) {
           for (const [k, s] of [...cache.subtiles]) {
-            if (s.N !== n || !bboxIntersects(s.bbox, viewBbox)) cache.subtiles.delete(k);
+            if ((s.N !== n || !bboxIntersects(s.bbox, viewBbox)) && !s.drapeImage && !s.drapePending) {
+              cache.subtiles.delete(k);
+            }
           }
         }
-        const layers = [];
+        const targetSubs = [];
         for (let iy = 0; iy < n; iy++) {
           for (let ix = 0; ix < n; ix++) {
             const bbox = s1mSubTileBbox(data, bx[ix], bx[ix + 1], by[iy], by[iy + 1]);
             if (!bboxIntersects(bbox, viewBbox)) continue;   // viewport cull
             const sub = ensureSubTile(cache, ix, iy, n, bx, by);
-            ensureSubTileDrape(data, sub, schedulePaint, seq);
+            ensureSubTileDrape(data, tile, sub, schedulePaint, seq);
+            targetSubs.push(sub);
+          }
+        }
+        const targetHasUndraped = targetSubs.some((sub) => !sub.drapeImage);
+        const fallbackSubs = targetHasUndraped && cache.subtiles
+          ? [...cache.subtiles.values()].filter((sub) =>
+              sub.N !== n && sub.drapeImage && bboxIntersects(sub.bbox, viewBbox))
+          : [];
+        const layers = [];
+        const fallbackLayerKeys = new Set();
+        for (const sub of targetSubs) {
+          if (sub.drapeImage) {
             layers.push(buildS1MSubTileLayerGPU(data, sub, exag, range));
+            continue;
+          }
+          const fallbackMatches = fallbackSubs.filter((candidate) => bboxOverlapFraction(sub.bbox, candidate.bbox) > 0.01);
+          const fallbackCoverage = bboxCombinedOverlapFraction(sub.bbox, fallbackMatches.map((candidate) => candidate.bbox));
+          if (fallbackCoverage < 0.75) {
+            layers.push(buildS1MSubTileLayerGPU(data, sub, exag, range));
+          }
+          for (const fallback of fallbackMatches) {
+            const fallbackKey = `${fallback.N}:${fallback.ix},${fallback.iy}`;
+            if (!fallbackLayerKeys.has(fallbackKey)) {
+              layers.push(buildS1MSubTileLayerGPU(data, fallback, exag, range));
+              fallbackLayerKeys.add(fallbackKey);
+            }
           }
         }
         return layers.length ? layers : [s1mBuildTileLayer(cache, exag, range)];
@@ -2893,6 +3097,7 @@
       function clearS1MDrapeImages() {
         s1mDrapeCache.clear();
         s1mCogTileCache.clear();
+        clearS1MDrapeSourceCache();
         for (const cache of s1mTileCache.values()) {
           delete cache.drapeImage;
           delete cache.drapeKey;
@@ -3200,7 +3405,6 @@
         };
         const schedulePaint = () => { if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); } };
 
-        ensureS1MDrapeSources(visibleBbox, seq, schedulePaint);
         schedulePaint();  // show already-cached tiles immediately
 
         // Fetch missing tiles bottom-of-viewport first with bounded concurrency,
@@ -3309,14 +3513,11 @@
         s1mDrapeCache.clear();
         s1mCogTileCache.clear();
         geotiffSourceCache.clear();
+        clearS1MDrapeSourceCache();
         drapeProjectionCache = new WeakMap();
         s1mTerrainPending.clear();
         s1mTerrainFailures.clear();
         s1mActiveTiles.clear();
-        s1mDrapeSourceKey = null;
-        s1mDrapeSources = [];
-        s1mDrapeSourcePending = null;
-        s1mDrapeSourceError = null;
         resetS1MDrapeMetrics();
         s1mLayers = [];
         clearBuildingFootprints();
