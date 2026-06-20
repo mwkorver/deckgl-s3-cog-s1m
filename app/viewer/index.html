@@ -464,8 +464,8 @@
               <label class="small">
                 Surface
                 <select id="ter-surface">
-                  <option value="shaded" selected>Terrain shading</option>
-                  <option value="naip">NAIP imagery texture</option>
+                  <option value="shaded">Terrain shading</option>
+                  <option value="naip" selected>NAIP imagery texture</option>
                 </select>
               </label>
               <label class="small">
@@ -489,6 +489,7 @@
               <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                 <button id="ter-run" class="search-active">Show terrain in view</button>
                 <button id="ter-clear">Clear</button>
+                <button id="ter-stats-window" type="button">Stats window</button>
               </div>
               <div id="ter-summary" class="muted">No terrain loaded.</div>
               <div id="ter-metrics" class="small muted">Drape metrics unavailable.</div>
@@ -839,7 +840,8 @@
       let autoSearchTimeoutId = null;
       let imageryRenderGeneration = 0;
       const geotiffSourceCache = new Map();
-      const drapeProjectionCache = new WeakMap();
+      const GEOTIFF_SOURCE_CACHE_MAX = 12;
+      let drapeProjectionCache = new WeakMap();
       // Lazy per-tile presign: /search returns raw s3:// hrefs and we sign each
       // COG only when deck.gl actually loads it (via GET /sign). signedUrlCache
       // keys the signed URL by its s3:// href with an expiry; inflightSigns
@@ -857,6 +859,16 @@
         for (let e = error; e; e = e.cause) {
           const msg = String(e?.message || "");
           if (msg.includes("403") || /expired/i.test(msg) || /accessdenied/i.test(msg)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function isAllocationError(error) {
+        for (let e = error; e; e = e.cause) {
+          const msg = String(e?.message || e || "");
+          if (/array buffer allocation failed|out of memory|allocation/i.test(msg)) {
             return true;
           }
         }
@@ -881,7 +893,7 @@
           cacheKey: s3href,
           chunkSize: 1024 * 1024,
           cacheName: "naip-analytic-cog-chunks-v1",
-          memoryMaxBytes: 96 * 1024 * 1024,
+          memoryMaxBytes: 8 * 1024 * 1024,
         };
       }
 
@@ -916,7 +928,19 @@
           // callers, so one caller's pan-abort shouldn't cancel a sign others need.
           pending = apiFetch(`/sign?href=${encodeURIComponent(s3href)}`)
             .then(async (resp) => {
-              if (!resp.ok) throw new Error(`sign failed: ${resp.status}`);
+              if (!resp.ok) {
+                let detail = "";
+                try {
+                  const body = await resp.json();
+                  detail = body?.detail ? `: ${body.detail}` : "";
+                } catch (_) {
+                  try {
+                    const text = await resp.text();
+                    detail = text ? `: ${text.slice(0, 180)}` : "";
+                  } catch (_) {}
+                }
+                throw new Error(`sign failed: ${resp.status}${detail}`);
+              }
               const data = await resp.json();
               signCallCount += 1;
               signTotalMs += performance.now() - startedAt;
@@ -959,8 +983,143 @@
         totalTileMs: 0,
         lastTileMs: null,
         lastSourceRefs: 0,
+        maxSourceRefs: 0,
+        noDataSourceFallbacks: 0,
         lastHref: null,
       };
+      const s1mFillMetrics = {
+        refreshSeq: 0,
+        refreshStartedAt: null,
+        desired: 0,
+        missingQueued: 0,
+        terrainStarted: 0,
+        terrainCompleted: 0,
+        terrainFailed: 0,
+        terrainStale: 0,
+        paints: 0,
+        lastPaintAt: null,
+        lastPaint: null,
+      };
+      // Phase-level benchmark accumulator for the S1M terrain + NAIP drape
+      // pipeline. Cheap (performance.now deltas) and always on. Read/reset from
+      // the console via window.__s1mBenchReport() / window.__s1mBenchReset().
+      const s1mBench = {
+        cogHit: 0, cogMiss: 0,           // decoded-COG-tile cache effectiveness
+        drapeEvict: 0, cogEvict: 0, tiffEvict: 0, // bounded-cache pressure
+        cogFetchMs: 0, cogFetchN: 0,     // level.fetchTile (network/range reads)
+        decodeMs: 0, decodeN: 0,         // displayDrapeRgbaBytes (band -> rgba)
+        rasterMs: 0, rasterN: 0,         // per-output-pixel reproject+sample loop
+        drapeBuildMs: 0, drapeBuildN: 0, // summed per-subtile drape durations
+        terrainFetchMs: 0, terrainFetchN: 0, // /s1m/terrain fetch + json
+        meshMs: 0, meshN: 0,             // elevation decode + CPU mesh build
+      };
+      function s1mBenchReset() { for (const k in s1mBench) s1mBench[k] = 0; }
+      function s1mBenchReport() {
+        const avg = (ms, n) => (n ? +(ms / n).toFixed(1) : 0);
+        const cogTotal = s1mBench.cogHit + s1mBench.cogMiss;
+        return {
+          cogTileCache: {
+            hits: s1mBench.cogHit, misses: s1mBench.cogMiss,
+            hitRatePct: cogTotal ? +((100 * s1mBench.cogHit) / cogTotal).toFixed(0) : 0,
+          },
+          cogFetch: { tiles: s1mBench.cogFetchN, totalMs: +s1mBench.cogFetchMs.toFixed(0), avgMs: avg(s1mBench.cogFetchMs, s1mBench.cogFetchN) },
+          decode: { tiles: s1mBench.decodeN, totalMs: +s1mBench.decodeMs.toFixed(0), avgMs: avg(s1mBench.decodeMs, s1mBench.decodeN) },
+          rasterize: { passes: s1mBench.rasterN, totalMs: +s1mBench.rasterMs.toFixed(0), avgMs: avg(s1mBench.rasterMs, s1mBench.rasterN) },
+          drapeBuild: { subtiles: s1mBench.drapeBuildN, totalSubtileMs: +s1mBench.drapeBuildMs.toFixed(0), avgSubtileMs: avg(s1mBench.drapeBuildMs, s1mBench.drapeBuildN) },
+          terrainFetch: { tiles: s1mBench.terrainFetchN, totalMs: +s1mBench.terrainFetchMs.toFixed(0), avgMs: avg(s1mBench.terrainFetchMs, s1mBench.terrainFetchN) },
+          mesh: { tiles: s1mBench.meshN, totalMs: +s1mBench.meshMs.toFixed(0), avgMs: avg(s1mBench.meshMs, s1mBench.meshN) },
+          sourceSearchMs: s1mDrapeMetrics.sourceSearchMs,
+          cacheSizes: {
+            drapeImages: s1mDrapeCache.size,
+            drapeImageMax: S1M_DRAPE_CACHE_MAX,
+            decodedCogTiles: s1mCogTileCache.size,
+            decodedCogTileMax: S1M_COG_TILE_CACHE_MAX,
+            geotiffSources: geotiffSourceCache.size,
+            geotiffSourceMax: GEOTIFF_SOURCE_CACHE_MAX,
+          },
+          cacheEvictions: {
+            drapeImages: s1mBench.drapeEvict,
+            decodedCogTiles: s1mBench.cogEvict,
+            geotiffSources: s1mBench.tiffEvict,
+          },
+          fill: s1mFillReport(),
+        };
+      }
+      let s1mStatsWindow = null;
+      let s1mStatsWindowTimer = null;
+      function s1mOpenStatsWindow() {
+        if (s1mStatsWindow && !s1mStatsWindow.closed) {
+          s1mStatsWindow.focus();
+        } else {
+          s1mStatsWindow = window.open("", "s1m-stats", "width=760,height=900");
+        }
+        if (!s1mStatsWindow) {
+          console.warn("S1M stats window was blocked by the browser.");
+          return null;
+        }
+        s1mStatsWindow.document.open();
+        s1mStatsWindow.document.write(`<!doctype html>
+          <html>
+            <head>
+              <title>S1M Stats</title>
+              <style>
+                body { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 0; background: #101418; color: #e6edf3; }
+                header { position: sticky; top: 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 10px 12px; }
+                button { margin-right: 8px; }
+                main { padding: 12px; }
+                pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
+                .muted { color: #8b949e; }
+              </style>
+            </head>
+            <body>
+              <header>
+                <button id="copy">Copy JSON</button>
+                <button id="reset">Reset Bench</button>
+                <span class="muted" id="stamp"></span>
+              </header>
+              <main><pre id="stats">Waiting for stats...</pre></main>
+            </body>
+          </html>`);
+        s1mStatsWindow.document.close();
+        const render = () => {
+          if (!s1mStatsWindow || s1mStatsWindow.closed) return;
+          const payload = {
+            generatedAt: new Date().toISOString(),
+            bench: s1mBenchReport(),
+            fill: s1mFillReport(),
+          };
+          const text = JSON.stringify(payload, null, 2);
+          s1mStatsWindow.document.getElementById("stats").textContent = text;
+          s1mStatsWindow.document.getElementById("stamp").textContent = payload.generatedAt;
+          s1mStatsWindow.__s1mStatsText = text;
+        };
+        s1mStatsWindow.document.getElementById("copy").onclick = () => {
+          s1mStatsWindow.navigator.clipboard?.writeText(s1mStatsWindow.__s1mStatsText || "");
+        };
+        s1mStatsWindow.document.getElementById("reset").onclick = () => {
+          s1mBenchReset();
+          render();
+        };
+        if (s1mStatsWindowTimer) clearInterval(s1mStatsWindowTimer);
+        render();
+        s1mStatsWindowTimer = setInterval(() => {
+          if (!s1mStatsWindow || s1mStatsWindow.closed) {
+            clearInterval(s1mStatsWindowTimer);
+            s1mStatsWindowTimer = null;
+            return;
+          }
+          render();
+        }, 1000);
+        return s1mStatsWindow;
+      }
+      if (typeof window !== "undefined") {
+        window.__s1mBench = s1mBench;
+        window.__s1mBenchReport = s1mBenchReport;
+        window.__s1mBenchReset = s1mBenchReset;
+        window.__s1mFillMetrics = s1mFillMetrics;
+        window.__s1mFillReport = s1mFillReport;
+        window.__s1mOpenStatsWindow = s1mOpenStatsWindow;
+      }
       // Memoized filtered views of lastSearchFeatures. Recreated only when
       // lastSearchFeatures changes, so MosaicLayer sees a stable array
       // reference across updateImageryLayers() calls triggered by panning.
@@ -976,7 +1135,7 @@
         return _memoImagerySources;
       }
       function getTerrainDrapeSources() {
-        return s1mDrapeSourceKey && s1mDrapeSources.length ? s1mDrapeSources : getImagerySources();
+        return s1mDrapeSourceKey ? s1mDrapeSources : getImagerySources();
       }
       function resetS1MDrapeMetrics() {
         s1mDrapeMetrics.mode = "analytic RGBIR";
@@ -992,11 +1151,16 @@
         s1mDrapeMetrics.totalTileMs = 0;
         s1mDrapeMetrics.lastTileMs = null;
         s1mDrapeMetrics.lastSourceRefs = 0;
+        s1mDrapeMetrics.maxSourceRefs = 0;
+        s1mDrapeMetrics.noDataSourceFallbacks = 0;
         s1mDrapeMetrics.lastHref = null;
         renderS1MDrapeMetrics();
       }
       function fmtMs(value) {
         return Number.isFinite(value) ? `${value.toFixed(value >= 100 ? 0 : 1)} ms` : "-";
+      }
+      function fmtPct(value, max) {
+        return max ? `${Math.round((100 * value) / max)}%` : "-";
       }
       function renderS1MDrapeMetrics() {
         const el = document.getElementById("ter-metrics");
@@ -1009,7 +1173,12 @@
           : null;
         const errorText = s1mDrapeMetrics.sourceError ? ` · source error: ${s1mDrapeMetrics.sourceError}` : "";
         const bucketText = ` · analytic refs ${s1mDrapeMetrics.analyticRefs}`;
-        const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${S1M_SUBDIV_MAX}×) · source cap ${S1M_MAX_DRAPE_SOURCES_PER_TILE}`;
+        const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${S1M_SUBDIV_MAX}×) · sources ${S1M_INITIAL_DRAPE_SOURCES_PER_TILE}/${S1M_MAX_DRAPE_SOURCES_PER_TILE}`;
+        const cacheText =
+          ` · cache drape ${s1mDrapeCache.size}/${S1M_DRAPE_CACHE_MAX} (${fmtPct(s1mDrapeCache.size, S1M_DRAPE_CACHE_MAX)})` +
+          ` · COG ${s1mCogTileCache.size}/${S1M_COG_TILE_CACHE_MAX} (${fmtPct(s1mCogTileCache.size, S1M_COG_TILE_CACHE_MAX)})` +
+          ` · TIFF ${geotiffSourceCache.size}/${GEOTIFF_SOURCE_CACHE_MAX} (${fmtPct(geotiffSourceCache.size, GEOTIFF_SOURCE_CACHE_MAX)})` +
+          ` · evict d/c/t ${s1mBench.drapeEvict}/${s1mBench.cogEvict}/${s1mBench.tiffEvict}`;
         const hrefText = s1mDrapeMetrics.lastHref ? ` · last ${s1mDrapeMetrics.lastHref}` : "";
         el.textContent =
           `Drape ${s1mDrapeMetrics.mode} · source search ${fmtMs(s1mDrapeMetrics.sourceSearchMs)}` +
@@ -1019,8 +1188,11 @@
           ` · avg tile ${fmtMs(avgTileMs)}` +
           ` · last tile ${fmtMs(s1mDrapeMetrics.lastTileMs)}` +
           ` · avg sources/tile ${Number.isFinite(avgRefs) ? avgRefs.toFixed(1) : "-"}` +
+          ` · max sources/tile ${s1mDrapeMetrics.maxSourceRefs}` +
+          ` · no-data fallback ${s1mDrapeMetrics.noDataSourceFallbacks}` +
           bucketText +
           textureText +
+          cacheText +
           hrefText +
           errorText;
       }
@@ -1234,21 +1406,27 @@
         // by the stable s3:// key (not the signed URL, which rotates).
         const s3href = source?.assets?.image?.href;
         if (!s3href) return null;
-        let geotiff = geotiffSourceCache.get(s3href);
-        if (!geotiff) {
-          try {
+        // Cache the in-flight promise, not just the resolved value: when many
+        // drape sub-tiles hit a cold source in the same paint, they share one
+        // sign + one header (IFD) read instead of each issuing its own (those
+        // header reads otherwise compete with tile reads for the fetch queue).
+        // The shared resolve intentionally does not pass the per-caller abort
+        // signal into the header read -- like signHref, one caller's pan-abort
+        // must not cancel a resolve others are awaiting. Callers still re-check
+        // their own signal after the shared resolve completes.
+        let pending = geotiffSourceCache.get(s3href);
+        if (!pending) {
+          pending = (async () => {
             const signedUrl = await signHref(s3href);
-            const activeSignal = signal && !signal.aborted ? signal : undefined;
             // Forward the limiter + priority so this COG's range reads join the
             // shared per-origin queue and get ordered center-out by getPriority.
-            geotiff = await window.GeoTIFFCoreClass.fromUrl(signedUrl, {
-              signal: activeSignal,
+            return window.GeoTIFFCoreClass.fromUrl(signedUrl, {
               concurrencyLimiter,
               getPriority,
               chunkCache: chunkCacheForHref(s3href),
             });
-            geotiffSourceCache.set(s3href, geotiff);
-          } catch (error) {
+          })().catch((error) => {
+            geotiffSourceCache.delete(s3href);   // never cache a failed resolve
             // A 403/expired signed URL: drop the cached signature so the next
             // resolve re-signs from scratch.
             if (isExpiredSignatureError(error)) {
@@ -1256,7 +1434,19 @@
             }
             console.error("Failed to resolve GeoTIFF source:", source.id, error);
             throw error;
+          });
+          geotiffSourceCache.set(s3href, pending);
+          while (geotiffSourceCache.size > GEOTIFF_SOURCE_CACHE_MAX) {
+            geotiffSourceCache.delete(geotiffSourceCache.keys().next().value);
+            s1mBench.tiffEvict += 1;
           }
+        } else {
+          geotiffSourceCache.delete(s3href);
+          geotiffSourceCache.set(s3href, pending);
+        }
+        const geotiff = await pending;
+        if (signal?.aborted) {
+          throw signal.reason ?? new DOMException("Aborted", "AbortError");
         }
         const epsg = source?.properties?.["proj:epsg"];
         if (Number.isFinite(epsg)) {
@@ -1403,17 +1593,121 @@
       let s1mActive = false;              // terrain mode on (refreshes on pan/zoom)
       let s1mLayers = [];                 // tile layers currently pushed to deck
       const s1mTileCache = new Map();     // `${dataset}@${size}` -> {data, elevations, gpuMesh, layer}
-      const s1mDrapeCache = new Map();    // `${dataset}@${size}@${imageryHref}@${revision}` -> Promise<ImageData>
-      const S1M_MAX_TILES = 128;          // enough to cover wide/pitched views; LOD keeps edge tiles cheap
-      const S1M_MAX_DRAPE_SOURCES_PER_TILE = 16;
-      const S1M_SUBTILE_DRAPE_SIZE = 512; // per NAIP drape sub-tile; effective res = subdiv × this
-      const S1M_SUBDIV_MAX = 8;           // cap on per-tile N×N drape sub-tiling
+      const s1mDrapeCache = new Map();    // drape key -> Promise<ImageData>
+      const S1M_MAX_TILES = 96;           // enough to cover wide/pitched views; LOD keeps edge tiles cheap
+      const S1M_INITIAL_DRAPE_SOURCES_PER_TILE = 6;
+      const S1M_MAX_DRAPE_SOURCES_PER_TILE = 12;
+      const S1M_SUBTILE_DRAPE_SIZE = 384; // per NAIP drape sub-tile; effective res = subdiv × this
+      const S1M_SUBDIV_MAX = 6;           // cap on per-tile N×N drape sub-tiling
+      const S1M_DRAPE_CACHE_MAX = 48;     // 384px RGBA ImageData ~= 0.56 MB each; keep bounded during pans
+      const s1mTerrainPending = new Map();  // tile key -> {seq, dataset, size, startedAt}
+      const s1mTerrainFailures = new Map(); // tile key -> {seq, dataset, size, message, at}
       let s1mMoveHandler = null;
       let s1mRefreshSeq = 0;              // guards against stale async refreshes
       let buildingFootprintSeq = 0;
       let buildingFootprintKey = "";
       let buildingFeatureData = null;     // raw lon/lat FC from the API, pre terrain-seating
       const BUILDING_MAX_FEATURES = 12000;  // viewport-scoped, so this is only a safety cap
+
+      function s1mCachedForDesired(key, tile) {
+        const exact = s1mTileCache.get(key);
+        if (exact) return { cacheKey: key, cache: exact, exact: true };
+        for (const cacheKey of s1mTileCache.keys()) {
+          if (cacheKey.startsWith(tile.dataset + "@")) {
+            return { cacheKey, cache: s1mTileCache.get(cacheKey), exact: false };
+          }
+        }
+        return { cacheKey: null, cache: null, exact: false };
+      }
+
+      function s1mFillReport() {
+        const now = performance.now();
+        const notFilled = [];
+        const staleLod = [];
+        let exactCached = 0, fallbackCached = 0, missing = 0;
+        let drapeTotal = 0, drapeTextured = 0, drapePending = 0, drapeRefreshing = 0, drapeFailed = 0;
+        const drapePendingSamples = [];
+        const drapeRefreshingSamples = [];
+        const drapeFailedSamples = [];
+        for (const [key, tile] of s1mActiveTiles.entries()) {
+          const found = s1mCachedForDesired(key, tile);
+          if (found.exact) {
+            exactCached += 1;
+          } else if (found.cache) {
+            fallbackCached += 1;
+            staleLod.push({ desired: key, cached: found.cacheKey });
+          } else {
+            missing += 1;
+            notFilled.push({
+              key,
+              dataset: tile.dataset,
+              size: tile.size,
+              pending: s1mTerrainPending.has(key),
+              failure: s1mTerrainFailures.get(key)?.message || null,
+            });
+          }
+          if (found.cache?.subtiles) {
+            for (const sub of found.cache.subtiles.values()) {
+              drapeTotal += 1;
+              if (sub.drapeImage) {
+                drapeTextured += 1;
+                if (sub.drapePending && sub.drapePending !== sub.drapeKey) {
+                  drapeRefreshing += 1;
+                  if (drapeRefreshingSamples.length < 12) {
+                    drapeRefreshingSamples.push(`${tile.dataset}@sub${sub.N}:${sub.ix},${sub.iy}`);
+                  }
+                }
+              } else if (sub.drapePending) {
+                drapePending += 1;
+                if (drapePendingSamples.length < 12) {
+                  drapePendingSamples.push(`${tile.dataset}@sub${sub.N}:${sub.ix},${sub.iy}`);
+                }
+              } else if (sub.drapeError) {
+                drapeFailed += 1;
+                if (drapeFailedSamples.length < 12) {
+                  drapeFailedSamples.push({
+                    key: `${tile.dataset}@sub${sub.N}:${sub.ix},${sub.iy}`,
+                    error: sub.drapeError,
+                  });
+                }
+              }
+            }
+          }
+        }
+        return {
+          active: s1mActive,
+          refreshSeq: s1mRefreshSeq,
+          refreshAgeMs: s1mFillMetrics.refreshStartedAt ? +(now - s1mFillMetrics.refreshStartedAt).toFixed(0) : null,
+          desired: s1mActiveTiles.size,
+          terrain: {
+            exactCached,
+            fallbackCached,
+            missing,
+            pending: s1mTerrainPending.size,
+            failures: s1mTerrainFailures.size,
+            started: s1mFillMetrics.terrainStarted,
+            completed: s1mFillMetrics.terrainCompleted,
+            failed: s1mFillMetrics.terrainFailed,
+            stale: s1mFillMetrics.terrainStale,
+          },
+          drape: {
+            sourcePending: !!s1mDrapeSourcePending,
+            sourceError: s1mDrapeSourceError,
+            sources: s1mDrapeSources.length,
+            subtiles: drapeTotal,
+            textured: drapeTextured,
+            pending: drapePending,
+            refreshing: drapeRefreshing,
+            failed: drapeFailed,
+          },
+          paint: s1mFillMetrics.lastPaint,
+          notFilled: notFilled.slice(0, 30),
+          staleLod: staleLod.slice(0, 30),
+          drapePending: drapePendingSamples,
+          drapeRefreshing: drapeRefreshingSamples,
+          drapeFailed: drapeFailedSamples,
+        };
+      }
 
       function updateImageryLayers() {
         if (!deckOverlay || !MosaicLayerClass || !COGLayerClass) {
@@ -1728,8 +2022,7 @@
         if (!Array.isArray(bbox)) return [];
         return sources
           .filter((source) => bboxIntersects(source.bbox, bbox))
-          .sort((a, b) => bboxIntersectionArea(b.bbox, bbox) - bboxIntersectionArea(a.bbox, bbox))
-          .slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
+          .sort((a, b) => bboxIntersectionArea(b.bbox, bbox) - bboxIntersectionArea(a.bbox, bbox));
       }
 
       function naipSourceYear(source) {
@@ -1978,14 +2271,9 @@
 
         const fallbackSources = mostRecentNaipSources(getImagerySources());
         s1mDrapeSourceKey = key;
-        s1mDrapeSources = fallbackSources;
+        s1mDrapeSources = [];
         s1mDrapeSourceError = null;
         resetS1MDrapeMetrics();
-        if (fallbackSources.length) {
-          s1mDrapeMetrics.sourceRawCount = fallbackSources.length;
-          s1mDrapeMetrics.sourceCount = fallbackSources.length;
-        }
-        clearS1MDrapeImages();
         const sourceSearchStartedAt = performance.now();
         s1mDrapeSourcePending = apiFetch("/search", {
           method: "POST",
@@ -2012,7 +2300,6 @@
             s1mDrapeMetrics.sourceCount = sources.length;
             s1mDrapeMetrics.sourceError = null;
             s1mDrapeSources = sources;
-            clearS1MDrapeImages();
             renderS1MDrapeMetrics();
             if (seq === s1mRefreshSeq) schedulePaint?.();
           }
@@ -2074,6 +2361,7 @@
           const rawR = scaleSample(readSample(pixel, 0));
           const rawG = scaleSample(readSample(pixel, 1));
           const rawB = scaleSample(readSample(pixel, 2));
+          const blackNoData = rawR <= 2 && rawG <= 2 && rawB <= 2;
           const r = Math.round(Math.max(0, Math.min(1, ((rawR / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
           const g = Math.round(Math.max(0, Math.min(1, ((rawG / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
           const b = Math.round(Math.max(0, Math.min(1, ((rawB / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
@@ -2081,7 +2369,7 @@
           adjusted[dst] = r;
           adjusted[dst + 1] = g;
           adjusted[dst + 2] = b;
-          adjusted[dst + 3] = whiteCollar ? 0 : 255;
+          adjusted[dst + 3] = blackNoData || whiteCollar ? 0 : 255;
         }
         return { layout: "pixel-interleaved", width, height, count: 4, data: adjusted };
       }
@@ -2093,22 +2381,32 @@
       // sub-tile. Keyed on imageryRevision, which is bumped (and this cache
       // cleared) on every imagery/display change, so entries never go stale. The
       // decoded tiles are read-only, so sharing one array across sub-tiles is safe.
-      const S1M_COG_TILE_CACHE_MAX = 256;
+      const S1M_COG_TILE_CACHE_MAX = 24;
       const s1mCogTileCache = new Map();   // key -> Promise<decoded rgba tile>
       function getDrapeCogTile(source, image, level, tx, ty) {
         const key = `${source.id}@${level.width}x${level.height}@${tx},${ty}@${imageryRevision}`;
         let pending = s1mCogTileCache.get(key);
         if (pending) {
+          s1mBench.cogHit += 1;
           s1mCogTileCache.delete(key);     // LRU: move to most-recently-used
           s1mCogTileCache.set(key, pending);
           return pending;
         }
-        pending = level.fetchTile(tx, ty, { boundless: false })
-          .then((tileData) => displayDrapeRgbaBytes(tileData.array, source, image))
-          .catch((error) => { s1mCogTileCache.delete(key); throw error; });
+        s1mBench.cogMiss += 1;
+        pending = (async () => {
+          const t0 = performance.now();
+          const tileData = await level.fetchTile(tx, ty, { boundless: false });
+          const t1 = performance.now();
+          const rgba = displayDrapeRgbaBytes(tileData.array, source, image);
+          const t2 = performance.now();
+          s1mBench.cogFetchMs += t1 - t0; s1mBench.cogFetchN += 1;
+          s1mBench.decodeMs += t2 - t1; s1mBench.decodeN += 1;
+          return rgba;
+        })().catch((error) => { s1mCogTileCache.delete(key); throw error; });
         s1mCogTileCache.set(key, pending);
         while (s1mCogTileCache.size > S1M_COG_TILE_CACHE_MAX) {
           s1mCogTileCache.delete(s1mCogTileCache.keys().next().value);  // evict oldest
+          s1mBench.cogEvict += 1;
         }
         return pending;
       }
@@ -2182,6 +2480,19 @@
         }, levels[0]);
       }
 
+      function bilinearCornerMapper(nw, ne, se, sw) {
+        return (u, v) => {
+          const topCol = nw[0] + (ne[0] - nw[0]) * u;
+          const botCol = sw[0] + (se[0] - sw[0]) * u;
+          const topRow = nw[1] + (ne[1] - nw[1]) * u;
+          const botRow = sw[1] + (se[1] - sw[1]) * u;
+          return [
+            topCol + (botCol - topCol) * v,
+            topRow + (botRow - topRow) * v,
+          ];
+        };
+      }
+
       async function paintNaipDrapeSource(data, region, source, out, drapeSize) {
         const image = await resolveGeotiffSource(source, {
           concurrencyLimiter: s1mDrapeConcurrencyLimiter,
@@ -2201,6 +2512,13 @@
           toPixel(se[0], se[1]),
           toPixel(sw[0], sw[1]),
         ];
+        const pixelFromUv = bilinearCornerMapper(
+          sampleCorners[0],
+          sampleCorners[1],
+          sampleCorners[2],
+          sampleCorners[3],
+        );
+        const lngLatFromUv = bilinearCornerMapper(nw, ne, se, sw);
         const cols = sampleCorners.map((p) => p[0]);
         const rows = sampleCorners.map((p) => p[1]);
         const c0 = Math.max(0, Math.floor(Math.min(...cols) / tw));
@@ -2218,20 +2536,23 @@
         }
         const fetched = await Promise.all(tilePromises);
         const tileMap = new Map(fetched);
+        const rasterStartedAt = performance.now();
         for (let y = 0; y < drapeSize; y++) {
           const v = drapeSize > 1 ? y / (drapeSize - 1) : 0;
           for (let x = 0; x < drapeSize; x++) {
             const u = drapeSize > 1 ? x / (drapeSize - 1) : 0;
-            const [lon, lat] = toLngLat(u, v);
             const dst = (y * drapeSize + x) * 4;
             if (out[dst + 3] > 0) continue;
-            if (
-              lon < sourceBbox[0] || lon > sourceBbox[2] ||
-              lat < sourceBbox[1] || lat > sourceBbox[3]
-            ) {
-              continue;
+            if (Array.isArray(sourceBbox)) {
+              const [lon, lat] = lngLatFromUv(u, v);
+              if (
+                lon < sourceBbox[0] || lon > sourceBbox[2] ||
+                lat < sourceBbox[1] || lat > sourceBbox[3]
+              ) {
+                continue;
+              }
             }
-            const [col, row] = toPixel(lon, lat);
+            const [col, row] = pixelFromUv(u, v);
             if (col < 0 || col >= level.width || row < 0 || row >= level.height) {
               continue;
             }
@@ -2251,12 +2572,85 @@
             out[dst + 3] = src.data[srcIdx + 3];
           }
         }
+        s1mBench.rasterMs += performance.now() - rasterStartedAt;
+        s1mBench.rasterN += 1;
+      }
+
+      function drapeIsFullyOpaque(out) {
+        for (let i = 3; i < out.length; i += 4) {
+          if (out[i] <= 0) return false;
+        }
+        return true;
+      }
+
+      function activeDrapeCacheKeys() {
+        const active = new Set();
+        for (const cache of s1mTileCache.values()) {
+          if (!cache.subtiles) continue;
+          for (const sub of cache.subtiles.values()) {
+            if (sub.drapeKey) active.add(sub.drapeKey);
+            if (sub.drapePending) active.add(sub.drapePending);
+          }
+        }
+        return active;
+      }
+
+      function pruneS1MDrapeCache() {
+        if (s1mDrapeCache.size <= S1M_DRAPE_CACHE_MAX) return;
+        const active = activeDrapeCacheKeys();
+        for (const key of s1mDrapeCache.keys()) {
+          if (s1mDrapeCache.size <= S1M_DRAPE_CACHE_MAX) break;
+          if (!active.has(key)) {
+            s1mDrapeCache.delete(key);
+            s1mBench.drapeEvict += 1;
+          }
+        }
+      }
+
+      function disposeS1MTileCache(cache) {
+        if (!cache) return;
+        cache.drapeImage = null;
+        cache.layer = null;
+        cache.elevations = null;
+        cache.gpuMesh = null;
+        if (!cache.subtiles) return;
+        for (const sub of cache.subtiles.values()) {
+          if (sub.drapeKey) s1mDrapeCache.delete(sub.drapeKey);
+          if (sub.drapePending) s1mDrapeCache.delete(sub.drapePending);
+          sub.drapeImage = null;
+          sub.drapeKey = null;
+          sub.drapePending = null;
+          sub.elev = null;
+          sub.gpuMesh = null;
+        }
+        cache.subtiles.clear();
+      }
+
+      function releaseS1MDrapeMemory() {
+        s1mDrapeCache.clear();
+        s1mCogTileCache.clear();
+        geotiffSourceCache.clear();
+        drapeProjectionCache = new WeakMap();
+        for (const cache of s1mTileCache.values()) {
+          if (!cache.subtiles) continue;
+          for (const sub of cache.subtiles.values()) {
+            sub.drapeImage = null;
+            sub.drapeKey = null;
+            sub.drapePending = null;
+          }
+        }
       }
 
       async function buildNaipDrapeImage(data, region, sources, drapeSize) {
         const out = new Uint8ClampedArray(drapeSize * drapeSize * 4);
-        for (const source of sources) {
+        const cappedSources = sources.slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
+        for (let i = 0; i < cappedSources.length; i++) {
+          const source = cappedSources[i];
           await paintNaipDrapeSource(data, region, source, out, drapeSize);
+          if (drapeIsFullyOpaque(out)) break;
+          if (i + 1 === S1M_INITIAL_DRAPE_SOURCES_PER_TILE && cappedSources.length > i + 1) {
+            s1mDrapeMetrics.noDataSourceFallbacks += 1;
+          }
         }
         return new ImageData(out, drapeSize, drapeSize);
       }
@@ -2378,7 +2772,7 @@
       // (revision is in the key).
       function ensureSubTileDrape(data, sub, schedulePaint, seq) {
         const region = { bbox: sub.bbox, uvRect: sub.uvRect };
-        const sources = drapeSourcesForTile(region);
+        const sources = drapeSourcesForTile(region).slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
         if (!sources.length) return;
         const hrefKey = sources.map((s) => s.assets?.image?.href || s.id).join("|");
         const key = `${data.dataset}@sub${sub.N}:${sub.ix},${sub.iy}@${hrefKey}@${imageryRevision}@${S1M_SUBTILE_DRAPE_SIZE}`;
@@ -2390,6 +2784,7 @@
           s1mDrapeMetrics.tileSourceRefs += sources.length;
           s1mDrapeMetrics.analyticRefs += sources.filter((s) => s?.assets?.image?.href?.startsWith("s3://naip-analytic/")).length;
           s1mDrapeMetrics.lastSourceRefs = sources.length;
+          s1mDrapeMetrics.maxSourceRefs = Math.max(s1mDrapeMetrics.maxSourceRefs, sources.length);
           s1mDrapeMetrics.lastHref = sources[0]?.assets?.image?.href || null;
           renderS1MDrapeMetrics();
           pending = buildNaipDrapeImage(data, region, sources, S1M_SUBTILE_DRAPE_SIZE)
@@ -2398,23 +2793,29 @@
               s1mDrapeMetrics.tilesCompleted += 1;
               s1mDrapeMetrics.totalTileMs += elapsed;
               s1mDrapeMetrics.lastTileMs = elapsed;
+              s1mBench.drapeBuildMs += elapsed; s1mBench.drapeBuildN += 1;
               renderS1MDrapeMetrics();
               return imageData;
             })
             .catch((error) => {
               s1mDrapeMetrics.tilesFailed += 1;
+              s1mDrapeMetrics.sourceError = error?.message || String(error);
               s1mDrapeMetrics.lastTileMs = performance.now() - startedAt;
               renderS1MDrapeMetrics();
               throw error;
             });
           s1mDrapeCache.set(key, pending);
+          pruneS1MDrapeCache();
         }
+        const oldDrapeKey = sub.drapeKey;
         sub.drapePending = key;
         pending.then((imageData) => {
           if (seq !== s1mRefreshSeq) return;
           sub.drapeImage = imageData;
           sub.drapeKey = key;
           if (sub.drapePending === key) sub.drapePending = null;
+          if (oldDrapeKey && oldDrapeKey !== key) s1mDrapeCache.delete(oldDrapeKey);
+          pruneS1MDrapeCache();
           schedulePaint?.();
         }).catch((error) => {
           if (sub.drapePending === key) sub.drapePending = null;
@@ -2559,6 +2960,35 @@
         return Number.isFinite(maxEdge) ? maxEdge : 256;
       }
 
+      function s1mScreenSortKey(tile) {
+        const bbox = tile?.bbox;
+        if (!Array.isArray(bbox) || bbox.length !== 4) {
+          return { bottomY: -Infinity, centerX: Infinity };
+        }
+        const corners = [
+          map.project([bbox[0], bbox[1]]),
+          map.project([bbox[2], bbox[1]]),
+          map.project([bbox[2], bbox[3]]),
+          map.project([bbox[0], bbox[3]]),
+        ];
+        const ys = corners.map((p) => p.y).filter(Number.isFinite);
+        const xs = corners.map((p) => p.x).filter(Number.isFinite);
+        const bottomY = ys.length ? Math.max(...ys) : -Infinity;
+        const centerX = xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : Infinity;
+        return { bottomY, centerX };
+      }
+
+      function sortS1MTilesBottomFirst(tiles) {
+        const viewportCenterX = map.getCanvas().clientWidth / 2;
+        return [...tiles].sort((a, b) => {
+          const ak = s1mScreenSortKey(a);
+          const bk = s1mScreenSortKey(b);
+          const bottomDelta = bk.bottomY - ak.bottomY;
+          if (bottomDelta) return bottomDelta;
+          return Math.abs(ak.centerX - viewportCenterX) - Math.abs(bk.centerX - viewportCenterX);
+        });
+      }
+
       // Per-tile screen-error LOD. Pitched views make near tiles project wider
       // than far tiles, so they get denser grids while distant tiles read lower
       // DEM overviews. Quantized sizes keep cache churn bounded while panning.
@@ -2649,40 +3079,58 @@
         const summaryEl = document.getElementById("ter-summary");
         const seq = ++s1mRefreshSeq;
         const exag = Number(document.getElementById("ter-exag").value) || 2;
+        const visibleBbox = currentBbox();
         const terrainBbox = s1mPaddedBbox(map.getBounds());
+        const supersededPending = s1mTerrainPending.size;
+        s1mFillMetrics.refreshSeq = seq;
+        s1mFillMetrics.refreshStartedAt = performance.now();
+        s1mFillMetrics.desired = 0;
+        s1mFillMetrics.missingQueued = 0;
+        s1mFillMetrics.terrainStarted = 0;
+        s1mFillMetrics.terrainCompleted = 0;
+        s1mFillMetrics.terrainFailed = 0;
+        s1mFillMetrics.terrainStale = supersededPending;
+        s1mFillMetrics.paints = 0;
+        s1mFillMetrics.lastPaintAt = null;
+        s1mFillMetrics.lastPaint = null;
+        s1mTerrainPending.clear();
+        s1mTerrainFailures.clear();
         let tiles;
         try {
           const c = map.getCenter();
-          // Order tiles from the viewport centre (where you're looking), not the
-          // bbox-envelope centre -- on a tilted view that envelope reaches the
-          // horizon, so its centre sits way forward of the foreground.
+          // Ask the service for coverage around the current view, then reorder
+          // client-side from the bottom of the screen upward so foreground tiles
+          // render and start draping first.
           const r = await s1mFetch("/s1m/tiles", {
             bbox: terrainBbox,
             max_tiles: S1M_MAX_TILES,
             center: [c.lng, c.lat],
           });
           if (!r.ok) { summaryEl.textContent = `Tiles error ${r.status}`; return; }
-          tiles = (await r.json()).tiles || [];   // nearest-to-centre first
+          tiles = sortS1MTilesBottomFirst((await r.json()).tiles || []);
         } catch (e) { summaryEl.textContent = `Tiles fetch failed: ${e?.message || e}`; return; }
         if (seq !== s1mRefreshSeq) return;
         s1mActiveTiles = new Map(tiles.map((t) => {
           const size = s1mLodSize(t);
           return [`${t.dataset}@${size}`, { ...t, size }];
         }));
+        s1mFillMetrics.desired = s1mActiveTiles.size;
         refreshBuildingFootprints();
 
-        // desired preserves the server's centre-out order (Map keeps insertion order).
+        // desired preserves bottom-of-viewport first order (Map keeps insertion order).
         const desired = s1mActiveTiles;
         const desiredDatasets = new Set([...desired.values()].map((t) => t.dataset));
         // Drop tiles no longer in the viewport (stale LODs are kept as a fallback until upgraded)
         for (const key of [...s1mTileCache.keys()]) {
           const ds = key.split("@")[0];
           if (!desiredDatasets.has(ds)) {
+            disposeS1MTileCache(s1mTileCache.get(key));
             s1mTileCache.delete(key);
           }
         }
+        pruneS1MDrapeCache();
 
-        // Paint = collect built layers for whatever's cached, centre-out, and redraw.
+        // Paint = collect built layers for whatever's cached, bottom-first, and redraw.
         // rAF-throttled so progressive arrivals coalesce into one draw per frame.
         let paintQueued = false;
         const paint = () => {
@@ -2690,27 +3138,53 @@
           if (seq !== s1mRefreshSeq) return;
           const range = s1mColorRange();  // absolute: fixed; adaptive: grows as tiles arrive
           const built = [];
-          let tilesDrawn = 0, subTotal = 0, subTextured = 0;
+          let tilesDrawn = 0, exactDrawn = 0, fallbackDrawn = 0, missingDrawn = 0;
+          let subTotal = 0, subTextured = 0, subPending = 0, subRefreshing = 0, subFailed = 0;
           for (const k of desired.keys()) {
             const tile = desired.get(k);
             if (!tile) continue;
             // Find the best cached entry for this tile (exact LOD, else any LOD).
             let c = s1mTileCache.get(k);
+            let exact = !!c;
             if (!c) {
               for (const cacheKey of s1mTileCache.keys()) {
                 if (cacheKey.startsWith(tile.dataset + "@")) { c = s1mTileCache.get(cacheKey); break; }
               }
             }
-            if (!c) continue;
-            const tileLayers = s1mBuildTileLayers(c, tile, exag, range, terrainBbox, schedulePaint, seq);
+            if (!c) { missingDrawn += 1; continue; }
+            const tileLayers = s1mBuildTileLayers(c, tile, exag, range, visibleBbox, schedulePaint, seq);
             if (tileLayers.length) tilesDrawn += 1;
+            if (exact) exactDrawn += 1; else fallbackDrawn += 1;
             built.push(...tileLayers);
             if (c.subtiles) {
-              for (const s of c.subtiles.values()) { subTotal += 1; if (s.drapeImage) subTextured += 1; }
+              for (const s of c.subtiles.values()) {
+                subTotal += 1;
+                if (s.drapeImage) {
+                  subTextured += 1;
+                  if (s.drapePending && s.drapePending !== s.drapeKey) subRefreshing += 1;
+                }
+                else if (s.drapePending) subPending += 1;
+                else if (s.drapeError) subFailed += 1;
+              }
             }
           }
           s1mLayers = built;
           updateImageryLayers();
+          s1mFillMetrics.paints += 1;
+          s1mFillMetrics.lastPaintAt = performance.now();
+          s1mFillMetrics.lastPaint = {
+            seq,
+            desired: desired.size,
+            drawn: tilesDrawn,
+            exactDrawn,
+            fallbackDrawn,
+            missing: missingDrawn,
+            drapeSubtiles: subTotal,
+            drapeTextured: subTextured,
+            drapePending: subPending,
+            drapeRefreshing: subRefreshing,
+            drapeFailed: subFailed,
+          };
           const sizes = [...new Set([...desired.values()].map((t) => t.size))].sort((a, b) => a - b);
           const sizeText = sizes.length <= 1 ? `${sizes[0] ?? "-"}` : `${sizes[0]}-${sizes[sizes.length - 1]}`;
           const canRenderDrape = !!document.getElementById("ter-gpu")?.checked &&
@@ -2726,39 +3200,74 @@
         };
         const schedulePaint = () => { if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); } };
 
-        ensureS1MDrapeSources(terrainBbox, seq, schedulePaint);
+        ensureS1MDrapeSources(visibleBbox, seq, schedulePaint);
         schedulePaint();  // show already-cached tiles immediately
 
-        // Fetch missing tiles centre-out with bounded concurrency (like NAIP's
-        // center-out fill), painting as each arrives so the viewport fills in.
+        // Fetch missing tiles bottom-of-viewport first with bounded concurrency,
+        // painting each arrival immediately so its NAIP drape can start before
+        // the rest of the S1M queue finishes.
         const missing = [...desired].filter(([k]) => !s1mTileCache.has(k));
+        s1mFillMetrics.missingQueued = missing.length;
         let idx = 0;
         const worker = async () => {
           while (idx < missing.length) {
             if (seq !== s1mRefreshSeq) return;
             const [key, t] = missing[idx++];
             try {
+              const tf0 = performance.now();
+              s1mFillMetrics.terrainStarted += 1;
+              s1mTerrainPending.set(key, { seq, dataset: t.dataset, size: t.size, startedAt: tf0 });
               const r = await s1mFetch("/s1m/terrain", { dataset: t.dataset, size: t.size });
-              if (!r.ok) continue;
+              if (seq !== s1mRefreshSeq) {
+                return;  // Clear/newer refresh superseded us
+              }
+              if (!r.ok) {
+                const message = `terrain ${r.status}`;
+                s1mFillMetrics.terrainFailed += 1;
+                s1mTerrainFailures.set(key, { seq, dataset: t.dataset, size: t.size, message, at: performance.now() });
+                continue;
+              }
               const data = await r.json();
-              if (seq !== s1mRefreshSeq) return;  // Clear/newer refresh superseded us
-              s1mTileCache.set(key, {
-                data,
-                elevations: s1mB64ToFloat32(data.elev_b64),
-                gpuMesh: s1mGpuMesh(data.width, data.height, data.step[0], data.step[1], data.center_lnglat[0]),
-                layer: null,
-              });
+              if (seq !== s1mRefreshSeq) {
+                return;  // Clear/newer refresh superseded us
+              }
+              const tf1 = performance.now();
+              const elevations = s1mB64ToFloat32(data.elev_b64);
+              const gpuMesh = s1mGpuMesh(data.width, data.height, data.step[0], data.step[1], data.center_lnglat[0]);
+              const tf2 = performance.now();
+              s1mBench.terrainFetchMs += tf1 - tf0; s1mBench.terrainFetchN += 1;
+              s1mBench.meshMs += tf2 - tf1; s1mBench.meshN += 1;
+              s1mTileCache.set(key, { data, elevations, gpuMesh, layer: null });
+              s1mFillMetrics.terrainCompleted += 1;
               // Evict other LOD sizes for the same dataset now that the desired one has arrived
               for (const cacheKey of [...s1mTileCache.keys()]) {
                 if (cacheKey.startsWith(t.dataset + "@") && cacheKey !== key) {
+                  disposeS1MTileCache(s1mTileCache.get(cacheKey));
                   s1mTileCache.delete(cacheKey);
                 }
               }
-              schedulePaint();  // paint() sub-tiles + drapes the new tile
-            } catch (_) { /* skip this tile */ }
+              pruneS1MDrapeCache();
+              paint();  // paint sub-tiles + start draping this newly arrived tile now
+            } catch (error) {
+              if (seq !== s1mRefreshSeq) {
+                return;
+              }
+              s1mFillMetrics.terrainFailed += 1;
+              s1mTerrainFailures.set(key, {
+                seq,
+                dataset: t.dataset,
+                size: t.size,
+                message: error?.message || String(error),
+                at: performance.now(),
+              });
+            } finally {
+              if (s1mTerrainPending.get(key)?.seq === seq) {
+                s1mTerrainPending.delete(key);
+              }
+            }
           }
         };
-        await Promise.all(Array.from({ length: 6 }, worker));
+        await Promise.all(Array.from({ length: 4 }, worker));
       }
 
       const s1mDebouncedRefresh = (() => {
@@ -2773,8 +3282,6 @@
           runEl.disabled = true;
           summaryEl.textContent = "Loading S1M terrain…";
 
-          if (toggleCogEl) toggleCogEl.checked = false;
-          if (toggleUsgsNaipWmsLayerEl) toggleUsgsNaipWmsLayerEl.checked = false;
           updateImagery(lastSearchFeatures);
           updateReferenceRasterLayers();
 
@@ -2795,8 +3302,16 @@
         s1mActive = false;
         s1mRefreshSeq++;  // invalidate any in-flight refresh
         if (s1mMoveHandler) { map.off("moveend", s1mMoveHandler); s1mMoveHandler = null; }
+        for (const cache of s1mTileCache.values()) {
+          disposeS1MTileCache(cache);
+        }
         s1mTileCache.clear();
         s1mDrapeCache.clear();
+        s1mCogTileCache.clear();
+        geotiffSourceCache.clear();
+        drapeProjectionCache = new WeakMap();
+        s1mTerrainPending.clear();
+        s1mTerrainFailures.clear();
         s1mActiveTiles.clear();
         s1mDrapeSourceKey = null;
         s1mDrapeSources = [];
@@ -2866,7 +3381,7 @@
         `;
       }
 
-      async function initImagerySupport() {
+      async function initImagerySupport({ retryAfterMemoryRelease = true } = {}) {
         if (deckOverlay && MosaicLayerClass && COGLayerClass) {
           return;
         }
@@ -2897,7 +3412,12 @@
           CreateTextureModule = rasterGpuModule.CreateTexture;
           window.GeoTIFFCoreClass = geotiffCoreModule.GeoTIFF;
           if (!s1mDrapeConcurrencyLimiter && geotiffCoreModule.PerOriginSemaphore) {
-            s1mDrapeConcurrencyLimiter = new geotiffCoreModule.PerOriginSemaphore({ maxRequests: 4 });
+            // Drape build tuning: COG range reads dominated the summed subtile
+            // durations in local benchmarks. S3 multiplexes over HTTP/2 and the
+            // presigned URL is cached, so a higher ceiling parallelises visible
+            // sub-tile reads. Tradeoff: these requests can compete with other
+            // same-origin imagery reads while the cold drape fills.
+            s1mDrapeConcurrencyLimiter = new geotiffCoreModule.PerOriginSemaphore({ maxRequests: 12 });
           }
           deckOverlay = new MapboxOverlay({ interleaved: true, layers: [] });
           map.addControl(deckOverlay);
@@ -2909,6 +3429,11 @@
           }
         } catch (error) {
           console.error("Failed to load imagery modules", error);
+          if (retryAfterMemoryRelease && isAllocationError(error)) {
+            releaseS1MDrapeMemory();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            return initImagerySupport({ retryAfterMemoryRelease: false });
+          }
           imageryInitErrorMessage = error?.message || String(error);
           imageryStatusEl.textContent = `Imagery modules failed to load; footprints-only mode. ${error?.message || error}`;
           imageryStatusEl.className = "small status-warn";
@@ -3410,7 +3935,7 @@
         signCallCount = 0;
         signTotalMs = 0;
         resignAttempted = new Set();
-        if (toggleCogEl.checked && (!deckOverlay || !MosaicLayerClass || !COGLayerClass) && !imageryInitErrorMessage) {
+        if (toggleCogEl.checked && (!deckOverlay || !MosaicLayerClass || !COGLayerClass)) {
           await initImagerySupport();
         }
         const body = {
@@ -3789,6 +4314,7 @@
       document.getElementById("ter-buildings")?.addEventListener("change", refreshBuildingFootprints);
       document.getElementById("ter-run")?.addEventListener("click", enableS1MTerrain);
       document.getElementById("ter-clear")?.addEventListener("click", clearS1MTerrain);
+      document.getElementById("ter-stats-window")?.addEventListener("click", s1mOpenStatsWindow);
 
       toggleCogEl.addEventListener("change", () => {
         updateImagery(lastSearchFeatures);
