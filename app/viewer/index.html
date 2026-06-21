@@ -1885,6 +1885,172 @@
         return new Float32Array(bytes.buffer);
       }
 
+      // --- Client-side S1M terrain read (replaces POST /s1m/terrain) ----------
+      // The S1M DEMs are public LZW float32 COGs on prd-tnm with overviews, so
+      // the browser reads a downsampled elevation grid directly -- no signing,
+      // no server round-trip, parallel + cached like the NAIP path. Ports
+      // read_terrain() from app/api/s1m.py: pick the overview nearest above the
+      // target size, resample to size x size, and return the same payload shape
+      // the pipeline already consumes (the decoded Float32 grid as `elev`).
+      const S1M_EPSG = 6350;                 // NAD83(2011) CONUS Albers
+      const S1M_CLIENT_NODATA = -999999.0;
+      const s1mGeotiffCache = new Map();     // s3 href -> Promise<geotiff>
+      let _s1mAlbersToWgs = null;
+
+      function s1mCogHttpUrl(href) {
+        const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(href);
+        return m ? `https://${m[1]}.s3.amazonaws.com/${m[2]}` : href;
+      }
+
+      function resolveS1MGeotiff(href) {
+        let pending = s1mGeotiffCache.get(href);
+        if (!pending) {
+          pending = window.GeoTIFFCoreClass
+            .fromUrl(s1mCogHttpUrl(href), { concurrencyLimiter: s1mDrapeConcurrencyLimiter })
+            .catch((error) => { s1mGeotiffCache.delete(href); throw error; });
+          s1mGeotiffCache.set(href, pending);
+        }
+        return pending;
+      }
+
+      async function s1mAlbersToWgs() {
+        if (!_s1mAlbersToWgs) {
+          const def = await epsgResolver(S1M_EPSG);
+          const conv = proj4(def, "EPSG:4326");
+          _s1mAlbersToWgs = (x, y) => conv.forward([x, y]);   // Albers -> [lon, lat]
+        }
+        return _s1mAlbersToWgs;
+      }
+
+      // Local ellipsoidal ground distance (GRS80) between two nearby lon/lat
+      // points; over ~1 km it matches a full geodesic to <1 mm. Mirrors the
+      // pyproj Geod.inv the server uses to turn an Albers metre step into true
+      // ground metres so adjacent tiles abut.
+      function s1mGroundDist(lon1, lat1, lon2, lat2) {
+        const a = 6378137.0, f = 1 / 298.257222101, e2 = f * (2 - f);
+        const phi = (lat1 * Math.PI) / 180;
+        const s = Math.sin(phi), denom = 1 - e2 * s * s;
+        const M = (a * (1 - e2)) / Math.pow(denom, 1.5);
+        const N = a / Math.sqrt(denom);
+        const dN = ((lat2 - lat1) * Math.PI / 180) * M;
+        const dE = ((lon2 - lon1) * Math.PI / 180) * N * Math.cos(phi);
+        return Math.hypot(dN, dE);
+      }
+
+      // Read one COG overview fully into a row-major NW-origin Float32 grid.
+      async function s1mReadLevelFull(level) {
+        const W = level.width, H = level.height;
+        const out = new Float32Array(W * H);
+        const tw = level.tileWidth, th = level.tileHeight;
+        const tasks = [];
+        for (let ty = 0; ty < level.tileCount.y; ty++) {
+          for (let tx = 0; tx < level.tileCount.x; tx++) {
+            tasks.push(level.fetchTile(tx, ty, { boundless: false }).then((td) => {
+              const arr = td.array;
+              const band = arr.bands ? arr.bands[0] : arr.data;
+              const sw = arr.width, sh = arr.height;
+              const ox = tx * tw, oy = ty * th;
+              for (let r = 0; r < sh; r++) {
+                const gy = oy + r; if (gy >= H) break;
+                const srow = r * sw, drow = gy * W + ox;
+                for (let c = 0; c < sw; c++) {
+                  if (ox + c >= W) break;
+                  out[drow + c] = band[srow + c];
+                }
+              }
+            }));
+          }
+        }
+        await Promise.all(tasks);
+        return { data: out, width: W, height: H };
+      }
+
+      // Bilinear resample src (sw x sh) -> dw x dh; `nd`/large-negative cells are
+      // voids (partly-void neighbourhoods use the mean of valid corners, fully
+      // void cells stay nodata) so terrain edges near water don't smear.
+      function s1mResampleGrid(src, sw, sh, dw, dh, nd) {
+        const out = new Float32Array(dw * dh);
+        const ok = (v) => v > -9000 && Number.isFinite(v) && v !== nd;
+        for (let y = 0; y < dh; y++) {
+          const fy = dh > 1 ? (y * (sh - 1)) / (dh - 1) : 0;
+          const y0 = Math.floor(fy), y1 = Math.min(sh - 1, y0 + 1), wy = fy - y0;
+          for (let x = 0; x < dw; x++) {
+            const fx = dw > 1 ? (x * (sw - 1)) / (dw - 1) : 0;
+            const x0 = Math.floor(fx), x1 = Math.min(sw - 1, x0 + 1), wx = fx - x0;
+            const v00 = src[y0 * sw + x0], v01 = src[y0 * sw + x1];
+            const v10 = src[y1 * sw + x0], v11 = src[y1 * sw + x1];
+            if (ok(v00) && ok(v01) && ok(v10) && ok(v11)) {
+              const top = v00 * (1 - wx) + v01 * wx;
+              const bot = v10 * (1 - wx) + v11 * wx;
+              out[y * dw + x] = top * (1 - wy) + bot * wy;
+            } else {
+              let sum = 0, n = 0;
+              if (ok(v00)) { sum += v00; n++; } if (ok(v01)) { sum += v01; n++; }
+              if (ok(v10)) { sum += v10; n++; } if (ok(v11)) { sum += v11; n++; }
+              out[y * dw + x] = n ? sum / n : nd;
+            }
+          }
+        }
+        return out;
+      }
+
+      // Read a downsampled size x size elevation grid for a whole S1M DEM tile,
+      // returning the same payload the old POST /s1m/terrain produced.
+      async function readS1MTerrainClient(href, size) {
+        size = Math.max(16, Math.min(Number(size) || 256, 512));
+        const g = await resolveS1MGeotiff(href);
+        const levels = [g, ...(g.overviews || [])];
+        // Smallest overview at least `size` wide, so we downsample (never upsample).
+        const sorted = levels.slice().sort((a, b) => a.width - b.width);
+        let level = sorted[sorted.length - 1];
+        for (const lv of sorted) { if (lv.width >= size) { level = lv; break; } }
+
+        const { data: raw, width: rw, height: rh } = await s1mReadLevelFull(level);
+        const ndRaw = g.cachedTags?.nodata;
+        const srcNd = ndRaw != null && ndRaw !== "" ? Number(ndRaw) : S1M_CLIENT_NODATA;
+        const grid = s1mResampleGrid(raw, rw, rh, size, size, srcNd);
+
+        // Full-tile Albers extent + centre from the base level's transform.
+        const [ax0, ay0] = affine.apply(g.transform, 0, 0);
+        const [ax1, ay1] = affine.apply(g.transform, g.width, g.height);
+        const extEast = Math.abs(ax1 - ax0), extNorth = Math.abs(ay1 - ay0);
+        const cxA = (ax0 + ax1) / 2, cyA = (ay0 + ay1) / 2;
+
+        const to4326 = await s1mAlbersToWgs();
+        const [clon, clat] = to4326(cxA, cyA);
+        const [lonE, latE] = to4326(cxA + 1000, cyA);
+        const [lonN, latN] = to4326(cxA, cyA + 1000);
+        const scaleEast = s1mGroundDist(clon, clat, lonE, latE) / 1000;
+        const scaleNorth = s1mGroundDist(clon, clat, lonN, latN) / 1000;
+        const dxA = extEast / Math.max(size - 1, 1);
+        const dyA = extNorth / Math.max(size - 1, 1);
+
+        // Normalise voids to the viewer sentinel and collect the valid range.
+        let zmin = Infinity, zmax = -Infinity;
+        for (let i = 0; i < grid.length; i++) {
+          const v = grid[i];
+          if (v > -9000 && Number.isFinite(v) && v !== srcNd) {
+            if (v < zmin) zmin = v;
+            if (v > zmax) zmax = v;
+          } else {
+            grid[i] = S1M_CLIENT_NODATA;
+          }
+        }
+        if (!Number.isFinite(zmin)) { zmin = 0; zmax = 0; }
+
+        return {
+          width: size,
+          height: size,
+          step: [dxA * scaleEast, dyA * scaleNorth],   // true ground metres/cell (east, north)
+          center_lnglat: [clon, clat],
+          nodata: S1M_CLIENT_NODATA,
+          z_range: [zmin, zmax],
+          epsg: S1M_EPSG,
+          dataset: href,
+          elev: grid,
+        };
+      }
+
       // Simple hypsometric ramp (low=green -> mid=tan -> high=white), t in [0,1].
       function s1mHypso(t) {
         const stops = [
@@ -1908,7 +2074,7 @@
       function buildS1MTerrainLayer(data, exag, wireframe, range) {
         const W = data.width, H = data.height;
         const [sx, sy] = data.step;          // metres per cell (east, north)
-        const elev = s1mB64ToFloat32(data.elev_b64);
+        const elev = data.elev || s1mB64ToFloat32(data.elev_b64);
         const nd = data.nodata;
         const [zmin, zmax] = range || data.z_range;   // shared view range, not per-tile
         const zspan = Math.max(1e-6, zmax - zmin);
@@ -2206,7 +2372,7 @@
           const col = ex / sx + (W - 1) / 2;
           const row = (H - 1) / 2 - ny / sy;
           if (col < 0 || col > W - 1 || row < 0 || row > H - 1) continue;
-          if (!c._elev) c._elev = s1mB64ToFloat32(d.elev_b64);
+          if (!c._elev) c._elev = c.elevations || s1mB64ToFloat32(d.elev_b64);
           const elev = c._elev, nd = d.nodata;
           const c0 = Math.floor(col), r0 = Math.floor(row);
           const c1 = Math.min(W - 1, c0 + 1), r1 = Math.min(H - 1, r0 + 1);
@@ -3421,22 +3587,22 @@
               const tf0 = performance.now();
               s1mFillMetrics.terrainStarted += 1;
               s1mTerrainPending.set(key, { seq, dataset: t.dataset, size: t.size, startedAt: tf0 });
-              const r = await s1mFetch("/s1m/terrain", { dataset: t.dataset, size: t.size });
-              if (seq !== s1mRefreshSeq) {
-                return;  // Clear/newer refresh superseded us
-              }
-              if (!r.ok) {
-                const message = `terrain ${r.status}`;
+              let data;
+              try {
+                // Read the DEM overview directly in the browser (no /s1m/terrain).
+                data = await readS1MTerrainClient(t.dataset, t.size);
+              } catch (readError) {
+                if (seq !== s1mRefreshSeq) return;  // Clear/newer refresh superseded us
+                const message = `terrain read: ${readError?.message || readError}`;
                 s1mFillMetrics.terrainFailed += 1;
                 s1mTerrainFailures.set(key, { seq, dataset: t.dataset, size: t.size, message, at: performance.now() });
                 continue;
               }
-              const data = await r.json();
               if (seq !== s1mRefreshSeq) {
                 return;  // Clear/newer refresh superseded us
               }
               const tf1 = performance.now();
-              const elevations = s1mB64ToFloat32(data.elev_b64);
+              const elevations = data.elev;
               const gpuMesh = s1mGpuMesh(data.width, data.height, data.step[0], data.step[1], data.center_lnglat[0]);
               const tf2 = performance.now();
               s1mBench.terrainFetchMs += tf1 - tf0; s1mBench.terrainFetchN += 1;
