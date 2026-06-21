@@ -1906,7 +1906,20 @@
         let pending = s1mGeotiffCache.get(href);
         if (!pending) {
           pending = window.GeoTIFFCoreClass
-            .fromUrl(s1mCogHttpUrl(href), { concurrencyLimiter: s1mDrapeConcurrencyLimiter })
+            .fromUrl(s1mCogHttpUrl(href), {
+              concurrencyLimiter: s1mDrapeConcurrencyLimiter,
+              // Cache overview tile-data reads in Cache Storage so they survive
+              // reloads/revisits (header/IFD reads keep their own small path).
+              // 256 KiB chunks: big enough to coalesce the file-contiguous
+              // overview tiles, small enough to avoid the cold over-fetch a
+              // 1 MiB chunk causes for S1M's small overview tiles.
+              chunkCache: {
+                cacheKey: href,
+                chunkSize: 256 * 1024,
+                cacheName: "s1m-dem-cog-chunks-v1",
+                memoryMaxBytes: 16 * 1024 * 1024,
+              },
+            })
             .catch((error) => { s1mGeotiffCache.delete(href); throw error; });
           s1mGeotiffCache.set(href, pending);
         }
