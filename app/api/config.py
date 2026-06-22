@@ -14,6 +14,13 @@ COLLECTION_ID = os.environ.get("S3_COG_COLLECTION_ID", "naip")
 # connection -- there is no database server. The api container mounts ./cache at
 # /cache, so this resolves to local Parquet files (or an s3:// prefix on Lambda).
 LAKE_ROOT = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb")
+# Local bbox-clipped Overture buildings GeoParquet (built by
+# build_overture_buildings.py), served by /buildings/overture for the viewer's
+# 3D building layer. A bundled/public file -- no ingest needed.
+OVERTURE_BUILDINGS_PARQUET = os.environ.get(
+    "S3_COG_OVERTURE_BUILDINGS_PARQUET",
+    "/cache/overture/buildings_nj.parquet",
+)
 # Root of the embedding lake (written by the embedding-harvester repo). Same
 # hive layout as the imagery lake (collection=/region=/year=), one file per
 # 1-degree block, schema per that repo's LAKE_SCHEMA.md. /similar queries it

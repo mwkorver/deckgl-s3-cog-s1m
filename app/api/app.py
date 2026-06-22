@@ -36,6 +36,7 @@ from config import (
     LOCAL_MODULE_DIRS,
     MAX_TILES,
     MODULE_DIR,
+    OVERTURE_BUILDINGS_PARQUET,
     PRESIGN_EXPIRES,
     SAM3_PYTHON,
     SAM3_SCRIPT,
@@ -1326,6 +1327,238 @@ def similar(body: dict[str, Any], response: Response):
     response.headers["x-similar-sql-ms"] = f"{sql_seconds * 1000:.1f}"
     response.headers["x-similar-total-ms"] = f"{total_seconds * 1000:.1f}"
     return result
+
+
+# --- Map-layer endpoints (re-applied onto the modular API in Phase 2) --------
+# /naip-coverage and /buildings/overture are this fork's own endpoints (absent
+# from the upstream parent); restored here after Phase 1 modularized app.py.
+
+def _webmercator_tile_bbox_lnglat(z: int, x: int, y: int) -> tuple[float, float, float, float]:
+    """Lon/lat (west, south, east, north) of a WebMercatorQuad z/x/y tile."""
+    import math
+    n = 2 ** z
+
+    def tile_x_to_lon(tile_x: int) -> float:
+        return tile_x / n * 360.0 - 180.0
+
+    def tile_y_to_lat(tile_y: int) -> float:
+        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * tile_y / n))))
+
+    return (tile_x_to_lon(x), tile_y_to_lat(y + 1), tile_x_to_lon(x + 1), tile_y_to_lat(y))
+
+
+@app.get("/naip-coverage/{z}/{x}/{y}.mvt")
+def naip_coverage_mvt(
+    z: int,
+    x: int,
+    y: int,
+    collection: str = COLLECTION_ID,
+    region: str | None = None,
+    year: int | None = None,
+):
+    """MVT coverage outline layer for NAIP-like COG footprints.
+
+    This is a map-layer transport, not a search result. It emits one source-layer
+    named "naip" with compact polygon features and a few small properties.
+    """
+    if z < 4 or z > 15:
+        return Response(content=b"", media_type="application/vnd.mapbox-vector-tile")
+    if x < 0 or y < 0 or x >= 2 ** z or y >= 2 ** z:
+        raise HTTPException(status_code=404, detail="tile outside WebMercatorQuad bounds")
+
+    collection = "".join(ch for ch in str(collection).lower() if ch.isalnum() or ch in "-_") or COLLECTION_ID
+    safe_region = "".join(ch for ch in str(region).lower() if ch.isalnum()) if region else None
+    year_int = int(year) if year is not None else None
+    read_path = _lake_read_path(collection, safe_region, year_int)
+    escaped_path = read_path.replace("'", "''")
+    west, south, east, north = _webmercator_tile_bbox_lnglat(z, x, y)
+
+    filters = [
+        f"bbox_xmin <= {east} and bbox_xmax >= {west}",
+        f"bbox_ymin <= {north} and bbox_ymax >= {south}",
+        f"collection = '{collection}'",
+    ]
+    if year_int is not None:
+        filters.append(f"year = {year_int}")
+    else:
+        filters.append(f"""
+            (region, year) in (
+                select region, max(year)
+                from read_parquet('{escaped_path}', hive_partitioning=true)
+                group by region
+            )
+        """)
+    if safe_region:
+        filters.append(f"region = '{safe_region}'")
+
+    sql = f"""
+        with bounds as (
+          select ST_Extent(ST_TileEnvelope({z}, {x}, {y})) as b
+        ),
+        features as (
+          select
+            ST_AsMVTGeom(
+              ST_Transform(
+                geometry,
+                'EPSG:4326',
+                'EPSG:3857',
+                true
+              ),
+              bounds.b,
+              4096::BIGINT,
+              64::BIGINT,
+              true
+            ) as geom,
+            asset_href as href,
+            region,
+            year as yr,
+            gsd
+          from read_parquet('{escaped_path}', hive_partitioning=true), bounds
+          where {' and '.join(filters)}
+        )
+        select ST_AsMVT(features, 'naip', 4096, 'geom')
+        from features
+        where geom is not null
+    """
+    try:
+        tile = lake_query(lambda cur: cur.execute(sql).fetchone()[0])
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "no files found" in msg or "no files matched" in msg:
+            tile = b""
+        else:
+            raise HTTPException(status_code=500, detail=f"naip coverage mvt failed: {exc}")
+
+    return Response(
+        content=tile or b"",
+        media_type="application/vnd.mapbox-vector-tile",
+        headers={"cache-control": "public, max-age=3600"},
+    )
+
+
+@app.post("/buildings/overture")
+def overture_buildings(body: dict[str, Any]):
+    """Return Overture building footprints intersecting one or more lon/lat bboxes.
+
+    The viewer sends active S1M tile bboxes, already transformed to OGC:CRS84.
+    The local Overture file carries explicit bbox columns, so DuckDB can filter
+    cheaply before the exact geometry intersection.
+    """
+    path = Path(OVERTURE_BUILDINGS_PARQUET)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Overture buildings parquet not found: {path}")
+
+    raw_bboxes = body.get("bboxes") or []
+    bboxes: list[tuple[int, float, float, float, float]] = []
+    for idx, bbox in enumerate(raw_bboxes[:32]):
+        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+            continue
+        try:
+            west, south, east, north = [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            continue
+        if west >= east or south >= north:
+            continue
+        bboxes.append((idx, west, south, east, north))
+    if not bboxes:
+        return {"type": "FeatureCollection", "features": [], "links": []}
+
+    try:
+        limit = int(body.get("limit") or 30000)
+    except (TypeError, ValueError):
+        limit = 30000
+    limit = max(1, min(limit, 100000))
+
+    values_sql = ",\n".join(
+        f"({idx}, {west:.12f}, {south:.12f}, {east:.12f}, {north:.12f})"
+        for idx, west, south, east, north in bboxes
+    )
+    parquet_path = str(path).replace("'", "''")
+    import duckdb
+
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute("LOAD spatial")
+        rows = con.execute(
+            f"""
+            with boxes(idx, west, south, east, north) as (
+              values {values_sql}
+            ),
+            hits as (
+              select
+                b.id,
+                b.height,
+                b.min_height,
+                b.num_floors,
+                b.subtype,
+                b.class,
+                b.has_parts,
+                b.bbox_xmin,
+                b.bbox_ymin,
+                b.bbox_xmax,
+                b.bbox_ymax,
+                ST_AsGeoJSON(b.geometry) as geom_json,
+                row_number() over (partition by b.id order by boxes.idx) as rn
+              from read_parquet('{parquet_path}') b
+              join boxes
+                on b.bbox_xmax >= boxes.west
+               and b.bbox_xmin <= boxes.east
+               and b.bbox_ymax >= boxes.south
+               and b.bbox_ymin <= boxes.north
+              where ST_Intersects(
+                b.geometry,
+                ST_MakeEnvelope(boxes.west, boxes.south, boxes.east, boxes.north)
+              )
+            )
+            select *
+            from hits
+            where rn = 1
+            limit {limit}
+            """
+        ).fetchall()
+    finally:
+        con.close()
+
+    features = []
+    for row in rows:
+        (
+            bid,
+            height,
+            min_height,
+            num_floors,
+            subtype,
+            building_class,
+            has_parts,
+            xmin,
+            ymin,
+            xmax,
+            ymax,
+            geom_json,
+            _rn,
+        ) = row
+        props = {
+            "id": bid,
+            "height": height,
+            "min_height": min_height,
+            "num_floors": num_floors,
+            "subtype": subtype,
+            "class": building_class,
+            "has_parts": has_parts,
+        }
+        features.append({
+            "type": "Feature",
+            "id": bid,
+            "geometry": json.loads(geom_json),
+            "bbox": [xmin, ymin, xmax, ymax],
+            "properties": {k: v for k, v in props.items() if v is not None},
+        })
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "links": [],
+        "limit": limit,
+        "bboxes": len(bboxes),
+    }
 
 
 # AWS Lambda entry point. Mangum adapts the ASGI app to the Lambda event/response
