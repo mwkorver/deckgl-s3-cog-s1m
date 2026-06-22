@@ -18,6 +18,12 @@ COPY app/api/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/api/app.py ./app.py
+COPY app/api/aws_s3.py ./aws_s3.py
+COPY app/api/config.py ./config.py
+COPY app/api/lake.py ./lake.py
+COPY app/api/probes.py ./probes.py
+COPY app/api/ingest_jobs.py ./ingest_jobs.py
+COPY app/api/ingest_options.py ./ingest_options.py
 COPY app/api/ingest_manifest.py ./ingest_manifest.py
 COPY app/viewer ./viewer
 

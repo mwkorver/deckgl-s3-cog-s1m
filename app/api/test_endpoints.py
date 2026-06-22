@@ -45,6 +45,36 @@ def test_collection_by_id():
         assert response.status_code == 404
 
 
+def test_ingest_write_endpoints_require_token_when_configured():
+    """Public write endpoints must reject unauthenticated ingest requests."""
+    with patch("app.INGEST_TOKEN", "test-ingest-token"):
+        response = client.post("/ingest/run", json={"state": "nj", "year": 2020})
+        assert response.status_code == 401
+
+        response = client.post("/ingest/run-sync", json={"state": "nj", "year": 2020})
+        assert response.status_code == 401
+
+
+def test_ingest_write_endpoints_accept_bearer_or_ingest_token_header():
+    """A valid token should let request validation proceed past auth."""
+    with patch("app.INGEST_TOKEN", "test-ingest-token"), patch("app.INGEST_MODE", "sync"):
+        response = client.post(
+            "/ingest/run",
+            headers={"x-ingest-token": "test-ingest-token"},
+            json={},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "state is required"
+
+        response = client.post(
+            "/ingest/run-sync",
+            headers={"authorization": "Bearer test-ingest-token"},
+            json={},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "state is required"
+
+
 def test_availability():
     """Verify that /availability queries and returns states/years from DuckDB."""
     with patch("app.get_lake_duckdb") as mock_get_duckdb:
@@ -91,7 +121,7 @@ def test_sign():
 
 def test_sign_rejects_private_and_unknown_buckets():
     """The public signer must not expose role-readable or arbitrary buckets."""
-    private_href = "s3://cog-stac-viewer-495811053987-us-west-2/lake/item.parquet"
+    private_href = "s3://deckgl-s3-cog-viewer-495811053987-us-west-2/lake/item.parquet"
     response = client.get(f"/sign?href={private_href}")
     assert response.status_code == 403
 
@@ -127,6 +157,20 @@ def test_search_validation():
 
     response = client.post("/search", json={"collections": ["naip"], "bbox": "not-a-list"})
     assert response.status_code == 400
+
+
+def test_detect_requires_configured_runner():
+    """Detection should fail before COG access when the SAM runner is not configured."""
+    with patch("app.SAM3_PYTHON", ""), patch("app.SAM3_SCRIPT", ""):
+        response = client.post(
+            "/detect",
+            json={
+                "bbox": [-75.0, 39.0, -74.0, 40.0],
+                "concept": "swimming pool",
+            },
+        )
+    assert response.status_code == 503
+    assert "SAM3_PYTHON and SAM3_SCRIPT" in response.json()["detail"]
 
 
 def test_search_success():
@@ -165,6 +209,76 @@ def test_search_success():
         assert feat["assets"]["image"]["href"] == "s3://naip-analytic/state/year/tile.tif"
 
 
+def test_similar_validation():
+    """Verify /similar input validation on missing point and bad k/year."""
+    response = client.post("/similar", json={})
+    assert response.status_code == 400
+    assert "lon and lat" in response.json()["detail"]
+
+    response = client.post("/similar", json={"lon": -71.4, "lat": "not-a-number"})
+    assert response.status_code == 400
+
+    response = client.post("/similar", json={"lon": -71.4, "lat": 41.8, "year": "soon"})
+    assert response.status_code == 400
+    assert "year" in response.json()["detail"]
+
+
+def test_similar_success():
+    """Verify /similar resolves the query chip, ranks rows, and maps them to features."""
+    with patch("app.get_lake_duckdb") as mock_get_duckdb:
+        mock_con = MagicMock()
+        mock_cursor = MagicMock()
+        mock_con.cursor.return_value = mock_cursor
+        mock_get_duckdb.return_value = mock_con
+
+        chip_row = (
+            "m_4107113_ne_19_060_20210826", "41071",
+            -71.4133, 41.8229, -71.4114, 41.8243,
+            datetime.date(2021, 8, 26), 0.6, "ri", 2021,
+        )
+        dummy_geom = '{"type":"Polygon","coordinates":[[[-71.41,41.82],[-71.40,41.82],[-71.40,41.83],[-71.41,41.83],[-71.41,41.82]]]}'
+        knn_rows = [
+            (
+                "m_4107113_ne_19_060_20210826", "41071", dummy_geom,
+                -71.4114, 41.8229, -71.4095, 41.8243,
+                datetime.date(2021, 8, 26), 0.6,
+                "s3://naip-analytic/ri/2021/60cm/rgbir_cog/41071/m_4107113_ne_19_060_20210826.tif",
+                "ri", 2021, 0.9881,
+            )
+        ]
+        mock_cursor.execute.return_value.fetchone.return_value = chip_row
+        mock_cursor.execute.return_value.fetchall.return_value = knn_rows
+
+        response = client.post(
+            "/similar",
+            json={"lon": -71.412, "lat": 41.824, "region": "ri", "year": 2021, "k": 10},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "FeatureCollection"
+        assert data["query"]["chip"]["naip_item"] == "m_4107113_ne_19_060_20210826"
+        assert data["query"]["chip"]["region"] == "ri"
+        assert len(data["features"]) == 1
+        feat = data["features"][0]
+        assert feat["properties"]["sim"] == 0.9881
+        assert feat["properties"]["block"] == "41071"
+        assert feat["assets"]["source_image"]["href"].startswith("s3://naip-analytic/")
+
+
+def test_similar_no_chip_at_point():
+    """A point no chip covers returns 404, not an empty collection."""
+    with patch("app.get_lake_duckdb") as mock_get_duckdb:
+        mock_con = MagicMock()
+        mock_cursor = MagicMock()
+        mock_con.cursor.return_value = mock_cursor
+        mock_get_duckdb.return_value = mock_con
+        mock_cursor.execute.return_value.fetchone.return_value = None
+
+        response = client.post("/similar", json={"lon": -70.0, "lat": 40.5, "region": "ri"})
+        assert response.status_code == 404
+        assert "no embedding chip" in response.json()["detail"]
+
+
 if __name__ == "__main__":
     tests = [
         test_health,
@@ -177,6 +291,9 @@ if __name__ == "__main__":
         test_s3_proxy_is_not_exposed,
         test_search_validation,
         test_search_success,
+        test_similar_validation,
+        test_similar_success,
+        test_similar_no_chip_at_point
     ]
     failed = 0
     for t in tests:

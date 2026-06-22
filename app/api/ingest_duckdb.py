@@ -25,7 +25,6 @@ data-acquisition layer (manifest scan + EarthSearch + proj->4326 geometry).
 import argparse
 import json
 import os
-import re
 from pathlib import Path
 from time import perf_counter
 
@@ -38,7 +37,7 @@ import ingest_manifest as im
 # Lake root the read API serves from (S3_COG_LAKE_ROOT), so a panel-triggered
 # ingest writes where /search reads -- local or s3://. Falls back to the local
 # cache path for standalone CLI runs without the env set.
-DEFAULT_OUT = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb").rstrip("/")
+DEFAULT_OUT = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb")
 
 # Encoding suffixes the manifest appends to the band product ("rgbir_cog").
 # The format token describes the encoding, not the product, so it is dropped.
@@ -64,18 +63,8 @@ def parse_args():
     parser.add_argument(
         "--collection",
         default="naip",
-        help="Output collection id. For descriptor ingest this must exist in the registry; for --source-bucket it defaults to a sanitized bucket name.",
+        help="Collection id from the descriptor registry (e.g. naip, kyfromabove, nj-imagery)",
     )
-    parser.add_argument("--source-bucket", help="Direct S3 source bucket to list instead of using a registered collection descriptor")
-    parser.add_argument("--source-prefix", default="", help="Direct S3 source prefix to list recursively")
-    parser.add_argument(
-        "--source-access",
-        choices=["public", "private", "requester-pays"],
-        default="public",
-        help="How to access the direct S3 source bucket",
-    )
-    parser.add_argument("--source-region", help="Region partition to use for direct S3 ingest when keys do not parse one")
-    parser.add_argument("--source-year", type=int, help="Year partition to use for direct S3 ingest when keys do not parse one")
     parser.add_argument("--states", nargs="+", default=["ri", "ct", "de", "nj"])
     parser.add_argument("--years", nargs="+", type=int, help="Optional explicit acquisition years")
     parser.add_argument(
@@ -119,127 +108,12 @@ def parse_args():
         help="Write one file instead of the collection=/region=/year= partition tree",
     )
     return parser.parse_args()
-
-
-def sanitize_collection_id(value: str) -> str:
-    return "".join(ch for ch in str(value).lower() if ch.isalnum() or ch in "-_") or "s3-source"
-
-
-def _split_s3_source(bucket: str, prefix: str = "") -> tuple[str, str]:
-    """Accept either bucket+prefix or an s3:// URL pasted into the bucket field."""
-    bucket = (bucket or "").strip()
-    prefix = (prefix or "").strip().lstrip("/")
-    if bucket.startswith("s3://"):
-        rest = bucket[len("s3://"):]
-        parsed_bucket, _, parsed_prefix = rest.partition("/")
-        bucket = parsed_bucket
-        prefix = "/".join(p for p in (parsed_prefix.strip("/"), prefix.strip("/")) if p)
-    return bucket, prefix
-
-
-def _default_direct_key_parser(key: str, *, region: str | None, year: int | None) -> descriptors.KeyFields | None:
-    if not key.lower().endswith((".tif", ".tiff")):
-        return None
-    found_year = year
-    if found_year is None:
-        match = re.search(r"(?:19|20)\d\d", key)
-        if match:
-            found_year = int(match.group(0))
-    if found_year is None:
-        return None
-    return descriptors.KeyFields(
-        region=(region or "unknown").lower(),
-        year=int(found_year),
-        properties={"source_prefix": key.rsplit("/", 1)[0] + "/" if "/" in key else ""},
-    )
-
-
-def direct_source_rows(args) -> dict[str, dict]:
-    bucket, prefix = _split_s3_source(args.source_bucket, args.source_prefix)
-    if not bucket:
-        raise RuntimeError("source bucket is required")
-    prefix = prefix.strip("/")
-    if prefix:
-        prefix += "/"
-
-    collection = sanitize_collection_id(bucket if args.collection == "naip" else (args.collection or bucket))
-    access = args.source_access
-    s3 = descriptors.s3_client_for(access)
-    request_payer = "requester" if access == "requester-pays" else None
-
-    if bucket == "kyfromabove":
-        key_filter = descriptors.ky_cog_filter
-        key_parser = descriptors.ky_key_parser
-        default_region = args.source_region or "ky"
-    else:
-        key_filter = lambda key: key.lower().endswith((".tif", ".tiff"))
-        key_parser = lambda key: _default_direct_key_parser(
-            key,
-            region=args.source_region,
-            year=args.source_year,
-        )
-        default_region = args.source_region
-
-    rows: dict[str, dict] = {}
-    cap = args.limit_per_partition or 0
-    for key in descriptors._iter_keys(s3, bucket, prefix):
-        if not key_filter(key):
-            continue
-        fields = key_parser(key)
-        if fields is None:
-            if args.source_year is None and not default_region:
-                continue
-            fields = _default_direct_key_parser(key, region=default_region, year=args.source_year)
-        if fields is None:
-            continue
-        if args.source_region and fields.region.lower() != args.source_region.lower():
-            continue
-        if args.source_year and int(fields.year) != int(args.source_year):
-            continue
-        href = f"s3://{bucket}/{key}"
-        rows[href] = {
-            "source_bucket": bucket,
-            "source_key": key,
-            "asset_href": href,
-            "filename": key.rsplit("/", 1)[-1],
-            "region": fields.region.lower(),
-            "year": int(fields.year),
-            "properties": {
-                **(fields.properties or {}),
-                "source:bucket": bucket,
-                "source:prefix": prefix,
-                "source:collection": collection,
-            },
-        }
-        if cap and len(rows) >= cap:
-            break
-
-    print(
-        f"direct S3 source selected {len(rows):,} assets from s3://{bucket}/{prefix} "
-        f"region={args.source_region or 'parsed'} year={args.source_year or 'parsed'}",
-        flush=True,
-    )
-    if not rows:
-        return rows
-    payloads, failed = im.process_cog_headers_generic(
-        rows,
-        max_workers=16,
-        request_payer=request_payer,
-        access=access,
-    )
-    print(f"COG header extraction: matched={len(payloads):,} failed={len(failed):,}", flush=True)
-    # Return row-store payloads, not manifest rows; acquire_payloads handles this
-    # direct branch before descriptor discovery.
-    return payloads
  
  
 def acquire_payloads(args):
     """Run the shared data-acquisition layer and return row-store payloads.
     Mirrors ingest_iceberg.acquire_payloads so both paths ingest identical
     source data (the only difference is the sink)."""
-    if getattr(args, "source_bucket", None):
-        return direct_source_rows(args)
-
     # Resolve the collection descriptor. The descriptor
     # owns the source bucket, access mode, and discovery adapter, so this function
     # no longer hardcodes NAIP's manifest-index discovery or requester-pays.
@@ -549,7 +423,11 @@ def export(payloads, out_path: str, row_group_size: int, single_file: bool, coll
         """
     )
 
-    read_glob = str(out_path) if single_file else f"{out_path}/**/*.parquet"
+    # Scope to the hive-partitioned data only. A bare `**/*.parquet` over the
+    # lake root also matches non-partitioned siblings that share the bucket
+    # (e.g. lake/s1m/S1M_Products.parquet), which have no collection= key and
+    # break hive_partitioning with a "key collection not found" binder error.
+    read_glob = str(out_path) if single_file else f"{out_path}/collection=*/region=*/year=*/*.parquet"
     count = con.sql(
         f"select count(*) from read_parquet('{read_glob}', hive_partitioning=true)"
     ).fetchone()[0]

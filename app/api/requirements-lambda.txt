@@ -1,11 +1,11 @@
-# Trimmed runtime deps for the read-only zip Lambda (cog-stac-read).
+# Trimmed runtime deps for the read-only zip Lambda (deckgl-s3-cog-read).
 #
 # WHY a separate file: api/requirements.txt is shared with the Docker dev image
 # and includes the ingest stack (pyarrow 135M, pyproj 33M, pillow 20M) plus
 # awscli/duckdb. That package + the 148M DuckDB layer blows past Lambda's 250M
 # unzipped limit. The read API only needs FastAPI + Mangum at import time:
 #   - boto3/botocore: provided by the python3.12 Lambda runtime (don't bundle).
-#   - duckdb + spatial/httpfs extensions: provided by the DuckDbLayer at /opt.
+#   - duckdb + spatial/httpfs extensions: provided by DeckglS3CogDuckDbLayer at /opt.
 #   - pyarrow/pyproj/pillow: ingest-only, lazy-imported; S3_COG_INGEST_MODE=disabled
 #     on this function so /ingest/* returns 501 instead of ImportError.
 fastapi==0.116.1

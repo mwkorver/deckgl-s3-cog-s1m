@@ -6,9 +6,11 @@
 # layer -- `sam build` against requirements.txt would pull pyarrow/pyproj/pillow
 # and overflow. Source files are copied in; ingest modules are present but never
 # imported (S3_COG_INGEST_MODE=disabled), so their pyarrow imports never run.
-build-CogStacReadFunction:
+build-DeckglS3CogReadFunction:
 	python -m pip install -r requirements-lambda.txt -t "$(ARTIFACTS_DIR)"
 	cp app.py "$(ARTIFACTS_DIR)/"
+	cp aws_s3.py "$(ARTIFACTS_DIR)/"
+	cp config.py "$(ARTIFACTS_DIR)/"
 	# duckdb_s3.py is the read path's DuckDB-on-S3 connection helper (httpfs +
 	# credential_chain); it imports only stdlib (duckdb comes from the layer).
 	cp duckdb_s3.py "$(ARTIFACTS_DIR)/"
@@ -16,4 +18,8 @@ build-CogStacReadFunction:
 	# (lazy boto3/ingest_manifest imports); the read path needs it for /collections
 	# and /ingest/options (collection list + generic available_years). No pyarrow.
 	cp descriptors.py "$(ARTIFACTS_DIR)/"
+	cp ingest_jobs.py "$(ARTIFACTS_DIR)/"
+	cp ingest_options.py "$(ARTIFACTS_DIR)/"
+	cp lake.py "$(ARTIFACTS_DIR)/"
+	cp probes.py "$(ARTIFACTS_DIR)/"
 	cp -r ../viewer "$(ARTIFACTS_DIR)/viewer"
