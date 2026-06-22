@@ -59,7 +59,7 @@ class TerrainRequest(BaseModel):
 
 class TilesRequest(BaseModel):
     bbox: list[float]  # [west, south, east, north] in lon/lat
-    max_tiles: int = 24
+    max_tiles: int | None = 24
     center: list[float] | None = None  # [lon, lat] viewport centre for nearest-first ordering
 
 
@@ -71,16 +71,17 @@ def health():
 @app.post("/s1m/tiles")
 def tiles(req: TilesRequest):
     """S1M tiles intersecting a lon/lat bbox (nearest-to-centre first) so the
-    viewer can fill the viewport with terrain. Returns {tiles:[{dataset,
-    center_lnglat}]}; the viewer fetches each grid via /s1m/terrain."""
+    viewer can fill the viewport with terrain and draw exact footprint rings.
+    The viewer fetches each grid via /s1m/terrain."""
     if len(req.bbox) != 4:
         raise HTTPException(status_code=400, detail="bbox must be [west, south, east, north].")
     order_center = tuple(req.center) if req.center and len(req.center) == 2 else None
     try:
         west, south, east, north = req.bbox
+        max_tiles = None if req.max_tiles is None else max(1, min(int(req.max_tiles), 10000))
         found = s1m.cover_tiles(
             west, south, east, north,
-            max_tiles=max(1, min(int(req.max_tiles), 256)),
+            max_tiles=max_tiles,
             order_center=order_center,
         )
     except Exception as exc:

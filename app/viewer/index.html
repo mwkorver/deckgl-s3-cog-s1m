@@ -428,6 +428,21 @@
                 <input id="toggle-usgs-naip-wms-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                 <strong>USGS NAIP Reference Imagery (WMS)</strong>
               </label>
+              <label class="small" style="display:flex; align-items:center; gap:8px;">
+                <input id="toggle-naip-search-footprints-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                <strong>NAIP Search Footprints</strong>
+                <span class="muted">— /search polygons</span>
+              </label>
+              <label class="small" style="display:flex; align-items:center; gap:8px;">
+                <input id="toggle-s1m-footprints-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                <strong>S1M Coverage Footprints</strong>
+                <span class="muted">— available source tiles, layer 3+</span>
+              </label>
+              <label class="small" style="display:flex; align-items:center; gap:8px;">
+                <input id="toggle-naip-coverage-mvt-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                <strong>NAIP Coverage Footprints</strong>
+                <span class="muted">— MVT outlines, z4-15</span>
+              </label>
               <div class="display-adjustments">
                 <label class="small">
                   Brightness <span id="brightness-value" class="muted">0%</span>
@@ -772,6 +787,9 @@
       const autoSearchEl = document.getElementById("auto-search");
       const toggleCogEl = document.getElementById("toggle-cog-layer");
       const toggleUsgsNaipWmsLayerEl = document.getElementById("toggle-usgs-naip-wms-layer");
+      const toggleNaipSearchFootprintsLayerEl = document.getElementById("toggle-naip-search-footprints-layer");
+      const toggleS1MFootprintsLayerEl = document.getElementById("toggle-s1m-footprints-layer");
+      const toggleNaipCoverageMvtLayerEl = document.getElementById("toggle-naip-coverage-mvt-layer");
       const terBordersEl = document.getElementById("ter-borders");
       const terBuildingsEl = document.getElementById("ter-buildings");
       const terBuildingsStatusEl = document.getElementById("ter-buildings-status");
@@ -785,6 +803,9 @@
       autoSearchEl.checked = true;
       toggleCogEl.checked = true;
       toggleUsgsNaipWmsLayerEl.checked = false;
+      toggleNaipSearchFootprintsLayerEl.checked = true;
+      toggleS1MFootprintsLayerEl.checked = true;
+      toggleNaipCoverageMvtLayerEl.checked = true;
       if (terBordersEl) terBordersEl.checked = true;
 
       const searchBtn = document.getElementById("search");
@@ -822,6 +843,7 @@
       const ingestLogsEl = document.getElementById("ingest-logs");
       let deckOverlay = null;
       let MapboxOverlayClass = null;
+      let MVTLayerClass = null;
       let MosaicLayerClass = null;
       let COGLayerClass = null;
       let CutlineBboxModule = null;
@@ -1620,6 +1642,19 @@
       let s1mLayers = [];                 // tile layers currently pushed to deck
       const s1mTileCache = new Map();     // `${dataset}@${size}` -> {data, elevations, gpuMesh, layer}
       const s1mDrapeCache = new Map();    // drape key -> Promise<ImageData>
+      const S1M_FOOTPRINT_MIN_Z = 3;
+      let s1mFootprintTiles = [];
+      let s1mFootprintKey = "";
+      let s1mFootprintPendingKey = "";
+      let s1mFootprintSeq = 0;
+      const NAIP_COVERAGE_MVT_MIN_Z = 4;
+      const NAIP_COVERAGE_MVT_MAX_SOURCE_Z = 15;
+      const NAIP_COVERAGE_MVT_MAX_RENDER_Z = 24;
+      const NAIP_COVERAGE_MVT_SOURCE_ID = "naip-coverage-mvt";
+      const NAIP_COVERAGE_MVT_LAYER_ID = "naip-coverage-mvt-footprints";
+      const NAIP_COVERAGE_MVT_LINE_LAYER_ID = "naip-coverage-mvt-footprint-lines";
+      const NAIP_COVERAGE_MVT_VERSION = "footprints-v2";
+      let naipCoverageMvtKey = "";
       const S1M_MAX_TILES = 96;           // enough to cover wide/pitched views; LOD keeps edge tiles cheap
       const S1M_INITIAL_DRAPE_SOURCES_PER_TILE = 6;
       const S1M_MAX_DRAPE_SOURCES_PER_TILE = 12;
@@ -1635,6 +1670,21 @@
       let buildingFootprintKey = "";
       let buildingFeatureData = null;     // raw lon/lat FC from the API, pre terrain-seating
       const BUILDING_MAX_FEATURES = 12000;  // viewport-scoped, so this is only a safety cap
+
+      function moveMapLibreVectorLayersToTop() {
+        const orderedLayerIds = [
+          "naip-search-fill",
+          "naip-search-line",
+          NAIP_COVERAGE_MVT_LAYER_ID,
+          NAIP_COVERAGE_MVT_LINE_LAYER_ID,
+          "overture-buildings-fill",
+        ];
+        for (const layerId of orderedLayerIds) {
+          if (map.getLayer(layerId)) {
+            map.moveLayer(layerId);
+          }
+        }
+      }
 
       function s1mCachedForDesired(key, tile) {
         const exact = s1mTileCache.get(key);
@@ -1814,6 +1864,30 @@
 
         for (const l of s1mLayers) layers.push(l);
 
+        if (
+          toggleS1MFootprintsLayerEl?.checked &&
+          s1mFootprintsVisibleAtCurrentZoom() &&
+          s1mFootprintTiles.length > 0 &&
+          PathLayerClass
+        ) {
+          const paths = s1mFootprintTiles.flatMap((tile) => s1mFootprintPaths(tile));
+          if (paths.length > 0) {
+            layers.push(new PathLayerClass({
+              id: "s1m-footprints-layer",
+              data: paths,
+              getPath: (path) => path,
+              getColor: [14, 165, 233, 220],
+              getWidth: 2,
+              widthMinPixels: 1,
+              parameters: {
+                depthWriteEnabled: false,
+                depthCompare: "always",
+              },
+              pickable: false,
+            }));
+          }
+        }
+
         if (s1mActive && terBordersEl?.checked && s1mActiveTiles.size > 0 && PathLayerClass) {
           const borderPaths = [];
           for (const t of s1mActiveTiles.values()) {
@@ -1872,6 +1946,28 @@
             });
             layers.push(borderLayer);
           }
+        }
+
+        if (toggleNaipCoverageMvtLayerEl?.checked && MVTLayerClass) {
+          layers.push(new MVTLayerClass({
+            id: "naip-coverage-mvt-deck",
+            data: naipCoverageMvtUrl(),
+            minZoom: NAIP_COVERAGE_MVT_MIN_Z,
+            maxZoom: NAIP_COVERAGE_MVT_MAX_SOURCE_Z,
+            maxCacheSize: 64,
+            filled: true,
+            stroked: true,
+            getFillColor: [250, 204, 21, 20],
+            getLineColor: [250, 204, 21, 255],
+            getLineWidth: 2,
+            lineWidthUnits: "pixels",
+            lineWidthMinPixels: 1,
+            pickable: false,
+            parameters: {
+              depthWriteEnabled: false,
+              depthCompare: "always",
+            },
+          }));
         }
 
         deckOverlay.setProps({ layers });
@@ -2339,6 +2435,7 @@
           });
           // No separate outline layer: MapLibre line layers drape flat at z=0 and
           // would detach from the extrusions once they are lifted onto the terrain.
+          moveMapLibreVectorLayersToTop();
         }
       }
 
@@ -2346,6 +2443,7 @@
         ensureBuildingFootprintLayers();
         const source = map.getSource("overture-buildings");
         if (source) source.setData(fc || emptyFeatureCollection());
+        moveMapLibreVectorLayersToTop();
       }
 
       function clearBuildingFootprints() {
@@ -3373,6 +3471,111 @@
         });
       }
 
+      function s1mFootprintsVisibleAtCurrentZoom() {
+        return map.getZoom() >= S1M_FOOTPRINT_MIN_Z;
+      }
+
+      function s1mFootprintViewportKey(bbox) {
+        return JSON.stringify({
+          z: currentViewerTileLayerNumber(),
+          bbox: bbox.map((value) => Number(value.toFixed(4))),
+        });
+      }
+
+      function s1mFootprintPaths(tile) {
+        if (Array.isArray(tile?.footprint) && tile.footprint.length > 0) {
+          return tile.footprint.filter((ring) => Array.isArray(ring) && ring.length >= 4);
+        }
+        return [];
+      }
+
+      async function refreshS1MFootprintsLayer() {
+        if (!toggleS1MFootprintsLayerEl?.checked || !s1mFootprintsVisibleAtCurrentZoom()) {
+          s1mFootprintSeq += 1;
+          s1mFootprintTiles = [];
+          s1mFootprintKey = "";
+          s1mFootprintPendingKey = "";
+          updateImageryLayers();
+          return;
+        }
+        const bbox = currentBbox();
+        const key = s1mFootprintViewportKey(bbox);
+        if (key === s1mFootprintKey || key === s1mFootprintPendingKey) {
+          updateImageryLayers();
+          return;
+        }
+        const seq = ++s1mFootprintSeq;
+        s1mFootprintPendingKey = key;
+        try {
+          const c = map.getCenter();
+          const response = await s1mFetch("/s1m/tiles", {
+            bbox,
+            max_tiles: 10000,
+            center: [c.lng, c.lat],
+          });
+          if (!response.ok) {
+            throw new Error(`S1M footprints ${response.status}`);
+          }
+          const tiles = (await response.json()).tiles || [];
+          if (seq !== s1mFootprintSeq) return;
+          if (tiles.length && !tiles.some((tile) => Array.isArray(tile?.footprint) && tile.footprint.length)) {
+            console.warn("S1M footprint layer received no polygon footprints; deploy the updated S1M API.");
+          }
+          s1mFootprintTiles = tiles;
+          s1mFootprintKey = key;
+        } catch (error) {
+          if (seq !== s1mFootprintSeq) return;
+          s1mFootprintTiles = [];
+          s1mFootprintKey = "";
+          console.error("S1M footprints failed:", error);
+        } finally {
+          if (seq === s1mFootprintSeq) {
+            s1mFootprintPendingKey = "";
+            updateImageryLayers();
+          }
+        }
+      }
+
+      function naipCoverageMvtUrl() {
+        const params = new URLSearchParams({
+          collection: activeCollection(),
+          v: NAIP_COVERAGE_MVT_VERSION,
+        });
+        if (stateEl.value) params.set("region", stateEl.value);
+        if (yearEl.value) params.set("year", yearEl.value);
+        const base = API_BASE || "";
+        return `${base}/naip-coverage/{z}/{x}/{y}.mvt?${params.toString()}`;
+      }
+
+      function naipCoverageMvtSourceKey() {
+        return JSON.stringify({
+          collection: activeCollection(),
+          region: stateEl.value || "",
+          year: yearEl.value || "",
+          version: NAIP_COVERAGE_MVT_VERSION,
+        });
+      }
+
+      function removeNaipCoverageMvtLayer() {
+        if (map.getLayer(NAIP_COVERAGE_MVT_LINE_LAYER_ID)) {
+          map.removeLayer(NAIP_COVERAGE_MVT_LINE_LAYER_ID);
+        }
+        if (map.getLayer(NAIP_COVERAGE_MVT_LAYER_ID)) {
+          map.removeLayer(NAIP_COVERAGE_MVT_LAYER_ID);
+        }
+        if (map.getSource(NAIP_COVERAGE_MVT_SOURCE_ID)) {
+          map.removeSource(NAIP_COVERAGE_MVT_SOURCE_ID);
+        }
+        naipCoverageMvtKey = "";
+      }
+
+      function updateNaipCoverageMvtLayer() {
+        if (map.isStyleLoaded()) {
+          removeNaipCoverageMvtLayer();
+        }
+        updateImageryLayers();
+      }
+
       // Per-tile screen-error LOD. Pitched views make near tiles project wider
       // than far tiles, so they get denser grids while distant tiles read lower
       // DEM overviews. Quantized sizes keep cache churn bounded while panning.
@@ -3725,9 +3928,7 @@
         if (map.getLayer("usgs-naip-wms-layer")) {
           map.setLayoutProperty("usgs-naip-wms-layer", "visibility", usgsVisible ? "visible" : "none");
         }
-        if (map.getLayer("usgs-naip-wms-layer")) {
-          map.moveLayer("usgs-naip-wms-layer");
-        }
+        moveMapLibreVectorLayersToTop();
       }
 
       function updateResolutionDebug(features, imagerySources) {
@@ -3780,6 +3981,7 @@
             import("@deck.gl/layers"),
           ]);
           MapboxOverlayClass = MapboxOverlay;
+          MVTLayerClass = geoLayersModule.MVTLayer;
           MosaicLayerClass = geotiffModule.MosaicLayer;
           COGLayerClass = geotiffModule.COGLayer;
           SimpleMeshLayerClass = meshLayersModule.SimpleMeshLayer;
@@ -4205,10 +4407,21 @@
         );
       }
 
+      function updateNaipSearchFootprintsVisibility() {
+        const visibility = toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none";
+        for (const layerId of ["naip-search-fill", "naip-search-line"]) {
+          if (map.getLayer(layerId)) {
+            map.setLayoutProperty(layerId, "visibility", visibility);
+          }
+        }
+        moveMapLibreVectorLayersToTop();
+      }
+
       function updateMap(features) {
         const startedAt = performance.now();
         const nextSignature = footprintSignature(features);
         if (nextSignature === currentFootprintSignature) {
+          updateNaipSearchFootprintsVisibility();
           return { skipped: true, durationMs: performance.now() - startedAt };
         }
 
@@ -4220,6 +4433,7 @@
         if (map.getSource("naip-search")) {
           map.getSource("naip-search").setData(sourceData);
           currentFootprintSignature = nextSignature;
+          updateNaipSearchFootprintsVisibility();
           return { skipped: false, durationMs: performance.now() - startedAt };
         }
 
@@ -4233,6 +4447,9 @@
           id: "naip-search-fill",
           type: "fill",
           source: "naip-search",
+          layout: {
+            visibility: toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none",
+          },
           paint: {
             "fill-color": "#f97316",
             "fill-opacity": 0,
@@ -4243,12 +4460,16 @@
           id: "naip-search-line",
           type: "line",
           source: "naip-search",
+          layout: {
+            visibility: toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none",
+          },
           paint: {
             "line-color": "#fb923c",
             "line-width": 1,
             "line-opacity": 0.5,
           },
         });
+        updateNaipSearchFootprintsVisibility();
         return { skipped: false, durationMs: performance.now() - startedAt };
       }
 
@@ -4366,7 +4587,7 @@
           const isLake = true;
           const engineName = "GeoParquet lake (DuckDB direct)";
           const engineExplain =
-            "Footprints read from partitioned GeoParquet files via a standalone in-process DuckDB connection (read_parquet) — no database server. Prunes by bbox column + row-group stats, refines with ST_Intersects. This is the serverless lake read path.";
+            "Footprints read from partitioned GeoParquet files via a standalone in-process DuckDB connection (read_parquet) — no database server. Prunes by bbox columns + row-group stats. This is the serverless lake read path.";
           const filterNote = [];
           if (body["region"]) filterNote.push(`region = ${body["region"]}`);
           if (body["year"]) filterNote.push(`year = ${body["year"]}`);
@@ -4640,8 +4861,12 @@
       stateEl.addEventListener("change", () => {
         populateSearchYears();
         queueSearch("auto");
+        updateNaipCoverageMvtLayer();
       });
-      yearEl.addEventListener("change", () => queueSearch("auto"));
+      yearEl.addEventListener("change", () => {
+        queueSearch("auto");
+        updateNaipCoverageMvtLayer();
+      });
       document.getElementById("center-data").addEventListener("click", centerOnSelection);
 
       searchBtn.addEventListener("click", () => queueSearch("manual"));
@@ -4695,6 +4920,14 @@
       document.getElementById("ter-run")?.addEventListener("click", enableS1MTerrain);
       document.getElementById("ter-clear")?.addEventListener("click", clearS1MTerrain);
       document.getElementById("ter-stats-window")?.addEventListener("click", s1mOpenStatsWindow);
+      toggleS1MFootprintsLayerEl?.addEventListener("change", async () => {
+        if (toggleS1MFootprintsLayerEl.checked) {
+          await initImagerySupport();
+        }
+        refreshS1MFootprintsLayer();
+      });
+      toggleNaipSearchFootprintsLayerEl?.addEventListener("change", updateNaipSearchFootprintsVisibility);
+      toggleNaipCoverageMvtLayerEl?.addEventListener("change", updateNaipCoverageMvtLayer);
 
       toggleCogEl.addEventListener("change", () => {
         updateImagery(lastSearchFeatures);
@@ -4833,6 +5066,7 @@
           renderActiveCollectionSummary();
           refreshAvailability().then((ok) => {
             if (ok && (changed || autoSearchEl.checked || toggleCogEl.checked)) queueSearch("auto");
+            updateNaipCoverageMvtLayer();
           });
         }
       }
@@ -4870,6 +5104,8 @@
       map.on("moveend", () => {
         updateLayerNumberControl();
         updateCollectionsHere();
+        refreshS1MFootprintsLayer();
+        updateNaipCoverageMvtLayer();
         if (!mapReady) {
           return;
         }
@@ -4934,6 +5170,8 @@
         updateReferenceRasterLayers();
 
         await initImagerySupport();
+        refreshS1MFootprintsLayer();
+        updateNaipCoverageMvtLayer();
         await refreshEnvironment();
         updateImageryLayers();
         await refreshCollections();

@@ -81,7 +81,7 @@ def cover_dataset(lon: float, lat: float) -> str | None:
 
 
 def cover_tiles(west: float, south: float, east: float, north: float,
-                max_tiles: int = 24, order_center: tuple[float, float] | None = None) -> list[dict]:
+                max_tiles: int | None = 24, order_center: tuple[float, float] | None = None) -> list[dict]:
     """All S1M tiles intersecting a lon/lat bbox, nearest-to-centre first.
 
     Used to fill the viewport with terrain. The bbox columns make this a cheap
@@ -92,7 +92,8 @@ def cover_tiles(west: float, south: float, east: float, north: float,
     looking. On a tilted view the bbox envelope centre sits far forward (the
     visible trapezoid reaches the horizon), so it's a poor focal point -- the
     viewport centre is much closer to the foreground. Falls back to the bbox
-    centre. Returns [{dataset, center_lnglat, bbox}].
+    centre. Returns [{dataset, center_lnglat, bbox, footprint}], where footprint
+    is one or more lon/lat exterior rings for display.
     """
     reader = get_reader()
     to_albers, to_4326 = reader["to_albers"], reader["to_4326"]
@@ -121,11 +122,23 @@ def cover_tiles(west: float, south: float, east: float, north: float,
     ).fetchall()
     from shapely import from_wkb
     from shapely.geometry import box
+    from shapely.ops import transform as shapely_transform
+
+    def lonlat_rings(geom):
+        geom_4326 = shapely_transform(lambda x, y, z=None: to_4326.transform(x, y), geom)
+        polys = [geom_4326] if geom_4326.geom_type == "Polygon" else list(getattr(geom_4326, "geoms", []))
+        rings = []
+        for poly in polys:
+            if poly.geom_type != "Polygon" or poly.is_empty:
+                continue
+            rings.append([[float(lon), float(lat)] for lon, lat in poly.exterior.coords])
+        return rings
 
     viewport = box(axmin, aymin, axmax, aymax)
     tiles = []
     for dataset, xmin, xmax, ymin, ymax, geometry_wkb in rows:
-        if not from_wkb(geometry_wkb).intersects(viewport):
+        geom = from_wkb(geometry_wkb)
+        if not geom.intersects(viewport):
             continue
         clon, clat = to_4326.transform((xmin + xmax) / 2, (ymin + ymax) / 2)
         west, south = to_4326.transform(xmin, ymin)
@@ -139,8 +152,9 @@ def cover_tiles(west: float, south: float, east: float, north: float,
                 max(west, east),
                 max(south, north),
             ],
+            "footprint": lonlat_rings(geom),
         })
-        if len(tiles) >= int(max_tiles):
+        if max_tiles is not None and len(tiles) >= int(max_tiles):
             break
     return tiles
 
