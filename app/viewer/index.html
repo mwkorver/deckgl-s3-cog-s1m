@@ -401,7 +401,7 @@
               </label>
               <label class="small">
                 Max footprints
-                <input id="limit" type="number" value="2000" min="1" max="10000" />
+                <input id="limit" type="number" value="18000" min="1" max="18000" />
               </label>
               <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <button id="search" class="search-active">Search current map</button>
@@ -420,6 +420,10 @@
           <div class="section">
             <h2>Raster Layers</h2>
             <div class="controls">
+              <label class="small" style="display:flex; align-items:center; gap:8px;">
+                <input id="toggle-cog-footprints" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                <strong>COG Footprints</strong>
+              </label>
               <label class="small" style="display:flex; align-items:center; gap:8px;">
                 <input id="toggle-cog-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                 <strong id="cog-layer-label">NAIP Imagery (COG Tiles)</strong>
@@ -670,6 +674,7 @@
       const apiFetch = (path, opts) => fetch(`${API_BASE}${path}`, opts);
       const S1M_API_BASE = (window.S3_COG_S1M_API_BASE || API_BASE).replace(/\/$/, "");
       const S1M_DEMO_TOKEN = window.S3_COG_S1M_DEMO_TOKEN || "";
+      const INGEST_TOKEN = window.S3_COG_INGEST_TOKEN || "";
 
       // --- LIVE DEBUG CONSOLE RECORDER ---
       // Off by default: the on-page panel (#debug-overlay) is hidden and the
@@ -781,10 +786,11 @@
       const limitEl = document.getElementById("limit");
       // Default search `limit` (max footprints per /search). One source maps to
       // one MosaicLayer cache slot, so this is also the typical working-set size
-      // that drives `maxCacheSize` below. The server hard-caps `limit` at 10000.
-      const SEARCH_LIMIT_DEFAULT = 2000;
+      // that drives `maxCacheSize` below. The server hard-caps `limit` at 18000.
+      const SEARCH_LIMIT_DEFAULT = 18000;
       limitEl.value = String(SEARCH_LIMIT_DEFAULT);
       const autoSearchEl = document.getElementById("auto-search");
+      const toggleCogFootprintsEl = document.getElementById("toggle-cog-footprints");
       const toggleCogEl = document.getElementById("toggle-cog-layer");
       const toggleUsgsNaipWmsLayerEl = document.getElementById("toggle-usgs-naip-wms-layer");
       const toggleNaipSearchFootprintsLayerEl = document.getElementById("toggle-naip-search-footprints-layer");
@@ -801,6 +807,7 @@
 
       // Ensure all checkboxes are cleared on page load (bypassing browser cache)
       autoSearchEl.checked = true;
+      toggleCogFootprintsEl.checked = true;
       toggleCogEl.checked = true;
       toggleUsgsNaipWmsLayerEl.checked = false;
       toggleNaipSearchFootprintsLayerEl.checked = true;
@@ -4032,6 +4039,31 @@
         ];
       }
 
+      function bboxAtZoom(maxZoom) {
+        const zoom = map.getZoom();
+        if (zoom >= maxZoom) return currentBbox();
+        const canvas = map.getCanvas();
+        const center = map.getCenter();
+        // Avoid accidental whole-world searches if the map has not sized yet.
+        if (!(canvas.width > 0 && canvas.height > 0)) return currentBbox();
+
+        const tileSize = 512;
+        const worldSize = tileSize * 2 ** maxZoom;
+        const mercator = maplibregl.MercatorCoordinate.fromLngLat(center);
+        const dx = (canvas.width / 2) / worldSize;
+        const dy = (canvas.height / 2) / worldSize;
+        const westX = Math.max(0, mercator.x - dx);
+        const eastX = Math.min(1, mercator.x + dx);
+        const northY = Math.max(0, mercator.y - dy);
+        const southY = Math.min(1, mercator.y + dy);
+        const lng = (x) => x * 360 - 180;
+        const lat = (y) => {
+          const n = Math.PI * (1 - 2 * y);
+          return (180 / Math.PI) * Math.atan(Math.sinh(n));
+        };
+        return [lng(westX), lat(southY), lng(eastX), lat(northY)];
+      }
+
       function colorForIndex(index, total) {
         const hue = total <= 1 ? 210 : (210 - (index / Math.max(total - 1, 1)) * 180);
         return `hsl(${hue}, 85%, 55%)`;
@@ -4215,6 +4247,12 @@
         return Math.min(Math.max(1, val), INGEST_SYNC_MAX_LIMIT);
       }
 
+      function ingestRequestHeaders() {
+        const headers = { "content-type": "application/json" };
+        if (INGEST_TOKEN) headers["x-ingest-token"] = INGEST_TOKEN;
+        return headers;
+      }
+
       async function runIngest() {
         let payload;
         try {
@@ -4251,7 +4289,7 @@
         try {
           const response = await apiFetch("/ingest/run", {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: ingestRequestHeaders(),
             body: JSON.stringify(payload),
           });
           if (!response.ok) {
@@ -4279,7 +4317,7 @@
           const payload = ingestSourcePayload();
           const response = await fetch(`${baseUrl || API_BASE}/ingest/run-sync`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: ingestRequestHeaders(),
             body: JSON.stringify(payload),
           });
           const data = await response.json();
@@ -4367,25 +4405,86 @@
         console.groupEnd();
       }
 
+      function incrementCount(map, key) {
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+
+      function sortedCounts(map, limit = 8) {
+        return Array.from(map.entries())
+          .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+          .slice(0, limit);
+      }
+
+      function renderMetricRow(label, value) {
+        const row = document.createElement("div");
+        row.className = "item";
+        const title = document.createElement("strong");
+        title.textContent = label;
+        const body = document.createElement("div");
+        body.className = "small muted";
+        body.textContent = value;
+        row.appendChild(title);
+        row.appendChild(body);
+        resultsEl.appendChild(row);
+      }
+
       function renderResults(features) {
         resultsEl.innerHTML = "";
-        features.forEach((feature, index) => {
+        if (!features.length) {
+          renderMetricRow("Returned footprints", "0");
+          return;
+        }
+
+        const regions = new Map();
+        const years = new Map();
+        const regionYears = new Map();
+        let minGsd = null;
+        let maxGsd = null;
+        let minDate = null;
+        let maxDate = null;
+        let imageAssetCount = 0;
+
+        features.forEach((feature) => {
           const properties = feature.properties || {};
-          const item = document.createElement("div");
-          item.className = "item";
-          const color = colorForIndex(index, features.length);
-          item.innerHTML = `
-            <strong><span class="swatch" style="background:${color}" title="Draw order position"></span>#${index + 1} ${properties["grid:code"] || feature.id}</strong>
-            <div>
-              <span class="pill">region ${properties["region"] ?? properties["naip:state"] ?? "?"}</span>
-              <span class="pill">year ${properties["year"] ?? properties["naip:year"] ?? "?"}</span>
-              <span class="pill">date ${properties.datetime ?? "?"}</span>
-              <span class="pill">gsd ${properties.gsd ?? "?"}</span>
-            </div>
-            <div class="mono">${feature.assets?.image?.href || ""}</div>
-          `;
-          resultsEl.appendChild(item);
+          const region = String(properties["region"] ?? properties["naip:state"] ?? "unknown").toLowerCase();
+          const year = String(properties["year"] ?? properties["naip:year"] ?? "unknown");
+          incrementCount(regions, region);
+          incrementCount(years, year);
+          incrementCount(regionYears, `${region} ${year}`);
+
+          const gsd = Number(properties.gsd);
+          if (Number.isFinite(gsd)) {
+            minGsd = minGsd == null ? gsd : Math.min(minGsd, gsd);
+            maxGsd = maxGsd == null ? gsd : Math.max(maxGsd, gsd);
+          }
+
+          const date = properties.datetime ? String(properties.datetime).slice(0, 10) : null;
+          if (date) {
+            minDate = minDate == null ? date : (date < minDate ? date : minDate);
+            maxDate = maxDate == null ? date : (date > maxDate ? date : maxDate);
+          }
+
+          if (feature.assets?.image?.href) imageAssetCount += 1;
         });
+
+        const yearValues = Array.from(years.keys()).sort((a, b) => Number(b) - Number(a));
+        const topRegions = sortedCounts(regions).map(([region, count]) => `${region}: ${count}`).join(" | ");
+        const topRegionYears = sortedCounts(regionYears).map(([key, count]) => `${key}: ${count}`).join(" | ");
+        const gsdText = minGsd == null
+          ? "unavailable"
+          : minGsd === maxGsd
+            ? `${minGsd} m`
+            : `${minGsd}-${maxGsd} m`;
+        const dateText = minDate && maxDate
+          ? minDate === maxDate ? minDate : `${minDate} to ${maxDate}`
+          : "unavailable";
+
+        renderMetricRow("Returned footprints", `${features.length} total | ${imageAssetCount} with image assets`);
+        renderMetricRow("Regions", `${regions.size} region${regions.size === 1 ? "" : "s"} | ${topRegions || "none"}`);
+        renderMetricRow("Years", `${yearValues.length} year${yearValues.length === 1 ? "" : "s"} | ${yearValues.join(", ") || "none"}`);
+        renderMetricRow("Resolution", gsdText);
+        renderMetricRow("Acquisition dates", dateText);
+        renderMetricRow("Top region/year groups", topRegionYears || "none");
       }
 
       function footprintSignature(features) {
@@ -4539,9 +4638,10 @@
         if (toggleCogEl.checked && (!deckOverlay || !MosaicLayerClass || !COGLayerClass)) {
           await initImagerySupport();
         }
+        const allLoaded = !stateEl.value;
         const body = {
           collections: [activeCollection()],
-          bbox: currentBbox(),
+          bbox: allLoaded ? bboxAtZoom(7) : currentBbox(),
           limit: Number(limitEl.value || SEARCH_LIMIT_DEFAULT),
         };
         if (stateEl.value) body["region"] = stateEl.value;
