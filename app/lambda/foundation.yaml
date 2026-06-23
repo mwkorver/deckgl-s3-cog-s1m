@@ -37,17 +37,10 @@
 # generic).
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  cog-stac foundation: the Retain'd viewer/output S3 bucket + the CloudFront
-  CORS/cache proxy for public source COG buckets. Admin-owned, deployed once
-  before the SAM app stack.
-
-Parameters:
-  SourceRegion:
-    Type: String
-    Default: us-west-2
-    AllowedValues:
-      - us-west-2
-    Description: AWS region of the public source COG buckets (virtual-hosted S3 REST endpoint).
+  cog-stac foundation: the Retain'd viewer / app-output S3 bucket.
+  Admin-owned, deployed once before the SAM app stack. (The former CloudFront
+  CORS/cache proxy for public source COGs was removed -- the viewer now reads
+  public buckets directly via their own CORS.)
 
 Rules:
   RegionLock:
@@ -113,109 +106,6 @@ Resources:
               StringNotEquals:
                 aws:PrincipalAccount: !Ref "AWS::AccountId"
 
-  # ----- 2. CloudFront CORS + cache proxy for public source COG buckets -----
-  # CORS stamp: add Access-Control-Allow-Origin:* to every response, OVERRIDING
-  # the origin (njogis-imagery sends none). Expose the range headers a COG reader
-  # needs.
-  TilesCors:
-    Type: AWS::CloudFront::ResponseHeadersPolicy
-    Properties:
-      ResponseHeadersPolicyConfig:
-        Name: !Sub "${AWS::StackName}-cors"
-        CorsConfig:
-          AccessControlAllowCredentials: false
-          AccessControlAllowOrigins:
-            Items: ["*"]
-          AccessControlAllowMethods:
-            Items: ["GET", "HEAD", "OPTIONS"]
-          AccessControlAllowHeaders:
-            Items: ["*"]
-          AccessControlExposeHeaders:
-            Items: ["Accept-Ranges", "Content-Range", "Content-Length", "ETag"]
-          AccessControlMaxAgeSec: 86400
-          OriginOverride: true
-
-  # Strip the leading /<bucket> path segment so the bucket-root origin receives
-  # the real key. ECMAScript-5-safe (no regex) for the CloudFront Functions runtime.
-  StripBucketPrefix:
-    Type: AWS::CloudFront::Function
-    Properties:
-      Name: !Sub "${AWS::StackName}-strip-bucket"
-      AutoPublish: true
-      FunctionConfig:
-        Comment: "Strip /<bucket> prefix before forwarding to the S3 origin"
-        Runtime: cloudfront-js-2.0
-      FunctionCode: |
-        function handler(event) {
-          var r = event.request;
-          var uri = r.uri;                  // /njogis-imagery/2020/cog/x.tif
-          var slash = uri.indexOf('/', 1);  // slash after the bucket segment
-          r.uri = (slash === -1) ? '/' : uri.substring(slash);  // /2020/cog/x.tif
-          return r;
-        }
-
-  TilesDistribution:
-    Type: AWS::CloudFront::Distribution
-    Properties:
-      Tags:
-        - Key: Application
-          Value: deck.gl-s3-cog
-      DistributionConfig:
-        Enabled: true
-        Comment: !Sub "${AWS::StackName} - CORS + cache proxy for public COG buckets"
-        HttpVersion: http2and3
-        PriceClass: PriceClass_100
-        IPV6Enabled: true
-        # --- one Origin per public bucket (custom/anonymous S3 REST endpoint) ---
-        Origins:
-          - Id: kyfromabove
-            DomainName: !Sub "kyfromabove.s3.${SourceRegion}.amazonaws.com"
-            CustomOriginConfig:
-              OriginProtocolPolicy: https-only
-              OriginSSLProtocols: [TLSv1.2]
-          - Id: njogis-imagery
-            DomainName: !Sub "njogis-imagery.s3.${SourceRegion}.amazonaws.com"
-            CustomOriginConfig:
-              OriginProtocolPolicy: https-only
-              OriginSSLProtocols: [TLSv1.2]
-        # Default behavior is required; point it at any origin. Real traffic
-        # matches the per-bucket behaviors below; unmatched paths 404 at origin.
-        DefaultCacheBehavior:
-          TargetOriginId: kyfromabove
-          ViewerProtocolPolicy: redirect-to-https
-          AllowedMethods: [GET, HEAD, OPTIONS]
-          CachedMethods: [GET, HEAD, OPTIONS]
-          Compress: false
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6   # Managed-CachingOptimized
-          ResponseHeadersPolicyId: !Ref TilesCors
-          FunctionAssociations:
-            - EventType: viewer-request
-              FunctionARN: !GetAtt StripBucketPrefix.FunctionMetadata.FunctionARN
-        # --- one CacheBehavior per public bucket: /<bucket>/* -> that origin ---
-        CacheBehaviors:
-          - PathPattern: "/kyfromabove/*"
-            TargetOriginId: kyfromabove
-            ViewerProtocolPolicy: redirect-to-https
-            AllowedMethods: [GET, HEAD, OPTIONS]
-            CachedMethods: [GET, HEAD, OPTIONS]
-            Compress: false
-            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
-            ResponseHeadersPolicyId: !Ref TilesCors
-            FunctionAssociations:
-              - EventType: viewer-request
-                FunctionARN: !GetAtt StripBucketPrefix.FunctionMetadata.FunctionARN
-          - PathPattern: "/njogis-imagery/*"
-            TargetOriginId: njogis-imagery
-            ViewerProtocolPolicy: redirect-to-https
-            AllowedMethods: [GET, HEAD, OPTIONS]
-            CachedMethods: [GET, HEAD, OPTIONS]
-            Compress: false
-            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
-            ResponseHeadersPolicyId: !Ref TilesCors
-            FunctionAssociations:
-              - EventType: viewer-request
-                FunctionARN: !GetAtt StripBucketPrefix.FunctionMetadata.FunctionARN
-
 Outputs:
   ViewerBucketName:
     Description: The viewer / app-output S3 bucket (deploy-viewer.sh target).
@@ -227,13 +117,3 @@ Outputs:
     Value: !Sub "http://${ViewerBucket}.s3-website-${AWS::Region}.amazonaws.com"
     Export:
       Name: cog-stac-foundation-ViewerUrl
-  TileBase:
-    Description: Base URL for public-collection tiles (set as the viewer's TILE_BASE).
-    Value: !Sub "https://${TilesDistribution.DomainName}"
-    Export:
-      Name: cog-stac-foundation-TileBase
-  DistributionId:
-    Description: CloudFront distribution id (for `cloudfront create-invalidation`).
-    Value: !Ref TilesDistribution
-    Export:
-      Name: cog-stac-foundation-DistributionId

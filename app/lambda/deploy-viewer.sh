@@ -62,21 +62,9 @@ if [ -z "$S1M_DEMO_TOKEN" ] || [ "$S1M_DEMO_TOKEN" = "None" ]; then
   exit 1
 fi
 
-# Public-tile CloudFront proxy base + distribution id come from the foundation
-# stack. TILE_BASE (if resolved/overridden) is baked into the viewer config below
-# so public-collection COG tiles route through CloudFront (CORS + cache). DIST_ID
-# is used only for the opt-in cache invalidation at the end.
-TILE_BASE="${TILE_BASE:-$(get_foundation_out TileBase)}"
-DIST_ID="${DIST_ID:-$(get_foundation_out DistributionId)}"
-[ "$TILE_BASE" = "None" ] && TILE_BASE=""
-[ "$DIST_ID" = "None" ] && DIST_ID=""
-if [ -z "$TILE_BASE" ]; then
-  echo "ERROR: CloudFront TileBase was not found in foundation stack '$FOUNDATION_STACK'." >&2
-  echo "       Refusing to publish without the required public COG tile proxy." >&2
-  echo "       Deploy the foundation stack or pass TILE_BASE explicitly, for example:" >&2
-  echo "       TILE_BASE=https://d3otm97s6tpvta.cloudfront.net $0" >&2
-  exit 1
-fi
+# CloudFront was removed: the viewer reads public-collection COGs directly from
+# their source buckets (which must serve CORS), so there is no tile proxy base
+# or distribution to resolve here.
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -98,10 +86,6 @@ cp -R "$VIEWER_DIR/." "$STAGE/"
 printf 'window.S3_COG_API_BASE = "%s";\n' "$API_BASE" > "$STAGE/config.js"
 printf 'window.S3_COG_S1M_API_BASE = "%s";\n' "$S1M_API_BASE" >> "$STAGE/config.js"
 printf 'window.S3_COG_S1M_DEMO_TOKEN = "%s";\n' "$S1M_DEMO_TOKEN" >> "$STAGE/config.js"
-# CloudFront tile proxy base. Public-collection COG tiles require this for CORS
-# and range-read caching; the preflight above prevents publishing without it.
-printf 'window.S3_COG_TILE_BASE = "%s";\n' "$TILE_BASE" >> "$STAGE/config.js"
-echo "  TILE_BASE      : $TILE_BASE"
 
 # 2. Built JS packages -> /local-modules/<name>/ (matches the importmap paths).
 mkdir -p "$STAGE/local-modules"
@@ -129,20 +113,9 @@ aws s3 cp "$STAGE/local-modules/" "s3://$BUCKET/local-modules/" \
   --recursive --region "$REGION" \
   --cache-control "no-cache, no-store, must-revalidate"
 
-# Opt-in CloudFront invalidation. The VIEWER is served straight from the S3
-# website endpoint (not fronted by CloudFront), so a viewer republish needs no
-# invalidation. The foundation CloudFront only proxies PUBLIC SOURCE COG tiles --
-# invalidate it when that source data changes, via INVALIDATE_TILES=1. Requires
-# the deploy role's scoped cloudfront:CreateInvalidation.
-if [ "${INVALIDATE_TILES:-0}" = "1" ]; then
-  if [ -n "$DIST_ID" ]; then
-    echo "Invalidating CloudFront tile cache (distribution $DIST_ID)…"
-    aws cloudfront create-invalidation --distribution-id "$DIST_ID" \
-      --paths '/*' --query 'Invalidation.Id' --output text
-  else
-    echo "WARN: INVALIDATE_TILES=1 but no DistributionId (foundation stack '$FOUNDATION_STACK' missing?) -- skipping." >&2
-  fi
-fi
+# (CloudFront removed -- the viewer is served straight from the S3 website
+# endpoint and public COGs are read directly, so there is no tile cache to
+# invalidate.)
 
 echo
 echo "Published viewer -> $VIEWER_URL"

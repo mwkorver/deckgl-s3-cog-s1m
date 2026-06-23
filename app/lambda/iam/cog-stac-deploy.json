@@ -144,16 +144,6 @@
       "Resource": "arn:aws:s3:::cog-stac-viewer-__ACCOUNT_ID__-us-west-2/*"
     },
     {
-      "Sid": "CloudFrontInvalidate",
-      "Effect": "Allow",
-      "Action": [
-        "cloudfront:CreateInvalidation",
-        "cloudfront:GetInvalidation",
-        "cloudfront:GetDistribution"
-      ],
-      "Resource": "arn:aws:cloudfront::__ACCOUNT_ID__:distribution/*"
-    },
-    {
       "Sid": "EcrAuthToken",
       "Effect": "Allow",
       "Action": [
