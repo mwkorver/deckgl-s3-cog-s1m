@@ -914,7 +914,11 @@
       }
       function publicHttpsUrl(s3href, region) {
         const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3href);
-        return m ? `https://${m[1]}.s3.${region || "us-west-2"}.amazonaws.com/${m[2]}` : s3href;
+        if (!m) return s3href;
+        // Region-specific virtual-hosted URL when known, else the global
+        // endpoint (S3 redirects it to the bucket's region on first request).
+        const host = region ? `${m[1]}.s3.${region}.amazonaws.com` : `${m[1]}.s3.amazonaws.com`;
+        return `https://${host}/${m[2]}`;
       }
       function chunkCacheForHref(s3href) {
         if (!s3href?.startsWith("s3://naip-analytic/")) return undefined;
@@ -932,20 +936,10 @@
         // presign (and no requester-pays header, which a public bucket rejects).
         const owner = collectionForHref(s3href);
         if (owner && owner.access === "public") {
-          // Prefer the CloudFront tile proxy when configured (adds CORS for
-          // no-CORS buckets like njogis-imagery, and edge-caches): rewrite
-          // s3://<bucket>/<key> -> <TILE_BASE>/<bucket>/<key> (CF strips /<bucket>).
-          const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3href);
-          if (m) {
-            const localTileBase =
-              ["localhost", "127.0.0.1", "::1"].includes(location.hostname) ? `${location.origin}/tiles` : "";
-            const tileBase = window.S3_COG_TILE_BASE || localTileBase;
-            if (tileBase) {
-              return `${String(tileBase).replace(/\/+$/, "")}/${m[1]}/${m[2]}`;
-            }
-            throw new Error("Public COG tile proxy is not configured (S3_COG_TILE_BASE)");
-          }
-          return s3href;
+          // Public bucket: range-read the COG directly from S3 -- no CloudFront
+          // proxy, no presign. Requires the source bucket to serve CORS for
+          // browser range-reads (e.g. njogis-imagery once its CORS is set).
+          return publicHttpsUrl(s3href, owner.region);
         }
         const now = Date.now();
         const cached = signedUrlCache.get(s3href);
