@@ -1,50 +1,9 @@
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
 
-from aws_s3 import get_s3_client
-from config import COLLECTION_ID, MANIFEST_INDEX, STATE_BBOXES
-from lake import lake_years_for_states
-
-
-@lru_cache(maxsize=1)
-def load_manifest_states_years() -> dict[str, set[int]]:
-    """State->years universe of ingestable NAIP data from manifest index partitions."""
-    manifest_map: dict[str, set[int]] = {}
-    root = str(MANIFEST_INDEX)
-    try:
-        if root.startswith("s3://"):
-            bucket, _, prefix = root[len("s3://") :].partition("/")
-            base = (prefix.rstrip("/") + "/") if prefix else ""
-            s3 = get_s3_client()
-            paginator = s3.get_paginator("list_objects_v2")
-            for sp in paginator.paginate(Bucket=bucket, Prefix=base, Delimiter="/"):
-                for cp in sp.get("CommonPrefixes", []):
-                    seg = cp["Prefix"].rstrip("/").rsplit("/", 1)[-1]
-                    if not seg.startswith("state="):
-                        continue
-                    state = seg.split("=", 1)[1].strip().lower()
-                    for yp in paginator.paginate(Bucket=bucket, Prefix=cp["Prefix"], Delimiter="/"):
-                        for ycp in yp.get("CommonPrefixes", []):
-                            yseg = ycp["Prefix"].rstrip("/").rsplit("/", 1)[-1]
-                            if yseg.startswith("naip_year="):
-                                try:
-                                    manifest_map.setdefault(state, set()).add(int(yseg.split("=", 1)[1]))
-                                except ValueError:
-                                    pass
-        else:
-            for sdir in Path(root).glob("state=*"):
-                state = sdir.name.split("=", 1)[1].strip().lower()
-                for ydir in sdir.glob("naip_year=*"):
-                    try:
-                        manifest_map.setdefault(state, set()).add(int(ydir.name.split("=", 1)[1]))
-                    except ValueError:
-                        pass
-    except Exception as exc:
-        print(f"Error listing manifest index {root}: {exc}", flush=True)
-    return manifest_map
+from config import COLLECTION_ID, STATE_BBOXES
 
 
 def bboxes_intersect(box1: list[float], box2: list[float]) -> bool:
@@ -76,34 +35,20 @@ def build_ingest_options(body: dict[str, Any]):
     collection = collection or COLLECTION_ID
     ingestable = sorted(descriptors._REGISTRY)
 
-    if collection == COLLECTION_ID:
-        manifest_map = load_manifest_states_years()
-        es_states: dict[str, set[int]] = {}
-        for state, state_bbox in STATE_BBOXES.items():
-            if bboxes_intersect(bbox, state_bbox) and state in manifest_map:
-                es_states[state] = set(manifest_map[state])
-        db_states = lake_years_for_states(set(es_states.keys()))
-        merged: dict[str, set[int]] = {}
-        for st, years in db_states.items():
-            merged[st] = set(years)
-        for st, years in es_states.items():
-            merged.setdefault(st, set()).update(years)
-        states = [{"state": st, "years": sorted(merged[st], reverse=True)} for st in sorted(merged)]
-        strategies = [
-            {"id": "manifest-earthsearch", "label": "Manifest + EarthSearch STAC", "available": True},
-            {"id": "manifest-cog-headers", "label": "Manifest + COG headers", "available": True},
-        ]
-    else:
-        try:
-            disc = descriptors.get_descriptor(collection).discovery
-        except SystemExit:
-            raise HTTPException(status_code=400, detail=f"unknown collection '{collection}'")
-        states = []
-        for r in (getattr(disc, "regions", ()) or ()):
-            sb = STATE_BBOXES.get(r)
-            if sb and not bboxes_intersect(bbox, sb):
-                continue
-            states.append({"state": r, "years": list(cached_available_years(collection, r))})
-        strategies = [{"id": "manifest-cog-headers", "label": "COG headers", "available": True}]
+    # Generic S3-prefix COG ingest only. NAIP (and any other non-registered
+    # collection) is published read-only, so it has no ingest descriptor and
+    # returns no ingestable states/strategies.
+    try:
+        disc = descriptors.get_descriptor(collection).discovery
+    except SystemExit:
+        return {"collection": collection, "collections": ingestable, "states": [], "strategies": []}
+
+    states = []
+    for r in (getattr(disc, "regions", ()) or ()):
+        sb = STATE_BBOXES.get(r)
+        if sb and not bboxes_intersect(bbox, sb):
+            continue
+        states.append({"state": r, "years": list(cached_available_years(collection, r))})
+    strategies = [{"id": "manifest-cog-headers", "label": "COG headers", "available": True}]
 
     return {"collection": collection, "collections": ingestable, "states": states, "strategies": strategies}

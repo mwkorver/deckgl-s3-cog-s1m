@@ -43,30 +43,6 @@ class DiscoveryAdapter(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class ManifestIndexAdapter:
-    """NAIP's discovery: read the pre-published, partitioned manifest index.
-
-    A thin, transparent wrapper over the existing
-    `ingest_manifest.build_manifest_inventory_from_index`, so the output is
-    byte-for-byte what the direct call produced (verified by an equivalence test).
-    """
-
-    index_root: str | None = None  # None -> ingest_manifest.MANIFEST_INDEX_PATH
-
-    def enumerate(self, *, regions, years, latest_year_only, limit_per_partition):
-        import ingest_manifest as im
-
-        root = self.index_root or im.MANIFEST_INDEX_PATH
-        return im.build_manifest_inventory_from_index(
-            regions,
-            years=years,
-            latest_year_only=latest_year_only,
-            limit_per_partition=limit_per_partition,
-            index_root=root,
-        )
-
-
 # --------------------------------------------------------------------------- #
 # key_parser contract + S3-prefix-listing adapter (Phase 2)                    #
 # --------------------------------------------------------------------------- #
@@ -223,18 +199,13 @@ class CollectionDescriptor:
 
 
 # --------------------------------------------------------------------------- #
-# Registry (Phase 1: NAIP only). Keep in sync with collections/registry.yaml.  #
+# Registry. NAIP is intentionally NOT ingestable here: its lake is published   #
+# read-only (the viewer reads it via /search + /naip-coverage). Only the        #
+# generic S3-prefix COG collections are ingestable. Keep in sync with           #
+# collections/registry.yaml.                                                     #
 # --------------------------------------------------------------------------- #
-NAIP = CollectionDescriptor(
-    id="naip",
-    bucket="naip-analytic",
-    access="requester-pays",
-    discovery=ManifestIndexAdapter(),
-    key_filter=lambda key: key.endswith(".tif") and "/rgbir_cog/" in key,
-)
-
-# KYFROMABOVE is defined below (it needs S3PrefixListing's helpers); the registry
-# is assembled after that definition -- see _build_registry() at the end.
+# KYFROMABOVE / NJ are defined below (they need S3PrefixListing's helpers); the
+# registry is assembled after those definitions.
 _REGISTRY: dict[str, CollectionDescriptor] = {}
 
 
@@ -383,4 +354,4 @@ NJ = CollectionDescriptor(
 # Assemble the live registry now that all descriptors are defined. The public
 # S3-prefix collections (KyFromAbove, New Jersey) are ingestable via the generic
 # path. Keep in sync with collections/registry.yaml (active collections).
-_REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ)})
+_REGISTRY.update({c.id: c for c in (KYFROMABOVE, NJ)})

@@ -49,7 +49,7 @@ from config import (
     TILE_PX,
     VIEWER_DIR,
 )
-from ingest_options import build_ingest_options, load_manifest_states_years
+from ingest_options import build_ingest_options
 from ingest_jobs import get_ingest_job, run_ingest_job, set_ingest_job
 from lake import get_lake_duckdb, is_expired_token_error, lake_collections, reset_lake_duckdb
 from probes import build_environment_payload
@@ -335,9 +335,6 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
         lake_total = ig.export(payloads, args.out, args.row_group_size, args.single_file, args.collection)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"ingest export failed: {exc}")
-
-    # New state/year may now be queryable; drop the cached availability map.
-    load_manifest_states_years.cache_clear()
 
     return {
         "status": "completed",
