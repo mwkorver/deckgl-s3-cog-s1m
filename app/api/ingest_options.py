@@ -33,14 +33,16 @@ def build_ingest_options(body: dict[str, Any]):
 
     collection = "".join(ch for ch in str(body.get("collection", COLLECTION_ID)).lower() if ch.isalnum() or ch in "-_")
     collection = collection or COLLECTION_ID
-    ingestable = sorted(descriptors._REGISTRY)
+    ingestable = sorted(k for k, v in descriptors._REGISTRY.items() if v.discovery is not None)
 
     # Generic S3-prefix COG ingest only. NAIP (and any other non-registered
     # collection) is published read-only, so it has no ingest descriptor and
     # returns no ingestable states/strategies.
     try:
         disc = descriptors.get_descriptor(collection).discovery
-    except SystemExit:
+        if disc is None:
+            raise ValueError("Collection has no discovery adapter (read-only)")
+    except (SystemExit, ValueError):
         return {"collection": collection, "collections": ingestable, "states": [], "strategies": []}
 
     states = []

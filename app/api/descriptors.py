@@ -189,7 +189,7 @@ class CollectionDescriptor:
     id: str
     bucket: str
     access: str  # "requester-pays" | "public" | "private"
-    discovery: DiscoveryAdapter
+    discovery: DiscoveryAdapter | None
     key_filter: Callable[[str], bool]
 
     @property
@@ -351,7 +351,15 @@ NJ = CollectionDescriptor(
     key_filter=nj_cog_filter,
 )
 
+NAIP = CollectionDescriptor(
+    id="naip",
+    bucket="naip-analytic",
+    access="requester-pays",
+    discovery=None,
+    key_filter=lambda key: key.endswith(".tif") and "/rgbir_cog/" in key,
+)
+
 # Assemble the live registry now that all descriptors are defined. The public
 # S3-prefix collections (KyFromAbove, New Jersey) are ingestable via the generic
 # path. Keep in sync with collections/registry.yaml (active collections).
-_REGISTRY.update({c.id: c for c in (KYFROMABOVE, NJ)})
+_REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ)})
