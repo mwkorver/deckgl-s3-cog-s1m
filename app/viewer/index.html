@@ -421,21 +421,12 @@
             <h2>Raster Layers</h2>
             <div class="controls">
               <label class="small" style="display:flex; align-items:center; gap:8px;">
-                <input id="toggle-cog-footprints" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                <strong>COG Footprints</strong>
-              </label>
-              <label class="small" style="display:flex; align-items:center; gap:8px;">
                 <input id="toggle-cog-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                 <strong id="cog-layer-label">NAIP Imagery (COG Tiles)</strong>
               </label>
               <label class="small" style="display:flex; align-items:center; gap:8px;">
                 <input id="toggle-usgs-naip-wms-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                 <strong>USGS NAIP Reference Imagery (WMS)</strong>
-              </label>
-              <label class="small" style="display:flex; align-items:center; gap:8px;">
-                <input id="toggle-naip-search-footprints-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                <strong>NAIP Search Footprints</strong>
-                <span class="muted">— /search polygons</span>
               </label>
               <label class="small" style="display:flex; align-items:center; gap:8px;">
                 <input id="toggle-s1m-footprints-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
@@ -484,7 +475,7 @@
                 Surface
                 <select id="ter-surface">
                   <option value="shaded">Terrain shading</option>
-                  <option value="naip" selected>NAIP imagery texture</option>
+                  <option value="naip" selected>Imagery texture</option>
                 </select>
               </label>
               <label class="small">
@@ -790,7 +781,6 @@
       const SEARCH_LIMIT_DEFAULT = 18000;
       limitEl.value = String(SEARCH_LIMIT_DEFAULT);
       const autoSearchEl = document.getElementById("auto-search");
-      const toggleCogFootprintsEl = document.getElementById("toggle-cog-footprints");
       const toggleCogEl = document.getElementById("toggle-cog-layer");
       const toggleUsgsNaipWmsLayerEl = document.getElementById("toggle-usgs-naip-wms-layer");
       const toggleNaipSearchFootprintsLayerEl = document.getElementById("toggle-naip-search-footprints-layer");
@@ -807,10 +797,9 @@
 
       // Ensure all checkboxes are cleared on page load (bypassing browser cache)
       autoSearchEl.checked = true;
-      toggleCogFootprintsEl.checked = true;
       toggleCogEl.checked = true;
       toggleUsgsNaipWmsLayerEl.checked = false;
-      toggleNaipSearchFootprintsLayerEl.checked = true;
+      
       toggleS1MFootprintsLayerEl.checked = true;
       toggleNaipCoverageMvtLayerEl.checked = true;
       if (terBordersEl) terBordersEl.checked = true;
@@ -1877,7 +1866,7 @@
               id: "s1m-footprints-layer",
               data: paths,
               getPath: (path) => path,
-              getColor: [14, 165, 233, 220],
+              getColor: [14, 165, 233, 120],
               getWidth: 2,
               widthMinPixels: 1,
               parameters: {
@@ -1958,9 +1947,9 @@
             maxCacheSize: 64,
             filled: true,
             stroked: true,
-            getFillColor: [250, 204, 21, 20],
+            getFillColor: [250, 204, 21, 0],
             getLineColor: [250, 204, 21, 255],
-            getLineWidth: 2,
+            getLineWidth: 1,
             lineWidthUnits: "pixels",
             lineWidthMinPixels: 1,
             pickable: false,
@@ -2382,7 +2371,7 @@
 
       function s1mDrapeSearchBody(bbox) {
         const limit = Math.min(10000, Math.max(5000, Number(limitEl.value || SEARCH_LIMIT_DEFAULT)));
-        const body = { collections: ["naip"], bbox, limit };
+        const body = { collections: [activeCollection()], bbox, limit };
         if (activeCollection() === "naip") {
           if (stateEl.value) body["region"] = stateEl.value;
         }
@@ -4887,9 +4876,18 @@
 
       // Populate the set of collections actually present in the lake
       // (/collections). The "Collections in View" rows are the selector.
-      async function refreshCollections() {
+      //
+      // Resilience: /collections lists the lake's collection= partitions, which
+      // needs AWS credentials. A transient failure (e.g. flapping/expired creds)
+      // must NOT demote already-ingested collections to "not ingested". So on
+      // failure we keep the last-known searchable set and retry with backoff,
+      // and a recovered retry re-renders the panel. Returns true on success.
+      let collectionsRetryTimer = null;
+      async function refreshCollections({ retry = true } = {}) {
+        let ok = false;
         try {
           const response = await apiFetch(`/collections`);
+          if (!response.ok) throw new Error(`/collections HTTP ${response.status}`);
           const data = await response.json();
           const ids = (data.collections || []).map((c) => c.id);
           if (!ids.length) ids.push("naip");
@@ -4901,9 +4899,28 @@
           }
           renderActiveCollectionSummary();
           updateCollectionsHere();
+          ok = true;
         } catch (error) {
-          console.error("collections fetch failed:", error);
+          // Keep the previous (good) searchableCollectionIds rather than
+          // clobbering it -- a transient failure shouldn't hide collections.
+          console.error("collections fetch failed (keeping last-known collections):", error);
         }
+        if (!ok && retry) scheduleCollectionsRetry();
+        return ok;
+      }
+
+      // Re-poll /collections after a failure until it succeeds (bounded), so a
+      // bad-creds moment at load self-heals once the lake is readable again.
+      function scheduleCollectionsRetry() {
+        if (collectionsRetryTimer !== null) return;
+        let attempt = 0;
+        const tick = async () => {
+          attempt += 1;
+          const ok = await refreshCollections({ retry: false });
+          if (ok || attempt >= 5) { collectionsRetryTimer = null; return; }
+          collectionsRetryTimer = window.setTimeout(tick, Math.min(15000, 2000 * attempt));
+        };
+        collectionsRetryTimer = window.setTimeout(tick, 2000);
       }
 
       async function refreshAvailability() {
@@ -5146,9 +5163,17 @@
           renderCollectionDetail(selectedCollectionId);
         }
       }
-      function selectCollection(id) {
+      async function selectCollection(id) {
         if (!collectionById[id]) return;
         selectedCollectionId = id;
+        // If the registry marks this collection active (ingestable) but it isn't
+        // currently in the searchable set, the lake listing may have failed
+        // transiently (e.g. flapping creds) at load. Re-check /collections now so
+        // a user click recovers immediately once the lake is readable, instead of
+        // showing a stale "not yet ingested".
+        if (collectionById[id].active && !isSearchableCollection(id)) {
+          await refreshCollections({ retry: false });
+        }
         updateCollectionsHere();
         renderCollectionDetail(id);
         // Tie layer 0 -> layer 1: if this collection is actually searchable
@@ -5158,6 +5183,12 @@
           activeSearchCollectionId = id;
           updateCogLayerLabel();
           renderActiveCollectionSummary();
+          if (changed) {
+            releaseS1MDrapeMemory();
+            if (s1mActive) {
+              refreshS1MTerrain();
+            }
+          }
           refreshAvailability().then((ok) => {
             if (ok && (changed || autoSearchEl.checked || toggleCogEl.checked)) queueSearch("auto");
             updateNaipCoverageMvtLayer();
@@ -5264,6 +5295,7 @@
         updateReferenceRasterLayers();
 
         await initImagerySupport();
+await enableS1MTerrain();
         refreshS1MFootprintsLayer();
         updateNaipCoverageMvtLayer();
         await refreshEnvironment();

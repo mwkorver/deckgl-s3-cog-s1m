@@ -122,7 +122,16 @@ def root():
 
 @app.get("/collections")
 def collections():
-    ids = lake_collections() or [COLLECTION_ID]
+    try:
+        ids = lake_collections() or [COLLECTION_ID]
+    except Exception as exc:
+        # A failed lake listing (e.g. missing/expired credentials) must NOT be
+        # masked as "only the default collection is ingested" -- that silently
+        # hides other ingested collections from the viewer. Surface it as a
+        # retryable 503 so the client keeps its last-known list and retries.
+        raise HTTPException(
+            status_code=503, detail=f"lake collection listing failed: {exc}"
+        )
     return {
         "collections": [
             {

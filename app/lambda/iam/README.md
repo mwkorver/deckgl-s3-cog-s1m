@@ -5,8 +5,8 @@ use every day is as small as possible:
 
 | Layer | Who | What it owns | Frequency |
 |---|---|---|---|
-| **Foundation** | admin, one-time | the Retain'd viewer/output **S3 bucket** + the **CloudFront** tile proxy (`foundation.yaml`, stack `cog-stac-foundation`) | rare |
-| **Deploy** | you, via an **SSO-assumed role** (`cog-stac-deploy`) — no static keys | app **code/config**: independent `cog-stac-read` and `cog-stac-ingest` stacks, ECR push, SAM-created exec roles, viewer sync, CloudFront cache **invalidation** | frequent |
+| **Foundation** | admin, one-time | the Retain'd viewer/output **S3 bucket** (`foundation.yaml`, stack `cog-stac-foundation`) | rare |
+| **Deploy** | you, via an **SSO-assumed role** (`cog-stac-deploy`) — no static keys | app **code/config**: independent `cog-stac-read` and `cog-stac-ingest` stacks, ECR push, SAM-created exec roles, viewer sync | frequent |
 | **Runtime** | the Lambdas themselves | two **SAM-managed execution roles**, generated from `template.yaml` and `ingest-template.yaml` | per request |
 
 You manage **two standing identities** day-to-day (the deploy role + the runtime
@@ -16,7 +16,7 @@ roles). The foundation is an admin step run once, not a standing credential.
 
 | File | Type | Attached to | Purpose |
 |---|---|---|---|
-| `cog-stac-deploy.json` | customer-managed policy | `cog-stac-deploy` role | deploy plane (CFN/Lambda/ECR/SAM-bucket/`iam:PassRole`+`CreateRole`/CloudFront-invalidate). |
+| `cog-stac-deploy.json` | customer-managed policy | `cog-stac-deploy` role | deploy plane (CFN/Lambda/ECR/SAM-bucket/`iam:PassRole`+`CreateRole`). |
 | `cog-stac-data.json` | inline policy | `cog-stac-deploy` role | S3 data plane for local CLI / docker-compose ingest (read `naip-analytic` + `cog-stac-catalog`, RW the lake). |
 | `cog-stac-deploy-trust.json` | trust policy | `cog-stac-deploy` role | who may `sts:AssumeRole` the deploy role (your human SSO principal). |
 
@@ -31,8 +31,10 @@ uses `__DEPLOY_PRINCIPAL_ARN__`. Render with `sed` before applying.
 
 ## Foundation stack (admin, one-time, BEFORE any deploy)
 
-`foundation.yaml` creates the two stateful prerequisites and exports their ids
-(`ViewerBucketName`, `ViewerUrl`, `TileBase`, `DistributionId`).
+`foundation.yaml` creates the Retain'd viewer/output S3 bucket and exports its
+ids (`ViewerBucketName`, `ViewerUrl`). _(The CloudFront CORS/cache tile proxy was
+removed — the viewer reads public source COGs directly via their own CORS — so
+there is no longer a `TileBase`/`DistributionId` output.)_
 
 ```bash
 cd app/lambda
@@ -44,10 +46,10 @@ cd app/lambda
 ### If the viewer bucket already exists (older bootstrap)
 
 The foundation stack CREATES the bucket. If `cog-stac-viewer-<acct>-<region>`
-or the tile CloudFront distribution already exists out-of-band,
-`deploy-foundation.sh` refuses to create duplicates and makes no changes.
-Import or migrate those resources deliberately before putting them under the
-foundation stack. Do not delete the bucket as part of a routine deployment.
+already exists out-of-band, `deploy-foundation.sh` refuses to create duplicates
+and makes no changes. Import or migrate that bucket deliberately before putting
+it under the foundation stack. Do not delete the bucket as part of a routine
+deployment.
 
 (Green-field accounts with no bucket skip the cleanup and just run
 `./deploy-foundation.sh`.)
@@ -60,24 +62,10 @@ the explicit `./deploy-foundation.sh --update` command.
 
 During migration, `deploy-ingest.sh` and `deploy-read.sh` also accept an existing
 `cog-stac-viewer-<account>-<region>` bucket when the foundation stack is absent.
-Viewer publication still requires the existing CloudFront URL explicitly:
+No tile-proxy URL is needed — the viewer reads public source COGs directly.
 
-```bash
-TILE_BASE=https://d3otm97s6tpvta.cloudfront.net ./deploy-read.sh
-```
-
-Tag the legacy CloudFront distribution once so foundation preflight can identify
-it without relying on its dynamic id, domain, or comment:
-
-```bash
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-aws cloudfront tag-resource \
-  --resource "arn:aws:cloudfront::${ACCOUNT_ID}:distribution/E13QHQJ2OITPLU" \
-  --tags 'Items=[{Key=Application,Value=deck.gl-s3-cog}]'
-```
-
-Foundation-created buckets and distributions receive the same
-`Application=deck.gl-s3-cog` tag automatically.
+Foundation-created buckets receive an `Application=deck.gl-s3-cog` tag
+automatically.
 
 ---
 
@@ -157,13 +145,10 @@ write access). They carry no human credentials. The deploy role can create only
   `REGION` before making AWS calls.
 - **No static keys:** the deploy identity is the SSO-assumed
   `cog-stac-deploy` role with short-lived credentials.
-- **CloudFront split:** the distribution is created/updated only by the admin
-  foundation stack. The deploy role gets just `cloudfront:CreateInvalidation`
-  (+`GetInvalidation`/`GetDistribution`), scoped to `distribution/*` — pin it to
-  the specific distribution id from the foundation output if you want it tighter.
-  The viewer is served from the S3 website endpoint (not via CloudFront), so a
-  viewer republish needs no invalidation; invalidate only when public **source**
-  tiles change (`INVALIDATE_TILES=1 ./deploy-viewer.sh`).
+- **No CloudFront:** the former CORS/cache tile proxy was removed. The viewer is
+  served from the S3 website endpoint and reads public **source** COG buckets
+  directly via their own CORS, so there is no distribution to create, no cache to
+  invalidate, and the deploy role needs no `cloudfront:*` permissions.
 - **`iam:PassRole`** is constrained to `lambda.amazonaws.com` and `cog-stac-*`
   roles only — the guardrail against privilege escalation.
 - **Independent application stacks:** `./deploy-ingest.sh` builds the container;

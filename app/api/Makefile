@@ -14,6 +14,12 @@ build-DeckglS3CogReadFunction:
 	# duckdb_s3.py is the read path's DuckDB-on-S3 connection helper (httpfs +
 	# credential_chain); it imports only stdlib (duckdb comes from the layer).
 	cp duckdb_s3.py "$(ARTIFACTS_DIR)/"
+	# s1m.py serves /s1m/tiles (terrain coverage). app.py imports it at module
+	# top level, so it must be present or cold start raises ModuleNotFoundError.
+	# Its heavy deps (duckdb, pyproj, shapely) are lazy-imported inside the
+	# request path: duckdb comes from the layer; pyproj + shapely must be in
+	# requirements-lambda.txt for /s1m/tiles to serve (else 500 at call time).
+	cp s1m.py "$(ARTIFACTS_DIR)/"
 	# descriptors.py = collection registry + adapters. Module load is stdlib-only
 	# (lazy boto3/ingest_manifest imports); the read path needs it for /collections
 	# and /ingest/options (collection list + generic available_years). No pyarrow.

@@ -81,25 +81,30 @@ def lake_query(run, *, retried: bool = False):
 
 def lake_collections() -> list[str]:
     """Collection ids actually present in the lake, from collection= partition
-    dirs. This lists paths only; it does not read parquet data."""
+    dirs. This lists paths only; it does not read parquet data.
+
+    Raises on a listing failure (missing/expired AWS credentials, S3 errors)
+    rather than swallowing it: callers must be able to tell a *failed* listing
+    apart from a genuinely empty lake. Masking the error as `[]` made a transient
+    credential problem look like "only the default collection is ingested",
+    silently demoting already-ingested collections (KyFromAbove, NJ) to
+    "not ingested" in the viewer. /collections surfaces this as a 503 so the
+    client can retry instead."""
     root = str(LAKE_ROOT)
     out: list[str] = []
-    try:
-        if root.startswith("s3://"):
-            bucket, _, prefix = root[len("s3://") :].partition("/")
-            base = (prefix.rstrip("/") + "/") if prefix else ""
-            paginator = get_s3_client().get_paginator("list_objects_v2")
-            for page in paginator.paginate(Bucket=bucket, Prefix=base, Delimiter="/"):
-                for cp in page.get("CommonPrefixes", []):
-                    seg = cp["Prefix"].rstrip("/").rsplit("/", 1)[-1]
-                    if seg.startswith("collection="):
-                        out.append(seg.split("=", 1)[1])
-        else:
-            for d in Path(root).glob("collection=*"):
-                if d.is_dir():
-                    out.append(d.name.split("=", 1)[1])
-    except Exception as exc:
-        print(f"lake_collections listing failed: {exc}", flush=True)
+    if root.startswith("s3://"):
+        bucket, _, prefix = root[len("s3://") :].partition("/")
+        base = (prefix.rstrip("/") + "/") if prefix else ""
+        paginator = get_s3_client().get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=base, Delimiter="/"):
+            for cp in page.get("CommonPrefixes", []):
+                seg = cp["Prefix"].rstrip("/").rsplit("/", 1)[-1]
+                if seg.startswith("collection="):
+                    out.append(seg.split("=", 1)[1])
+    else:
+        for d in Path(root).glob("collection=*"):
+            if d.is_dir():
+                out.append(d.name.split("=", 1)[1])
     return sorted(set(out))
 
 

@@ -3,12 +3,15 @@
 > **IMPLEMENTED (2026-06) — see `app/lambda/iam/README.md` for the live runbook.**
 > The chosen design is a pragmatic variant of the proposal below:
 > - **Foundation stack** `cog-stac-foundation` (`app/lambda/foundation.yaml`) now
->   owns the **viewer bucket + CloudFront** tile proxy (admin, one-time). It
->   absorbed `bootstrap-app-bucket.sh` and `cloudfront-tiles.yaml` (both removed).
+>   owns the **viewer bucket** (admin, one-time). It absorbed
+>   `bootstrap-app-bucket.sh` (removed). _(The former CloudFront CORS/cache tile
+>   proxy was later removed entirely — the viewer reads the public source COG
+>   buckets directly via their own CORS — so there is no longer a distribution,
+>   tile base, or cache invalidation anywhere in this stack.)_
 > - **Deploy identity** is an **SSO-assumed role `cog-stac-deploy`** (no static
 >   keys; `app/.env` now uses `AWS_PROFILE`). Its policy
->   (`iam/cog-stac-deploy.json`) dropped all bucket-admin actions and gained
->   `cloudfront:CreateInvalidation` only.
+>   (`iam/cog-stac-deploy.json`) dropped all bucket-admin actions; it needs **no
+>   CloudFront permissions** (the proxy is gone).
 > - **Exec roles stay SAM-created** (kept `iam:CreateRole`/`PassRole` +
 >   `CAPABILITY_IAM`) — only the *stateful* bucket+CDN moved to foundation, not
 >   the roles. (The fuller "roles in foundation / drop CAPABILITY_IAM" idea below
@@ -34,9 +37,9 @@ Two layers, by blast radius and change frequency:
 | **Foundation** | admin (independent, one-time) | the bucket, the Lambda **roles**, the ECR repo, the SAM artifacts bucket | rare, privileged |
 | **App** | `cog-stac-deploy` (`deploy-*.sh`) | Lambda **code/config**, function URLs, the lake data | frequent, scoped |
 
-Creating buckets and CloudFront distributions is independent of application
-deployment. Keeping them in the foundation stack removes those privileged
-operations from the routine deploy role:
+Creating buckets is independent of application deployment. Keeping that in the
+foundation stack removes those privileged operations from the routine deploy
+role:
 
 - bucket creation → no `s3:CreateBucket` / `PutBucketPolicy` / `DeleteBucket`
 - role creation → no `iam:CreateRole` / `AttachRolePolicy` / `PutRolePolicy`
@@ -128,12 +131,13 @@ char limit), which the original "one policy" goal required.
 ## Status
 
 - ✅ **Foundation stack** (`foundation.yaml`, `cog-stac-foundation`) owns the
-  viewer bucket **+ CloudFront** (Retain'd bucket; absorbed `bootstrap-app-bucket.sh`
-  + `cloudfront-tiles.yaml`).
+  viewer bucket (Retain'd bucket; absorbed `bootstrap-app-bucket.sh`). _CloudFront
+  CORS/cache tile proxy since removed — the viewer reads public source COGs
+  directly._
 - ✅ **Deploy identity = SSO-assumed role `cog-stac-deploy`** (no static `.env`
   keys; `cog-stac-deploy-trust.json` + `AWS_PROFILE`).
-- ✅ Scoped deploy policy: bucket-admin actions removed, `cloudfront:CreateInvalidation`
-  added (`iam/cog-stac-deploy.json`).
+- ✅ Scoped deploy policy: bucket-admin actions removed; no CloudFront
+  permissions (proxy removed) (`iam/cog-stac-deploy.json`).
 - ✅ Independent read and ingest stacks; read updates no longer rebuild the
   ingest container.
 - ⬜ Deferred (this pass kept exec roles SAM-created): roles/ECR/artifacts bucket

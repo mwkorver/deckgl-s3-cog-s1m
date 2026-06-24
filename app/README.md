@@ -36,13 +36,15 @@ this matches the AWS Lambda serverless profile we are targeting.
 > This application is intentionally region-locked because its principal COG
 > source buckets, including `naip-analytic`, `njogis-imagery`, and
 > `kyfromabove`, are in `us-west-2`. Deploying the Lambda APIs, GeoParquet lake,
-> viewer bucket, and CloudFront origins in the same region minimizes latency and
-> avoids cross-region S3 transfer charges. The foundation, read, and ingest
-> templates reject other regions.
+> and viewer bucket in the same region minimizes latency and avoids cross-region
+> S3 transfer charges. The foundation, read, and ingest templates reject other
+> regions.
 
 The AWS deployment has three independently managed stacks:
 
-1. `cog-stac-foundation`: retained S3 bucket and CloudFront proxy; admin-owned.
+1. `cog-stac-foundation`: retained S3 viewer/output bucket; admin-owned. _(The
+   CloudFront CORS/cache tile proxy was removed — the viewer reads public source
+   COGs directly via their own CORS.)_
 2. `cog-stac-ingest`: container-image ingest Lambda; deployed when ingest code
    or dependencies change.
 3. `cog-stac-read`: zip-based read Lambda and DuckDB layer; deployed frequently.
@@ -59,20 +61,11 @@ cd app/lambda
 ```
 
 `deploy-foundation.sh` is create-only by default. If the stack already exists,
-it prints outputs without changing anything. If legacy bucket/CloudFront
-resources exist outside the stack, it refuses to create duplicates. Intentional
-foundation updates require `./deploy-foundation.sh --update`. Foundation
-resources are tagged `Application=deck.gl-s3-cog`; this tag identifies the
-CloudFront distribution without depending on its generated id. The script and
-CloudFormation template both enforce deployment in `us-west-2`.
-
-For accounts whose bucket and CloudFront distribution predate
-`cog-stac-foundation`, application deploys accept the existing deterministic
-viewer bucket. Supply the legacy tile proxy when publishing the viewer:
-
-```bash
-TILE_BASE=https://d3otm97s6tpvta.cloudfront.net ./deploy.sh --read-only
-```
+it prints outputs without changing anything. If a legacy bucket exists outside
+the stack, it refuses to create duplicates. Intentional foundation updates
+require `./deploy-foundation.sh --update`. Foundation resources are tagged
+`Application=deck.gl-s3-cog`. The script and CloudFormation template both
+enforce deployment in `us-west-2`.
 
 **What it does (in order):**
 1. Deploys the ingest stack and reads its `IngestUrl` output.

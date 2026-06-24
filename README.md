@@ -146,13 +146,13 @@ Adding new image collections is simplified via layout inference:
 ### 7. Elevation as 3D Terrain (USGS 3DEP S1M DEMs)
 The USGS 3DEP **Seamless 1-meter (S1M)** DEM is a CONUS-wide elevation dataset distributed as COG + metadata pairs in the public USGS bucket (`s3://prd-tnm/StagedProducts/Elevation/S1M/`, NAD83(2011) Conus Albers / NAVD88). The viewer renders it as a **3D mesh, not as flat imagery**:
 - **Tile discovery:** the whole-collection footprint index contains ~9,600 tile polygons, each carrying its COG path. It is converted from the source GeoPackage to Parquet ahead of time; the reader uses bbox columns for DuckDB pruning and WKB for the exact point-in-polygon check.
-- **`POST /s1m/terrain`** resolves the covering tile and reads a downsampled elevation grid from the COG's overviews (a cheap range read), masks the `-999999` nodata, and returns it (base64 float32) with the ground step, tile-center anchor, and elevation range. A `404` with a clear message is returned where S1M has no coverage (it is CONUS-only and still expanding).
-- S1M runs in the independent `cog-stac-s1m` container Lambda. The USGS GeoPackage is converted ahead of time to `lake/s1m/S1M_Products.parquet` in the private viewer bucket. The Lambda queries that Parquet file directly with DuckDB using bbox statistics, then performs an exact geometry check; it does not download or parse the GeoPackage at runtime.
-- Publish a fresh index with `app/lambda/publish-s1m-index.sh`, then build/deploy the reader with `app/lambda/deploy-s1m.sh`.
-- The S1M Function URL is still public at the AWS edge, but the app requires `x-demo-token` or `Authorization: Bearer ...`; the token is stored in the Lambda `S1M_DEMO_TOKEN` environment variable and passed as a NoEcho CloudFormation parameter. `S1M_RESERVED_CONCURRENCY=2 app/lambda/deploy-s1m.sh` will cap it when the AWS account has enough unreserved concurrency available.
-- **Client meshing:** the viewer's Terrain tab decodes the grid into a `SimpleMeshLayer` in `METER_OFFSETS` space — ENU meters from the tile center, height = elevation × exaggeration, with per-vertex normals for hillshade-style shading and a hypsometric color ramp. Resolution and vertical exaggeration are adjustable; nodata voids are dropped.
+- **`POST /s1m/tiles`** takes a viewport `bbox` (and optional `center`) and returns the covering S1M tiles — each with its public COG URL and footprint ring — ordered nearest-first. This is the only S1M server endpoint; it does not read or download any DEM pixels.
+- **Client-side DEM read + meshing:** the viewer reads each covering S1M COG **directly from the public `prd-tnm` bucket in the browser** (range reads over the COG overviews, decoded by the same float-COG reader the imagery pipeline uses), masks the `-999999` nodata, and decodes the grid into a `SimpleMeshLayer` in `METER_OFFSETS` space — ENU meters from the tile center, height = elevation × exaggeration, with per-vertex normals for hillshade-style shading and a hypsometric color ramp. Resolution and vertical exaggeration are adjustable; nodata voids are dropped. No server-side DEM read, no token, and no separate Function URL are involved.
+- **Index build/publish:** the USGS GeoPackage is converted to `lake/s1m/S1M_Products.parquet` in the viewer bucket with [`app/api/build_s1m_index.py`](app/api/build_s1m_index.py) and published with [`app/lambda/publish-s1m-index.sh`](app/lambda/publish-s1m-index.sh). The read API's `/s1m/tiles` queries that Parquet directly with DuckDB (bbox statistics + an exact geometry check); it does not parse the GeoPackage at runtime.
 
-This is the CPU-grid path (server reads the DEM); a future iteration can displace the mesh on the GPU by sampling the DEM as a float texture client-side, reusing the same float-COG reader the imagery pipeline already has.
+S1M coverage is CONUS-only and still expanding; viewport areas with no S1M tile simply render no terrain mesh there.
+
+> **Consolidated into the main read API (2026-06):** S1M was previously a standalone `cog-stac-s1m` container Lambda fronted by a token-guarded Function URL (`/s1m/terrain`, `S1M_DEMO_TOKEN`, `deploy-s1m.sh`). That service was removed — terrain discovery (`/s1m/tiles`) is now part of `cog-stac-read`, and the DEM read moved entirely into the browser.
 
 ---
 
@@ -171,9 +171,9 @@ The project is managed as a monorepo containing Shared TypeScript Packages (`pnp
 *   **[raster-reproject](packages/raster-reproject)**: Standalone client-side mesh generation and refinement for raster reprojections.
 
 ### Applications (`app/`)
-*   **[api](app/api)**: Python FastAPI Server that serves `/search`, `/availability`, and `/sign` (using an in-process DuckDB database connection), plus the on-demand `/detect` (SAM 3) and `/s1m/terrain` (3DEP elevation) endpoints.
+*   **[api](app/api)**: Python FastAPI Server that serves `/search`, `/availability`, and `/sign` (using an in-process DuckDB database connection), plus the on-demand `/detect` (SAM 3) and `/s1m/tiles` (3DEP elevation tile discovery) endpoints.
 *   **[viewer](app/viewer)**: Static single-page application built on MapLibre and deck.gl, querying the local/deployed API and rendering tiles dynamically.
-*   **[lambda](app/lambda)**: AWS SAM templates and automation scripts (deploying Lambdas, layers, and CloudFront-to-S3 viewer setups).
+*   **[lambda](app/lambda)**: AWS SAM templates and automation scripts (deploying the read/ingest Lambdas, the DuckDB layer, and the S3-hosted static viewer).
 
 ---
 
