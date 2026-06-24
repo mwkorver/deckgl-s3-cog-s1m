@@ -17,7 +17,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK="${STACK:-cog-stac-read}"
-S1M_STACK="${S1M_STACK:-cog-stac-s1m}"
 FOUNDATION_STACK="${FOUNDATION_STACK:-cog-stac-foundation}"
 REGION="${REGION:-us-west-2}"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -36,13 +35,6 @@ get_foundation_out() {
 }
 
 API_BASE="$(get_out ApiUrl)"
-S1M_API_BASE="${S1M_API_BASE:-$(aws cloudformation describe-stacks \
-  --stack-name "$S1M_STACK" --region "$REGION" \
-  --query "Stacks[0].Outputs[?OutputKey=='S1MApiUrl'].OutputValue" \
-  --output text 2>/dev/null || true)}"
-S1M_DEMO_TOKEN="${S1M_DEMO_TOKEN:-$(aws lambda get-function-configuration \
-  --function-name cog-stac-s1m --region "$REGION" \
-  --query 'Environment.Variables.S1M_DEMO_TOKEN' --output text 2>/dev/null || true)}"
 BUCKET="${BUCKET:-$(get_out ViewerBucketName)}"
 VIEWER_URL="${VIEWER_URL:-$(get_out ViewerUrl)}"
 if [ -z "$API_BASE" ] || [ "$API_BASE" = "None" ] || [ -z "$BUCKET" ] || [ "$BUCKET" = "None" ]; then
@@ -50,17 +42,6 @@ if [ -z "$API_BASE" ] || [ "$API_BASE" = "None" ] || [ -z "$BUCKET" ] || [ "$BUC
   exit 1
 fi
 API_BASE="${API_BASE%/}"
-S1M_API_BASE="${S1M_API_BASE%/}"
-if [ -z "$S1M_API_BASE" ] || [ "$S1M_API_BASE" = "None" ]; then
-  echo "ERROR: S1MApiUrl was not found in stack '$S1M_STACK'." >&2
-  echo "       Deploy it with ./deploy-s1m.sh or pass S1M_API_BASE explicitly." >&2
-  exit 1
-fi
-if [ -z "$S1M_DEMO_TOKEN" ] || [ "$S1M_DEMO_TOKEN" = "None" ]; then
-  echo "ERROR: S1M_DEMO_TOKEN was not found on function 'cog-stac-s1m'." >&2
-  echo "       Deploy S1M first or pass S1M_DEMO_TOKEN explicitly." >&2
-  exit 1
-fi
 
 # CloudFront was removed: the viewer reads public-collection COGs directly from
 # their source buckets (which must serve CORS), so there is no tile proxy base
@@ -84,8 +65,6 @@ fi
 # 1. Viewer files + generated API base config.
 cp -R "$VIEWER_DIR/." "$STAGE/"
 printf 'window.S3_COG_API_BASE = "%s";\n' "$API_BASE" > "$STAGE/config.js"
-printf 'window.S3_COG_S1M_API_BASE = "%s";\n' "$S1M_API_BASE" >> "$STAGE/config.js"
-printf 'window.S3_COG_S1M_DEMO_TOKEN = "%s";\n' "$S1M_DEMO_TOKEN" >> "$STAGE/config.js"
 
 # 2. Built JS packages -> /local-modules/<name>/ (matches the importmap paths).
 mkdir -p "$STAGE/local-modules"
@@ -120,6 +99,5 @@ aws s3 cp "$STAGE/local-modules/" "s3://$BUCKET/local-modules/" \
 echo
 echo "Published viewer -> $VIEWER_URL"
 echo "  API base       : $API_BASE"
-[ -n "$S1M_API_BASE" ] && echo "  S1M API base   : $S1M_API_BASE"
 echo "  bucket         : s3://$BUCKET"
 [ -n "$TILE_BASE" ] && echo "  tile base      : $TILE_BASE"

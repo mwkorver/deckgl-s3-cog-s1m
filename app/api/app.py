@@ -4,6 +4,8 @@ import subprocess
 import urllib.error
 import urllib.request
 
+import s1m
+
 from pathlib import Path
 from secrets import compare_digest
 from threading import Thread
@@ -1556,6 +1558,31 @@ def overture_buildings(body: dict[str, Any]):
         "limit": limit,
         "bboxes": len(bboxes),
     }
+
+
+@app.post("/s1m/tiles")
+def s1m_tiles(body: dict[str, Any]):
+    """S1M (USGS 3DEP seamless 1 m DEM) tiles intersecting a lon/lat bbox,
+    nearest-to-centre first, each with its footprint ring(s). Discovery only --
+    the viewer reads each tile's elevation COG directly from the public prd-tnm
+    bucket. Folded in from the former standalone S1M service (same origin as the
+    viewer now, so no CORS/token needed); reads only the public S1M index."""
+    bbox = body.get("bbox") or []
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        raise HTTPException(status_code=400, detail="bbox must be [west, south, east, north].")
+    try:
+        west, south, east, north = (float(v) for v in bbox)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="bbox values must be numbers.")
+    center = body.get("center")
+    order_center = tuple(center) if isinstance(center, (list, tuple)) and len(center) == 2 else None
+    raw_max = body.get("max_tiles")
+    max_tiles = None if raw_max is None else max(1, min(int(raw_max), 10000))
+    try:
+        tiles = s1m.cover_tiles(west, south, east, north, max_tiles=max_tiles, order_center=order_center)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"S1M tiles lookup failed: {exc}")
+    return {"tiles": tiles}
 
 
 # AWS Lambda entry point. Mangum adapts the ASGI app to the Lambda event/response
