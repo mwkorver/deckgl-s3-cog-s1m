@@ -155,7 +155,9 @@ function _buildProjectedCrs(gkd: GeoKeyDirectory): ProjectedCRS {
   // Always build the base CRS from geo keys — the geodeticCRS EPSG code inside
   // a user-defined projected CRS is informational, not a fetch target.
   const baseCrs = _buildGeographicCrs(gkd);
-  const conversion = _buildConversion(gkd);
+  const linearUnit =
+    LINEAR_UNIT[gkd.projLinearUnits ?? LINEAR_UNIT_METRE] ?? "metre";
+  const conversion = _buildConversion(gkd, linearUnit);
   const cs = _projectedCs(gkd);
 
   return {
@@ -206,7 +208,10 @@ function _buildEllipsoid(gkd: GeoKeyDirectory): ProjJsonEllipsoid {
   return ellipsoid;
 }
 
-function _buildConversion(gkd: GeoKeyDirectory): ProjJsonConversion {
+function _buildConversion(
+  gkd: GeoKeyDirectory,
+  linearUnit: string | ProjJsonUnit = "metre",
+): ProjJsonConversion {
   const ct = gkd.projMethod;
   if (ct === null) {
     throw new Error("User-defined projected CRS requires projMethod");
@@ -229,7 +234,7 @@ function _buildConversion(gkd: GeoKeyDirectory): ProjJsonConversion {
   ): ProjJsonParameter => ({
     name,
     value: value ?? default_,
-    unit: "metre",
+    unit: linearUnit,
   });
 
   const scale = (

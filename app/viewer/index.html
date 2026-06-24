@@ -465,7 +465,7 @@
                 <input id="ter-exag" type="range" min="1" max="8" step="0.5" value="2" />
               </label>
               <label class="small" style="display:flex; align-items:center; gap:6px;">
-                <input id="ter-gpu" type="checkbox" checked />
+                <input id="ter-gpu" type="checkbox" checked disabled />
                 GPU displacement <span class="muted">— elevation as a texture, displaced in the vertex shader; exaggeration updates live</span>
               </label>
               <label class="small" style="display:flex; align-items:center; gap:6px;">
@@ -4608,6 +4608,9 @@
         imageryRevision += 1;
         clearS1MDrapeImages();
         updateImageryLayers();
+        if (s1mActive && document.getElementById("ter-surface")?.value === "naip") {
+          refreshS1MTerrain();
+        }
         currentImagerySignature = nextSignature;
         currentImageryHrefs = nextImageryHrefs;
         imageryStatusEl.textContent = `Imagery rendering enabled for ${imagerySources.length} of ${features.length} returned items.`;
@@ -5009,9 +5012,17 @@
         const gpuEl = document.getElementById("ter-gpu");
         if (surfaceEl?.value === "naip") {
           if (modeEl) modeEl.value = "shaded";
-          if (gpuEl) gpuEl.checked = true;
-        } else if (changed === "mode" && modeEl?.value === "wireframe" && surfaceEl) {
-          surfaceEl.value = "shaded";
+          if (gpuEl) {
+            gpuEl.checked = true;
+            gpuEl.disabled = true;
+          }
+        } else {
+          if (gpuEl) {
+            gpuEl.disabled = false;
+          }
+          if (changed === "mode" && modeEl?.value === "wireframe" && surfaceEl) {
+            surfaceEl.value = "shaded";
+          }
         }
       }
       // Switching GPU<->CPU rebuilds the same cached grids with the other layer type.
