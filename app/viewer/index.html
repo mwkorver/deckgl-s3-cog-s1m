@@ -468,10 +468,7 @@
                 <input id="ter-gpu" type="checkbox" checked disabled />
                 GPU displacement <span class="muted">— elevation as a texture, displaced in the vertex shader; exaggeration updates live</span>
               </label>
-              <label class="small" style="display:flex; align-items:center; gap:6px;">
-                <input id="ter-borders" type="checkbox" checked />
-                Show tile borders <span class="muted">— outlines each S1M tile boundary</span>
-              </label>
+
               <label class="small" style="display:flex; align-items:center; gap:6px;">
                 <input id="toggle-s1m-footprints-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
                 <strong>S1M Coverage Footprints</strong>
@@ -792,7 +789,7 @@
       const toggleNaipSearchFootprintsLayerEl = document.getElementById("toggle-naip-search-footprints-layer");
       const toggleS1MFootprintsLayerEl = document.getElementById("toggle-s1m-footprints-layer");
       const toggleNaipCoverageMvtLayerEl = document.getElementById("toggle-naip-coverage-mvt-layer");
-      const terBordersEl = document.getElementById("ter-borders");
+
       const terBuildingsEl = document.getElementById("ter-buildings");
       const terBuildingsStatusEl = document.getElementById("ter-buildings-status");
       const brightnessEl = document.getElementById("brightness");
@@ -811,7 +808,7 @@
       toggleUsgsNaipWmsLayerEl.checked = false;
       toggleS1MFootprintsLayerEl.checked = false;   // coverage-footprint vector off
       toggleNaipCoverageMvtLayerEl.checked = false; // NAIP coverage MVT vector off
-      if (terBordersEl) terBordersEl.checked = false; // S1M tile-border overlay off
+
 
       const searchBtn = document.getElementById("search");
 
@@ -2098,65 +2095,7 @@
           }
         }
 
-        if (s1mActive && terBordersEl?.checked && s1mActiveTiles.size > 0 && PathLayerClass) {
-          const borderPaths = [];
-          for (const t of s1mActiveTiles.values()) {
-            const key = `${t.dataset}@${t.size}`;
-            const c = s1mTileCache.get(key);
-            if (c && c.data) {
-              const data = c.data;
-              const W = data.width;
-              const H = data.height;
-              const [sx, sy] = data.step;
-              const [clon, clat] = data.center_lnglat;
 
-              const ex_half = ((W - 1) * sx) / 2;
-              const ny_half = ((H - 1) * sy) / 2;
-
-              const gconv = s1mConvergenceRad(clon);
-              const cosG = Math.cos(gconv);
-              const sinG = Math.sin(gconv);
-
-              const getCornerLngLat = (ex, ny) => {
-                const x = ex * cosG + ny * sinG;
-                const y = -ex * sinG + ny * cosG;
-
-                const latRad = (clat * Math.PI) / 180;
-                const metersPerDegreeLat = 111132.95 - 559.82 * Math.cos(2 * latRad) + 1.17 * Math.cos(4 * latRad);
-                const metersPerDegreeLon = 111319.49 * Math.cos(latRad);
-
-                const deltaLat = y / metersPerDegreeLat;
-                const deltaLon = x / metersPerDegreeLon;
-
-                return [clon + deltaLon, clat + deltaLat];
-              };
-
-              borderPaths.push([
-                getCornerLngLat(ex_half, ny_half),
-                getCornerLngLat(-ex_half, ny_half),
-                getCornerLngLat(-ex_half, -ny_half),
-                getCornerLngLat(ex_half, -ny_half),
-                getCornerLngLat(ex_half, ny_half)
-              ]);
-            }
-          }
-
-          if (borderPaths.length > 0) {
-            const borderLayer = new PathLayerClass({
-              id: "s1m-tile-borders",
-              data: borderPaths,
-              getPath: (p) => p,
-              getColor: [251, 146, 60], // orange outline
-              getWidth: 2,
-              widthMinPixels: 1,
-              parameters: {
-                depthWriteEnabled: false,
-                depthCompare: "always"
-              }
-            });
-            layers.push(borderLayer);
-          }
-        }
 
         if (toggleNaipCoverageMvtLayerEl?.checked && MVTLayerClass) {
           layers.push(new MVTLayerClass({
@@ -5298,7 +5237,7 @@
         rebuildS1MLayers();  // adaptive <-> absolute changes the displacement baseline (zmin)
         if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();
       });
-      document.getElementById("ter-borders")?.addEventListener("change", updateImageryLayers);
+
       document.getElementById("ter-buildings")?.addEventListener("change", refreshBuildingFootprints);
       document.getElementById("ter-run")?.addEventListener("click", enableS1MTerrain);
       document.getElementById("ter-clear")?.addEventListener("click", clearS1MTerrain);
