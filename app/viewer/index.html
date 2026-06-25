@@ -2542,8 +2542,16 @@
       function s1mDrapeSearchBody(bbox) {
         const limit = Math.min(10000, Math.max(5000, Number(limitEl.value || SEARCH_LIMIT_DEFAULT)));
         const body = { collections: [activeCollection()], bbox, limit };
-        if (activeCollection() === "naip") {
-          if (stateEl.value) body["region"] = stateEl.value;
+        if (stateEl.value) {
+          body["region"] = stateEl.value;
+        } else {
+          const col = collectionById[activeCollection()];
+          if (col && col.region_code) {
+            body["region"] = col.region_code;
+          }
+        }
+        if (yearEl.value) {
+          body["year"] = Number(yearEl.value);
         }
         return body;
       }
@@ -5407,11 +5415,11 @@
           renderActiveCollectionSummary();
           if (changed) {
             releaseS1MDrapeMemory();
-            if (s1mActive) {
-              refreshS1MTerrain();
-            }
           }
           refreshAvailability().then((ok) => {
+            if (changed && s1mActive) {
+              refreshS1MTerrain();
+            }
             if (ok && (changed || autoSearchEl.checked || toggleCogEl.checked)) queueSearch("auto");
             updateNaipCoverageMvtLayer();
           });
