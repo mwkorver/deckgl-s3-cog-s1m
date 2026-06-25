@@ -124,35 +124,26 @@ def cover_tiles(west: float, south: float, east: float, north: float,
     from shapely.geometry import box
     from shapely.ops import transform as shapely_transform
 
-    def lonlat_rings(geom):
-        geom_4326 = shapely_transform(lambda x, y, z=None: to_4326.transform(x, y), geom)
-        polys = [geom_4326] if geom_4326.geom_type == "Polygon" else list(getattr(geom_4326, "geoms", []))
-        rings = []
-        for poly in polys:
-            if poly.geom_type != "Polygon" or poly.is_empty:
-                continue
-            rings.append([[float(lon), float(lat)] for lon, lat in poly.exterior.coords])
-        return rings
-
     viewport = box(axmin, aymin, axmax, aymax)
     tiles = []
     for dataset, xmin, xmax, ymin, ymax, geometry_wkb in rows:
         geom = from_wkb(geometry_wkb)
         if not geom.intersects(viewport):
             continue
+        geom_4326 = shapely_transform(lambda x, y, z=None: to_4326.transform(x, y), geom)
         clon, clat = to_4326.transform((xmin + xmax) / 2, (ymin + ymax) / 2)
-        west, south = to_4326.transform(xmin, ymin)
-        east, north = to_4326.transform(xmax, ymax)
+        w, s, e, n = geom_4326.bounds
+        polys = [geom_4326] if geom_4326.geom_type == "Polygon" else list(getattr(geom_4326, "geoms", []))
+        rings = []
+        for poly in polys:
+            if poly.geom_type != "Polygon" or poly.is_empty:
+                continue
+            rings.append([[float(lon), float(lat)] for lon, lat in poly.exterior.coords])
         tiles.append({
             "dataset": f"s3://{S1M_BUCKET}/StagedProducts/Elevation/{dataset}",
             "center_lnglat": [clon, clat],
-            "bbox": [
-                min(west, east),
-                min(south, north),
-                max(west, east),
-                max(south, north),
-            ],
-            "footprint": lonlat_rings(geom),
+            "bbox": [w, s, e, n],
+            "footprint": rings,
         })
         if max_tiles is not None and len(tiles) >= int(max_tiles):
             break
