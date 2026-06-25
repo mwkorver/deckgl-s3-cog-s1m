@@ -906,9 +906,17 @@
       // bucket), so imagery access follows the source: public buckets are read
       // directly (no presign), requester-pays (NAIP) is presigned via /sign.
       function collectionForHref(s3href) {
-        const m = /^s3:\/\/([^/]+)\//.exec(s3href || "");
-        if (!m) return null;
-        return collectionFeatures.find((p) => p.bucket === m[1]) || null;
+        if (!s3href) return null;
+        let bucket = null;
+        if (s3href.startsWith("s3://")) {
+          const m = /^s3:\/\/([^/]+)\//.exec(s3href);
+          bucket = m ? m[1] : null;
+        } else {
+          const m = /^https:\/\/([^.]+)\.s3/.exec(s3href);
+          bucket = m ? m[1] : null;
+        }
+        if (!bucket) return null;
+        return collectionFeatures.find((p) => p.bucket === bucket) || null;
       }
       function publicHttpsUrl(s3href, region) {
         const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3href);
@@ -937,7 +945,7 @@
           // Public bucket: range-read the COG directly from S3 -- no CloudFront
           // proxy, no presign. Requires the source bucket to serve CORS for
           // browser range-reads (e.g. njogis-imagery once its CORS is set).
-          return publicHttpsUrl(s3href, owner.region);
+          return publicHttpsUrl(s3href, owner.bucket_region || owner.region);
         }
         const now = Date.now();
         const cached = signedUrlCache.get(s3href);
