@@ -4126,7 +4126,6 @@
           if (!S1M_COORD) { summaryEl.textContent = "Terrain modules unavailable."; return; }
           s1mActive = true;
           if (!s1mMoveHandler) { s1mMoveHandler = s1mDebouncedRefresh; map.on("moveend", s1mMoveHandler); }
-          if (map.getPitch() < 30) map.easeTo({ pitch: 60, duration: 600 });
           await refreshS1MTerrain();
         } catch (err) {
           summaryEl.textContent = `Terrain load failed: ${err?.message || err}`;
