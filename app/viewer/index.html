@@ -1084,12 +1084,25 @@
             <head>
               <title>S1M Stats</title>
               <style>
-                body { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 0; background: #101418; color: #e6edf3; }
-                header { position: sticky; top: 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 10px 12px; }
-                button { margin-right: 8px; }
-                main { padding: 12px; }
-                pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
-                .muted { color: #8b949e; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background: #0d1117; color: #c9d1d9; }
+                header { position: sticky; top: 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 10px 12px; display: flex; align-items: center; }
+                button { font-family: inherit; font-size: 12px; font-weight: 500; color: #c9d1d9; background-color: #21262d; border: 1px solid #30363d; border-radius: 6px; padding: 5px 12px; cursor: pointer; margin-right: 8px; }
+                button:hover { background-color: #30363d; border-color: #8b949e; }
+                main { padding: 16px; }
+                .section-title { font-size: 14px; font-weight: 600; color: #58a6ff; margin: 20px 0 10px 0; border-bottom: 1px solid #30363d; padding-bottom: 6px; }
+                .section-title:first-child { margin-top: 0; }
+                .stat-line { display: flex; font-size: 12px; line-height: 1.6; border-bottom: 1px solid #21262d; padding: 6px 0; }
+                .stat-line:last-child { border-bottom: none; }
+                .stat-label { font-weight: 500; min-width: 220px; color: #c9d1d9; }
+                .stat-value { font-weight: 600; color: #f0883e; min-width: 140px; }
+                .stat-desc { color: #8b949e; font-size: 11px; }
+                pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; background: #161b22; padding: 12px; border-radius: 6px; border: 1px solid #30363d; }
+                details { margin-top: 24px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; }
+                details summary { padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer; color: #58a6ff; outline: none; }
+                details summary:hover { color: #79c0ff; }
+                details[open] { background: #0d1117; }
+                details[open] summary { border-bottom: 1px solid #30363d; }
+                .muted { color: #8b949e; font-size: 12px; margin-left: auto; }
               </style>
             </head>
             <body>
@@ -1098,7 +1111,13 @@
                 <button id="reset">Reset Bench</button>
                 <span class="muted" id="stamp"></span>
               </header>
-              <main><pre id="stats">Waiting for stats...</pre></main>
+              <main>
+                <div id="stats-display">Loading human-readable stats...</div>
+                <details>
+                  <summary>Raw JSON Payload</summary>
+                  <pre id="stats">Waiting for stats...</pre>
+                </details>
+              </main>
             </body>
           </html>`);
         s1mStatsWindow.document.close();
@@ -1110,6 +1129,185 @@
             fill: s1mFillReport(),
           };
           const text = JSON.stringify(payload, null, 2);
+          
+          // Generate human-readable HTML list
+          let drapeListsHtml = "";
+          if (payload.fill.drapePending.length > 0) {
+            drapeListsHtml += `
+              <div style="margin-top: 8px; padding-left: 15px; font-size: 11px; color: #8b949e;">
+                <strong>Pending Sub-tiles:</strong>
+                <ul style="margin: 4px 0; padding-left: 20px;">
+                  ${payload.fill.drapePending.map(k => `<li>${k}</li>`).join("")}
+                </ul>
+              </div>
+            `;
+          }
+          if (payload.fill.drapeRefreshing.length > 0) {
+            drapeListsHtml += `
+              <div style="margin-top: 8px; padding-left: 15px; font-size: 11px; color: #8b949e;">
+                <strong>Refreshing Sub-tiles:</strong>
+                <ul style="margin: 4px 0; padding-left: 20px;">
+                  ${payload.fill.drapeRefreshing.map(k => `<li>${k}</li>`).join("")}
+                </ul>
+              </div>
+            `;
+          }
+          if (payload.fill.drapeFailed.length > 0) {
+            drapeListsHtml += `
+              <div style="margin-top: 8px; padding-left: 15px; font-size: 11px; color: #f87171;">
+                <strong>Failed Sub-tiles:</strong>
+                <ul style="margin: 4px 0; padding-left: 20px;">
+                  ${payload.fill.drapeFailed.map(item => `<li>${item.key}: ${item.error}</li>`).join("")}
+                </ul>
+              </div>
+            `;
+          }
+
+          const activeCol = activeCollection();
+          const displayHtml = `
+            <div class="section-title">General / Viewport Status</div>
+            <div class="stat-line">
+              <span class="stat-label">Active State</span>
+              <span class="stat-value">${payload.fill.active ? "Enabled" : "Disabled"}</span>
+              <span class="stat-desc">— Is the S1M 3D terrain rendering pipeline active</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Viewport Terrain Tiles</span>
+              <span class="stat-value">${payload.fill.desired} tiles</span>
+              <span class="stat-desc">— Number of terrain tiles within the current camera viewport</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Refresh Age</span>
+              <span class="stat-value">${payload.fill.refreshAgeMs !== null ? payload.fill.refreshAgeMs + " ms" : "N/A"}</span>
+              <span class="stat-desc">— Elapsed time since the last viewport refresh started</span>
+            </div>
+
+            <div class="section-title">S1M Terrain Tiles Status (DEM)</div>
+            <div class="stat-line">
+              <span class="stat-label">Exact LOD Cached</span>
+              <span class="stat-value">${payload.fill.terrain.exactCached}</span>
+              <span class="stat-desc">— Tiles loaded at the requested Level of Detail (LOD)</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Fallback LOD (Stale)</span>
+              <span class="stat-value">${payload.fill.terrain.fallbackCached}</span>
+              <span class="stat-desc">— Tiles using a coarser/finer LOD as a temporary fallback</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Missing / Loading</span>
+              <span class="stat-value">${payload.fill.terrain.missing}</span>
+              <span class="stat-desc">— Tiles currently requesting or waiting for DEM elevation</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">DEM Pending Requests</span>
+              <span class="stat-value">${payload.fill.terrain.pending}</span>
+              <span class="stat-desc">— Network requests currently in-flight for DEM elevation tiles</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">DEM Total Completed</span>
+              <span class="stat-value">${payload.fill.terrain.completed}</span>
+              <span class="stat-desc">— Successful DEM tile fetches in this session</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">DEM Total Failed</span>
+              <span class="stat-value">${payload.fill.terrain.failed}</span>
+              <span class="stat-desc">— Elevation tile network download failures</span>
+            </div>
+
+            <div class="section-title">Terrain Draping (Imagery) Status</div>
+            <div class="stat-line">
+              <span class="stat-label">Drape Collection</span>
+              <span class="stat-value">${activeCol}</span>
+              <span class="stat-desc">— Currently selected imagery collection for draping</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Total Drape Sub-tiles</span>
+              <span class="stat-value">${payload.fill.drape.subtiles}</span>
+              <span class="stat-desc">— Number of subdiv sub-tiles constructed for visible tiles</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Textured Sub-tiles</span>
+              <span class="stat-value">${payload.fill.drape.textured} (${payload.fill.drape.subtiles ? Math.round(100 * payload.fill.drape.textured / payload.fill.drape.subtiles) : 0}%)</span>
+              <span class="stat-desc">— Sub-tiles that finished loading and painting imagery textures</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Pending Textures</span>
+              <span class="stat-value">${payload.fill.drape.pending}</span>
+              <span class="stat-desc">— Sub-tiles waiting for imagery textures to build</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Refreshing Textures</span>
+              <span class="stat-value">${payload.fill.drape.refreshing}</span>
+              <span class="stat-desc">— Sub-tiles with low-res textures, rebuilding higher-res ones</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Failed Textures</span>
+              <span class="stat-value" style="color: ${payload.fill.drape.failed > 0 ? '#f87171' : 'inherit'};">${payload.fill.drape.failed}</span>
+              <span class="stat-desc">— Sub-tiles that failed to acquire or paint textures</span>
+            </div>
+            ${drapeListsHtml}
+            <div class="stat-line">
+              <span class="stat-label">COG Source Search Latency</span>
+              <span class="stat-value">${payload.bench.sourceSearchMs.toFixed(1)} ms</span>
+              <span class="stat-desc">— Time spent querying database /search API for overlapping COGs</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">COG Search Queries</span>
+              <span class="stat-value">${payload.fill.drape.sourceQueriesReady}/${payload.fill.drape.sourceQueries} ready (${payload.fill.drape.sourceQueriesPending} pending, ${payload.fill.drape.sourceQueriesFailed} failed)</span>
+              <span class="stat-desc">— Number of cached tile search bounding box queries</span>
+            </div>
+
+            <div class="section-title">Pipeline Performance Benchmarks (Averages)</div>
+            <div class="stat-line">
+              <span class="stat-label">COG Header Fetch</span>
+              <span class="stat-value">${payload.bench.cogFetch.avgMs} ms</span>
+              <span class="stat-desc">— Network request to fetch COG TIFF headers/IFDs (Tiles: ${payload.bench.cogFetch.tiles})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">TIFF Decode to RGBA</span>
+              <span class="stat-value">${payload.bench.decode.avgMs} ms</span>
+              <span class="stat-desc">— Decoding compressed TIFF bands into raw RGBA bytes (Tiles: ${payload.bench.decode.tiles})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Reproject & Rasterize</span>
+              <span class="stat-value">${payload.bench.rasterize.avgMs} ms</span>
+              <span class="stat-desc">— Projecting coordinates and sampling pixels into texture pass (Passes: ${payload.bench.rasterize.passes})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Drape Subtile Build</span>
+              <span class="stat-value">${payload.bench.drapeBuild.avgSubtileMs} ms</span>
+              <span class="stat-desc">— Complete process to paint all overlapping COGs onto a sub-tile (Subtiles: ${payload.bench.drapeBuild.subtiles})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">DEM Terrain Fetch</span>
+              <span class="stat-value">${payload.bench.terrainFetch.avgMs} ms</span>
+              <span class="stat-desc">— Fetching raw elevation JSON tiles from /s1m/tiles (Tiles: ${payload.bench.terrainFetch.tiles})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">CPU Mesh Build</span>
+              <span class="stat-value">${payload.bench.mesh.avgMs} ms</span>
+              <span class="stat-desc">— Decoding elevation arrays and constructing 3D meshes (Tiles: ${payload.bench.mesh.tiles})</span>
+            </div>
+
+            <div class="section-title">Memory & Caches</div>
+            <div class="stat-line">
+              <span class="stat-label">Drape Images Cache</span>
+              <span class="stat-value">${payload.bench.cacheSizes.drapeImages}/${payload.bench.cacheSizes.drapeImageMax} (${Math.round(100 * payload.bench.cacheSizes.drapeImages / payload.bench.cacheSizes.drapeImageMax)}%)</span>
+              <span class="stat-desc">— Painted sub-tile ImageData cache size (Evictions: ${payload.bench.cacheEvictions.drapeImages})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">COG Tiles Cache</span>
+              <span class="stat-value">${payload.bench.cacheSizes.decodedCogTiles}/${payload.bench.cacheSizes.decodedCogTileMax} (${Math.round(100 * payload.bench.cacheSizes.decodedCogTiles / payload.bench.cacheSizes.decodedCogTileMax)}%)</span>
+              <span class="stat-desc">— Decoded individual COG tile cache size (Evictions: ${payload.bench.cacheEvictions.decodedCogTiles})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">TIFF Sources Cache</span>
+              <span class="stat-value">${payload.bench.cacheSizes.geotiffSources}/${payload.bench.cacheSizes.geotiffSourceMax} (${Math.round(100 * payload.bench.cacheSizes.geotiffSources / payload.bench.cacheSizes.geotiffSourceMax)}%)</span>
+              <span class="stat-desc">— Opened GeoTIFF source handles cache size (Evictions: ${payload.bench.cacheEvictions.geotiffSources})</span>
+            </div>
+          `;
+          
+          s1mStatsWindow.document.getElementById("stats-display").innerHTML = displayHtml;
           s1mStatsWindow.document.getElementById("stats").textContent = text;
           s1mStatsWindow.document.getElementById("stamp").textContent = payload.generatedAt;
           s1mStatsWindow.__s1mStatsText = text;
@@ -1216,7 +1414,7 @@
         const bucketText = ` · analytic refs ${s1mDrapeMetrics.analyticRefs}`;
         const sourceStats = s1mDrapeSourceCacheStats();
         const sourceQueryText = ` · source bboxes ${sourceStats.ready}/${s1mDrapeSourceCache.size} ready (${sourceStats.pending} pending, ${sourceStats.failed} failed)`;
-        const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${S1M_SUBDIV_MAX}×) · sources ${S1M_INITIAL_DRAPE_SOURCES_PER_TILE}/${S1M_MAX_DRAPE_SOURCES_PER_TILE}`;
+        const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${S1M_SUBDIV_MAX}×) · sources ${s1mInitialDrapeSourcesPerTile()}/${s1mMaxDrapeSourcesPerTile()}`;
         const cacheText =
           ` · cache drape ${s1mDrapeCache.size}/${S1M_DRAPE_CACHE_MAX} (${fmtPct(s1mDrapeCache.size, S1M_DRAPE_CACHE_MAX)})` +
           ` · COG ${s1mCogTileCache.size}/${S1M_COG_TILE_CACHE_MAX} (${fmtPct(s1mCogTileCache.size, S1M_COG_TILE_CACHE_MAX)})` +
@@ -1652,8 +1850,16 @@
       const NAIP_COVERAGE_MVT_VERSION = "footprints-v2";
       let naipCoverageMvtKey = "";
       const S1M_MAX_TILES = 96;           // enough to cover wide/pitched views; LOD keeps edge tiles cheap
-      const S1M_INITIAL_DRAPE_SOURCES_PER_TILE = 6;
-      const S1M_MAX_DRAPE_SOURCES_PER_TILE = 12;
+      function s1mInitialDrapeSourcesPerTile() {
+        const col = activeCollection();
+        if (col === "nj-imagery" || col === "kyfromabove") return 24;
+        return 6;
+      }
+      function s1mMaxDrapeSourcesPerTile() {
+        const col = activeCollection();
+        if (col === "nj-imagery" || col === "kyfromabove") return 48;
+        return 12;
+      }
       const S1M_SUBTILE_DRAPE_SIZE = 384; // per NAIP drape sub-tile; effective res = subdiv × this
       const S1M_SUBDIV_MAX = 6;           // cap on per-tile N×N drape sub-tiling
       const S1M_DRAPE_CACHE_MAX = 48;     // 384px RGBA ImageData ~= 0.56 MB each; keep bounded during pans
@@ -2724,8 +2930,6 @@
           renderS1MDrapeMetrics();
           if (seq === s1mRefreshSeq) {
             schedulePaint?.();
-          } else if (s1mActive) {
-            requestAnimationFrame(() => { if (s1mActive) refreshS1MTerrain(); });
           }
           return sources;
         }).catch((error) => {
@@ -2743,8 +2947,6 @@
           renderS1MDrapeMetrics();
           if (seq === s1mRefreshSeq) {
             schedulePaint?.();
-          } else if (s1mActive) {
-            requestAnimationFrame(() => { if (s1mActive) refreshS1MTerrain(); });
           }
           return fallbackSources;
         }).finally(() => {
@@ -3075,12 +3277,12 @@
 
       async function buildNaipDrapeImage(data, region, sources, drapeSize) {
         const out = new Uint8ClampedArray(drapeSize * drapeSize * 4);
-        const cappedSources = sources.slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
+        const cappedSources = sources.slice(0, s1mMaxDrapeSourcesPerTile());
         for (let i = 0; i < cappedSources.length; i++) {
           const source = cappedSources[i];
           await paintNaipDrapeSource(data, region, source, out, drapeSize);
           if (drapeIsFullyOpaque(out)) break;
-          if (i + 1 === S1M_INITIAL_DRAPE_SOURCES_PER_TILE && cappedSources.length > i + 1) {
+          if (i + 1 === s1mInitialDrapeSourcesPerTile() && cappedSources.length > i + 1) {
             s1mDrapeMetrics.noDataSourceFallbacks += 1;
           }
         }
@@ -3213,7 +3415,7 @@
           return;
         }
         if (sub.drapePending === sourceKey) sub.drapePending = null;
-        const sources = drapeSourcesForTile(region, sourcePool).slice(0, S1M_MAX_DRAPE_SOURCES_PER_TILE);
+        const sources = drapeSourcesForTile(region, sourcePool).slice(0, s1mMaxDrapeSourcesPerTile());
         if (!sources.length) {
           sub.drapeError = "no NAIP sources intersect S1M subtile";
           return;
@@ -3262,8 +3464,6 @@
           pruneS1MDrapeCache();
           if (s1mActive && seq === s1mRefreshSeq) {
             schedulePaint?.();
-          } else if (s1mActive) {
-            requestAnimationFrame(() => { if (s1mActive) refreshS1MTerrain(); });
           }
         }).catch((error) => {
           if (sub.drapePending === key) sub.drapePending = null;
