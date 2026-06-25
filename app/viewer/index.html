@@ -426,7 +426,7 @@
               </label>
               <label class="small" style="display:flex; align-items:center; gap:8px;">
                 <input id="toggle-naip-coverage-mvt-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                <strong>NAIP Coverage Footprints</strong>
+                <strong id="naip-coverage-label">NAIP Coverage Footprints</strong>
                 <span class="muted">— MVT outlines, z4-15</span>
               </label>
               <div class="display-adjustments">
@@ -763,11 +763,14 @@
       // The COG-imagery toggle renders the ACTIVE collection's tiles, so its label
       // tracks the selection (only one collection is "hot" at a time).
       function updateCogLayerLabel() {
-        const el = document.getElementById("cog-layer-label");
-        if (!el) return;
         const id = activeCollection();
         const title = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
-        el.textContent = `${title} Imagery (COG Tiles)`;
+        
+        const el = document.getElementById("cog-layer-label");
+        if (el) el.textContent = `${title} Imagery (COG Tiles)`;
+        
+        const elCov = document.getElementById("naip-coverage-label");
+        if (elCov) elCov.textContent = `${title} Coverage Footprints`;
       }
       function renderActiveCollectionSummary() {
         if (!activeCollectionSummaryEl) return;
