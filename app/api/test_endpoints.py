@@ -1,5 +1,10 @@
 import os
 import sys
+
+# Override S3 lake paths to be local/empty for tests to prevent S3 credential validation
+os.environ["S3_COG_LAKE_ROOT"] = ""
+os.environ["S3_COG_EMBED_LAKE_ROOT"] = ""
+
 import datetime
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient

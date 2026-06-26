@@ -210,11 +210,13 @@ _REGISTRY: dict[str, CollectionDescriptor] = {}
 
 
 def get_descriptor(collection_id: str = "naip") -> CollectionDescriptor:
-    try:
+    if collection_id in _REGISTRY:
         return _REGISTRY[collection_id]
-    except KeyError:
-        known = ", ".join(sorted(_REGISTRY))
-        raise SystemExit(f"unknown collection '{collection_id}'; known: {known}")
+    for desc in list(_REGISTRY.values()):
+        if desc.bucket == collection_id:
+            return desc
+    known = ", ".join(sorted(_REGISTRY))
+    raise SystemExit(f"unknown collection '{collection_id}'; known: {known}")
 
 
 def is_source_asset(bucket: str, key: str) -> bool:
@@ -363,3 +365,95 @@ NAIP = CollectionDescriptor(
 # S3-prefix collections (KyFromAbove, New Jersey) are ingestable via the generic
 # path. Keep in sync with collections/registry.yaml (active collections).
 _REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ)})
+
+
+def register_adhoc_collection(
+    collection_id: str,
+    bucket: str,
+    prefix: str,
+    region: str,
+    year: int,
+    access: str,
+) -> CollectionDescriptor:
+    """Dynamically build and register a generic CollectionDescriptor for an ad-hoc S3 bucket."""
+    bucket_name = bucket.replace("s3://", "").split("/")[0]
+    
+    fixed_prefix = prefix.strip()
+    if fixed_prefix and not fixed_prefix.endswith("/"):
+        fixed_prefix += "/"
+
+    def enumerate_prefixes(s3, b, r, y):
+        return [fixed_prefix]
+
+    def key_parser(key: str) -> KeyFields | None:
+        filename = key.rsplit("/", 1)[-1]
+        tile = filename.removesuffix(".tif").removesuffix(".tiff")
+        return KeyFields(
+            region=region.lower(),
+            year=int(year),
+            properties={"tile": tile},
+        )
+
+    def cog_filter(key: str) -> bool:
+        return key.lower().endswith((".tif", ".tiff")) and not any(
+            seg in key for seg in ("Metadata", "TileGrid", "Overviews", "archive", "LogFiles")
+        )
+
+    desc = CollectionDescriptor(
+        id=collection_id,
+        bucket=bucket_name,
+        access=access,
+        discovery=S3PrefixListing(
+            bucket=bucket_name,
+            access=access,
+            cog_filter=cog_filter,
+            key_parser=key_parser,
+            enumerate_prefixes=enumerate_prefixes,
+            regions=(region.lower(),),
+        ),
+        key_filter=cog_filter,
+    )
+
+    _REGISTRY[collection_id] = desc
+    return desc
+
+
+def register_lake_collections():
+    """Scan the GeoParquet lake for collection= partition directories at startup
+    and dynamically register descriptors for any ad-hoc/custom collections.
+    """
+    from config import LAKE_ROOT
+    from lake import lake_collections, get_lake_duckdb
+
+    try:
+        collections = lake_collections()
+    except Exception as e:
+        print(f"Skipping startup lake scan: {e}")
+        return
+
+    for cid in collections:
+        if cid in _REGISTRY:
+            continue
+
+        try:
+            read_glob = f"{LAKE_ROOT}/collection={cid}/**/*.parquet"
+            sql = f"select source_bucket, region, year, source_key from read_parquet('{read_glob}', hive_partitioning=true) limit 1"
+            res = get_lake_duckdb().cursor().execute(sql).fetchone()
+            if res:
+                bucket, region, year, source_key = res
+                prefix = ""
+                if "/" in source_key:
+                    prefix = source_key.rsplit("/", 1)[0] + "/"
+                
+                access = "requester-pays" if bucket == "naip-analytic" else "public"
+                register_adhoc_collection(
+                    collection_id=cid,
+                    bucket=bucket,
+                    prefix=prefix,
+                    region=region,
+                    year=int(year),
+                    access=access,
+                )
+                print(f"Dynamically registered custom collection descriptor: {cid} (bucket: {bucket})")
+        except Exception as e:
+            print(f"Failed to dynamically register custom collection '{cid}' from lake: {e}")

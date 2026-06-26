@@ -107,6 +107,9 @@ def parse_args():
         action="store_true",
         help="Write one file instead of the collection=/region=/year= partition tree",
     )
+    parser.add_argument("--source-bucket", help="S3 bucket for ad-hoc collections")
+    parser.add_argument("--source-prefix", help="S3 prefix for ad-hoc collections")
+    parser.add_argument("--source-access", default="public", help="Access mode (public, private, requester-pays)")
     return parser.parse_args()
  
  
@@ -117,7 +120,25 @@ def acquire_payloads(args):
     # Resolve the collection descriptor. The descriptor
     # owns the source bucket, access mode, and discovery adapter, so this function
     # no longer hardcodes NAIP's manifest-index discovery or requester-pays.
-    descriptor = descriptors.get_descriptor(args.collection)
+    source_bucket = getattr(args, "source_bucket", None)
+    if source_bucket:
+        source_prefix = getattr(args, "source_prefix", "") or ""
+        source_access = getattr(args, "source_access", "public") or "public"
+        state = args.states[0] if args.states else "unknown"
+        year = args.years[0] if args.years else 2026
+        
+        descriptor = descriptors.register_adhoc_collection(
+            collection_id=args.collection,
+            bucket=source_bucket,
+            prefix=source_prefix,
+            region=state,
+            year=year,
+            access=source_access,
+        )
+    else:
+        descriptor = descriptors.get_descriptor(args.collection)
+
+    args.collection = descriptor.id
 
     states = {state.lower() for state in args.states}
     years = set(args.years) if args.years else None

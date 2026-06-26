@@ -45,12 +45,21 @@ def run_ingest_job(
     strategy: str,
     limit_per_partition: int | None = None,
     collection: str = COLLECTION_ID,
+    source_bucket: str | None = None,
+    source_prefix: str | None = None,
+    source_access: str | None = None,
 ):
     command = [sys.executable, str(INGEST_SCRIPT_PATH), "--collection", collection, "--states", state, "--strategy", strategy]
     if year is not None:
         command.extend(["--years", str(year)])
     if limit_per_partition:
         command.extend(["--limit-per-partition", str(limit_per_partition)])
+    if source_bucket:
+        command.extend(["--source-bucket", source_bucket])
+    if source_prefix:
+        command.extend(["--source-prefix", source_prefix])
+    if source_access:
+        command.extend(["--source-access", source_access])
     try:
         append_ingest_log(job_id, f"$ {' '.join(command)}")
         result = subprocess.run(

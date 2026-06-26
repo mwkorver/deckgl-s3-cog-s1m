@@ -172,11 +172,50 @@ def test_s3prefixlisting_live():
     return "ok"
 
 
+def test_get_descriptor_bucket_lookup():
+    nj_desc = d.get_descriptor("nj-imagery")
+    assert nj_desc.id == "nj-imagery"
+    
+    nj_by_bucket = d.get_descriptor("njogis-imagery")
+    assert nj_by_bucket is nj_desc
+    
+    ky_desc = d.get_descriptor("kyfromabove")
+    ky_by_bucket = d.get_descriptor("kyfromabove")
+    assert ky_by_bucket is ky_desc
+
+
+def test_register_adhoc_collection():
+    cid = "test-adhoc-col"
+    bucket = "test-adhoc-bucket"
+    prefix = "imagery/cogs"
+    region = "tx"
+    year = 2024
+    access = "public"
+    
+    desc = d.register_adhoc_collection(cid, bucket, prefix, region, year, access)
+    
+    assert desc.id == cid
+    assert desc.bucket == bucket
+    assert desc.access == access
+    assert desc.key_filter("imagery/cogs/tile_2024.tif") is True
+    assert desc.key_filter("imagery/cogs/tile_2024.tfw") is False
+    
+    kf = desc.discovery.key_parser("imagery/cogs/tile_2024.tif")
+    assert kf is not None
+    assert kf.region == region
+    assert kf.year == year
+    assert kf.properties["tile"] == "tile_2024"
+    
+    assert d.get_descriptor(cid) is desc
+    assert d.get_descriptor(bucket) is desc
+
+
 if __name__ == "__main__":
     tests = [test_ky_key_parser, test_ky_cog_filter, test_nj_key_parser_and_filter,
              test_s3prefixlisting_year_filter,
              test_s3prefixlisting_all_years_and_latest, test_region_intersect_guard,
-             test_s3prefixlisting_live]
+             test_s3prefixlisting_live, test_get_descriptor_bucket_lookup,
+             test_register_adhoc_collection]
     failed = 0
     for t in tests:
         try:

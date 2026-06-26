@@ -68,6 +68,12 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 app = FastAPI(title="Local ordered STAC")
+
+@app.on_event("startup")
+def startup_event():
+    import descriptors
+    descriptors.register_lake_collections()
+
 # /search responses carry one presigned asset URL per feature, each ~1.5KB --
 # dominated by the X-Amz-Security-Token, which is byte-for-byte identical across
 # every URL (same execution-role session). gzip collapses that repetition to a
@@ -203,7 +209,33 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
     # no third-party STAC dependency. manifest-earthsearch can silently drop tiles
     # (it once ingested 430 of WA-2023's 5,720) and is kept only as opt-in.
     strategy = str(body.get("strategy") or "manifest-cog-headers")
-    collection = str(body.get("collection") or COLLECTION_ID)
+    
+    bucket = body.get("source_bucket")
+    prefix = body.get("source_prefix")
+    access = body.get("source_access")
+
+    import descriptors
+    collection_id = str(body.get("collection") or COLLECTION_ID)
+    if bucket:
+        try:
+            descriptor = descriptors.register_adhoc_collection(
+                collection_id=collection_id,
+                bucket=bucket,
+                prefix=prefix or "",
+                region=state,
+                year=year,
+                access=access or "public",
+            )
+            collection = descriptor.id
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    else:
+        try:
+            descriptor = descriptors.get_descriptor(collection_id)
+            collection = descriptor.id
+        except SystemExit as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     # Optional per-partition cap; absent/0 means "all" (CLI default).
     raw_limit = body.get("limit_per_partition")
     try:
@@ -229,6 +261,11 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
     thread = Thread(
         target=run_ingest_job,
         args=(job_id, state, year, strategy, limit_per_partition, collection),
+        kwargs={
+            "source_bucket": bucket,
+            "source_prefix": prefix,
+            "source_access": access,
+        },
         daemon=True,
     )
     thread.start()
@@ -300,12 +337,37 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
             detail=f"limit_per_partition must be 0 (unlimited) or between 1 and {SYNC_INGEST_MAX_LIMIT}",
         )
 
+    bucket = body.get("source_bucket")
+    prefix = body.get("source_prefix")
+    access = body.get("source_access")
+
+    import descriptors
+    collection_id = str(body.get("collection") or COLLECTION_ID)
+    if bucket:
+        try:
+            descriptor = descriptors.register_adhoc_collection(
+                collection_id=collection_id,
+                bucket=bucket,
+                prefix=prefix or "",
+                region=state,
+                year=year,
+                access=access or "public",
+            )
+            collection = descriptor.id
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    else:
+        try:
+            descriptor = descriptors.get_descriptor(collection_id)
+            collection = descriptor.id
+        except SystemExit as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     # Lazy import: keep duckdb/ingest off the cold-start path for non-ingest
     # requests (the read API is the common case).
     import ingest_duckdb as ig
     from types import SimpleNamespace
 
-    collection = str(body.get("collection") or COLLECTION_ID)
     args = SimpleNamespace(
         collection=collection,
         states=[state],
@@ -318,6 +380,9 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
         row_group_size=2000,
         single_file=False,
         strict_completeness=False,  # warn-only in the API path (CLI gets it from argparse)
+        source_bucket=bucket,
+        source_prefix=prefix,
+        source_access=access,
     )
 
     started = monotonic()
