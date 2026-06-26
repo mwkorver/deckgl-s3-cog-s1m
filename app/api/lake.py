@@ -49,6 +49,15 @@ def _is_expired_token_error(exc: Exception) -> bool:
     return "expiredtoken" in msg or "token has expired" in msg or "token included in the request is expired" in msg
 
 
+def _is_connection_invalidated_error(exc: Exception) -> bool:
+    """DuckDB marks the whole connection invalid after a FATAL query error (e.g.
+    an out-of-range integer cast in an MVT tile). Every later query then fails
+    with 'database has been invalidated ... must be restarted', so we must drop
+    and rebuild the connection rather than let one bad query 500 the whole API."""
+    msg = str(exc).lower()
+    return "has been invalidated" in msg or "must be restarted" in msg
+
+
 def is_expired_token_error(exc: Exception) -> bool:
     return _is_expired_token_error(exc)
 
@@ -65,17 +74,23 @@ def reset_lake_duckdb():
 
 
 def lake_query(run, *, retried: bool = False):
-    """Run `run(cursor)` against the shared lake connection, self-healing once
-    on an expired S3 token by forcing fresh AWS credentials and a new DuckDB
-    connection."""
+    """Run `run(cursor)` against the shared lake connection, self-healing once on
+    a recoverable connection fault: an expired S3 token (force fresh AWS creds +
+    a new connection) or a DuckDB connection invalidated by a prior FATAL query
+    (drop and rebuild it). The connection is reset even on the final attempt, so
+    a poisoned connection never lingers to 500 the next request."""
     global _lake_duckdb_con
     try:
         return run(get_lake_duckdb().cursor())
     except Exception as exc:
-        if retried or not _is_expired_token_error(exc):
+        expired = _is_expired_token_error(exc)
+        if not expired and not _is_connection_invalidated_error(exc):
             raise
         reset_lake_duckdb()
-        reset_aws_credentials_cache()
+        if expired:
+            reset_aws_credentials_cache()
+        if retried:
+            raise
         return lake_query(run, retried=True)
 
 
