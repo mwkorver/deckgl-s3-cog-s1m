@@ -1425,7 +1425,7 @@
         const bucketText = ` · analytic refs ${s1mDrapeMetrics.analyticRefs}`;
         const sourceStats = s1mDrapeSourceCacheStats();
         const sourceQueryText = ` · source bboxes ${sourceStats.ready}/${s1mDrapeSourceCache.size} ready (${sourceStats.pending} pending, ${sourceStats.failed} failed)`;
-        const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${S1M_SUBDIV_MAX}×) · sources ${s1mInitialDrapeSourcesPerTile()}/${s1mMaxDrapeSourcesPerTile()}`;
+        const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${s1mSubdivMax()}×) · sources ${s1mInitialDrapeSourcesPerTile()}/${s1mMaxDrapeSourcesPerTile()}`;
         const cacheText =
           ` · cache drape ${s1mDrapeCache.size}/${S1M_DRAPE_CACHE_MAX} (${fmtPct(s1mDrapeCache.size, S1M_DRAPE_CACHE_MAX)})` +
           ` · COG ${s1mCogTileCache.size}/${S1M_COG_TILE_CACHE_MAX} (${fmtPct(s1mCogTileCache.size, S1M_COG_TILE_CACHE_MAX)})` +
@@ -1877,7 +1877,22 @@
         return isSmallCogCollection() ? 48 : 12;
       }
       const S1M_SUBTILE_DRAPE_SIZE = 384; // per imagery drape sub-tile; effective res = subdiv × this
-      const S1M_SUBDIV_MAX = 6;           // cap on per-tile N×N drape sub-tiling
+      const S1M_SUBDIV_MAX_HI = 32;       // ceiling when few S1M tiles fill the view (very zoomed in): sub-tile ~12km/32 ~= 375m -> 384px tex ~= 1 m/px (vs ~5 m/px at subdiv 6)
+      // Per-tile N×N drape sub-tiling cap, RESPONSIVE to how many S1M tiles fill the
+      // viewport. Zoomed in, few tiles -> spare texture budget, so allow finer
+      // sub-tiling (each sub-tile reads a finer COG overview -> sharper imagery)
+      // without growing memory: the viewport cull keeps the BUILT sub-tile count
+      // ~constant (a tiny viewport spans only a few of the now-smaller sub-tiles).
+      // Zoomed out, many tiles -> keep the original cap of 6 so low-zoom memory is
+      // unchanged. This cap also bounds the drape ratchet on zoom-out (clamped in
+      // s1mBuildTileLayers) so a deep zoom-in can't leave runaway fine subdivision.
+      function s1mSubdivMax() {
+        const t = s1mActiveTiles.size || 1;
+        if (t <= 2) return S1M_SUBDIV_MAX_HI;
+        if (t <= 6) return 16;
+        if (t <= 16) return 8;
+        return 6;
+      }
       const S1M_DRAPE_CACHE_MAX = 96;     // 384px RGBA ImageData ~= 0.56 MB each (~54 MB); roomy enough that finer small-COG sub-tiling (NJ/KY, subdiv>=2) doesn't thrash on pan
       // NJ/KY imagery is many small COGs (~1.5 km) vs a ~12 km S1M DEM tile, so at
       // low zoom one tile would need dozens of COGs to drape -- slow and gap-prone.
@@ -3288,19 +3303,22 @@
       // adjacent sub-tiles, so the extra splits are cheap).
       function s1mSubdiv(tile) {
         const px = s1mProjectedTilePixels(tile);
-        if (isSmallCogCollection()) {
-          // Same LOD ladder as below, but never coarser than 2x2: a full ~12 km
-          // sub-tile would need 40+ of NJ's ~1.5 km COGs (past the source cap ->
-          // green gaps). 2x2 (~6 km) needs ~20 -- covered -- without exploding
-          // the sub-tile count (finer than this thrashes the drape-image cache).
-          if (px >= 3000) return Math.min(8, S1M_SUBDIV_MAX);
-          if (px >= 1500) return Math.min(4, S1M_SUBDIV_MAX);
-          return Math.min(2, S1M_SUBDIV_MAX);
-        }
-        if (px >= 3000) return Math.min(8, S1M_SUBDIV_MAX);
-        if (px >= 1500) return Math.min(4, S1M_SUBDIV_MAX);
-        if (px >= 760) return Math.min(2, S1M_SUBDIV_MAX);
-        return 1;
+        // Discrete ladder targeting a roughly constant sub-tile screen size, now
+        // extended past the old cap of 6 so high-zoom views keep sub-dividing
+        // (finer COG overview -> sharper imagery) instead of freezing at ~5 m/px.
+        // Discrete steps keep the drape cache key (which embeds sub.N) stable across
+        // a zoom range. Small-COG collections never drop to subdiv 1 (a full ~12 km
+        // tile would need 40+ of their ~1.5 km COGs -> past the source cap). The cap
+        // (s1mSubdivMax) is tile-count responsive, so this only goes high when few
+        // tiles are in view; the viewport cull keeps the built sub-tile count small.
+        let n;
+        if (px >= 12000) n = 32;
+        else if (px >= 6000) n = 16;
+        else if (px >= 3000) n = 8;
+        else if (px >= 1500) n = 4;
+        else if (px >= 760) n = 2;
+        else n = isSmallCogCollection() ? 2 : 1;
+        return Math.min(n, s1mSubdivMax());
       }
 
       // N+1 shared grid-index boundaries across [0..count-1]; adjacent sub-tiles
@@ -3513,6 +3531,10 @@
         let n = s1mSubdiv(tile);
         const drapedN = s1mDrapedSubdivByDataset.get(tile.dataset) || 0;
         if (drapedN > n) n = drapedN;
+        // Clamp the ratchet to the CURRENT responsive cap: zooming out lowers the
+        // cap (more tiles in view), so a fine subdivision earned at deep zoom is
+        // released here instead of rendering thousands of tiny sub-tiles at z10.
+        n = Math.min(n, s1mSubdivMax());
         const data = cache.data;
         const bx = s1mSubBoundaries(data.width, n);
         const by = s1mSubBoundaries(data.height, n);
