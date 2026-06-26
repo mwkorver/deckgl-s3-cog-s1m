@@ -1879,6 +1879,20 @@
       const S1M_SUBTILE_DRAPE_SIZE = 384; // per imagery drape sub-tile; effective res = subdiv × this
       const S1M_SUBDIV_MAX = 6;           // cap on per-tile N×N drape sub-tiling
       const S1M_DRAPE_CACHE_MAX = 96;     // 384px RGBA ImageData ~= 0.56 MB each (~54 MB); roomy enough that finer small-COG sub-tiling (NJ/KY, subdiv>=2) doesn't thrash on pan
+      // NJ/KY imagery is many small COGs (~1.5 km) vs a ~12 km S1M DEM tile, so at
+      // low zoom one tile would need dozens of COGs to drape -- slow and gap-prone.
+      // Defer the imagery drape for small-COG collections until this zoom; below it
+      // the terrain renders shaded (with a status hint) instead of a confusing
+      // partial drape, then switches to imagery once the user is zoomed in enough.
+      const S1M_SMALL_COG_DRAPE_MIN_ZOOM = 13;
+      // Single source of truth for "should imagery be draped on the terrain right
+      // now": the surface control must be "imagery", and small-COG collections also
+      // require zoom >= the threshold. Used at every drape-decision point.
+      function drapeImageryActive() {
+        if (document.getElementById("ter-surface")?.value !== "imagery") return false;
+        if (isSmallCogCollection() && (map.getZoom() || 0) < S1M_SMALL_COG_DRAPE_MIN_ZOOM) return false;
+        return true;
+      }
       const S1M_DRAPE_SOURCE_CACHE_MAX = 192; // one small /search result per rendered S1M bbox
       const s1mTerrainPending = new Map();  // tile key -> {seq, dataset, size, startedAt}
       const s1mTerrainFailures = new Map(); // tile key -> {seq, dataset, size, message, at}
@@ -2752,7 +2766,7 @@
       }
 
       async function ensureS1MDrapeSources(bbox, seq, schedulePaint) {
-        if (document.getElementById("ter-surface")?.value !== "imagery") return getTerrainDrapeSources();
+        if (!drapeImageryActive()) return getTerrainDrapeSources();
         const body = s1mDrapeSearchBody(bbox);
         const key = s1mDrapeSearchKey(body);
         if (s1mDrapeSourceKey === key) {
@@ -2833,7 +2847,7 @@
       }
 
       function s1mDrapeSourcesForBbox(bbox, seq, schedulePaint) {
-        if (document.getElementById("ter-surface")?.value !== "imagery") return getTerrainDrapeSources();
+        if (!drapeImageryActive()) return getTerrainDrapeSources();
         if (!Array.isArray(bbox)) return [];
         const body = s1mDrapeSearchBody(bbox);
         const key = s1mDrapeSearchKey(body);
@@ -3486,7 +3500,7 @@
       function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, seq) {
         const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
         const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
-        const wantsDrape = document.getElementById("ter-surface")?.value === "imagery";
+        const wantsDrape = drapeImageryActive();
         if (!(gpu && !wireframe && wantsDrape) || !cache.elevations) {
           return [s1mBuildTileLayer(cache, exag, range)];
         }
@@ -3577,7 +3591,7 @@
       function s1mTileLayersFromCache(cache, exag, range) {
         const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
         const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
-        const wantsDrape = document.getElementById("ter-surface")?.value === "imagery";
+        const wantsDrape = drapeImageryActive();
         if (gpu && !wireframe && wantsDrape && cache.subtiles?.size) {
           return [...cache.subtiles.values()].map((s) => buildS1MSubTileLayerGPU(cache.data, s, exag, range));
         }
@@ -3845,7 +3859,7 @@
       function s1mBuildTileLayer(cache, exag, range) {
         const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
         const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
-        const wantsDrape = document.getElementById("ter-surface")?.value === "imagery";
+        const wantsDrape = drapeImageryActive();
         const draped = gpu && !wireframe && !!cache.drapeImage && wantsDrape;
         // deck.gl's wireframe path can render a separate line model from the
         // source mesh. For GPU displacement that source mesh is intentionally
@@ -3992,11 +4006,16 @@
           const sizeText = sizes.length <= 1 ? `${sizes[0] ?? "-"}` : `${sizes[0]}-${sizes[sizes.length - 1]}`;
           const canRenderDrape = !!document.getElementById("ter-gpu")?.checked &&
             document.getElementById("ter-mode")?.value !== "wireframe" &&
-            document.getElementById("ter-surface")?.value === "imagery";
+            drapeImageryActive();
           const drapeText = canRenderDrape ? ` · ${subTextured}/${subTotal} drape sub-tiles` : "";
           const drapeErrorText = canRenderDrape && s1mDrapeSourceError ? ` · drape search failed` : "";
+          // Imagery is selected but the drape is deferred (small-COG collection,
+          // zoomed out): show shaded terrain and tell the user why + how to fix.
+          const drapeGated = document.getElementById("ter-surface")?.value === "imagery"
+            && isSmallCogCollection() && (map.getZoom() || 0) < S1M_SMALL_COG_DRAPE_MIN_ZOOM;
+          const drapeGateText = drapeGated ? ` · shaded — imagery drapes at z≥${S1M_SMALL_COG_DRAPE_MIN_ZOOM} (zoom in)` : "";
           summaryEl.textContent = desired.size
-            ? `${tilesDrawn}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}`
+            ? `${tilesDrawn}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}${drapeGateText}`
             : "No S1M coverage in view (CONUS only, still expanding).";
           // Re-seat footprints as elevation tiles arrive so bases catch up to the relief.
           if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();
@@ -4821,7 +4840,7 @@
         imageryRevision += 1;
         clearS1MDrapeImages();
         updateImageryLayers();
-        if (s1mActive && document.getElementById("ter-surface")?.value === "imagery") {
+        if (s1mActive && drapeImageryActive()) {
           refreshS1MTerrain();
         }
         currentImagerySignature = nextSignature;
@@ -5300,7 +5319,7 @@
           clearS1MDrapeImages();
           map.triggerRepaint();
           deckOverlay?._deck?.redraw("display adjustments");
-          if (s1mActive && document.getElementById("ter-surface")?.value === "imagery") {
+          if (s1mActive && drapeImageryActive()) {
             refreshS1MTerrain();
           }
         });
