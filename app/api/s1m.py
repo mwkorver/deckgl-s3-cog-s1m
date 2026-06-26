@@ -6,13 +6,14 @@ bucket s3://prd-tnm/StagedProducts/Elevation/S1M/. The whole-collection tile
 index is published as a compact Parquet file whose polygon footprints carry the
 relative COG path per tile in the `dataset` column.
 
-This module is the read path for *terrain meshing* (not imagery): it resolves
-which DEM tile covers a point, then reads a downsampled elevation grid the viewer
-turns into a 3D mesh. The bucket is public (anonymous S3), so reads need no creds
--- distinct from the requester-pays NAIP path in app.py.
+This module is the terrain *tile discovery* path (not imagery): it resolves which
+DEM tiles cover a viewport (`cover_tiles`) or a point (`cover_dataset`), returning
+each tile's COG href + lon/lat footprint. The viewer reads the elevation grid from
+the COG directly in the browser and builds the 3D mesh client-side. The bucket is
+public (anonymous S3), so reads need no creds -- distinct from the requester-pays
+NAIP path in app.py.
 """
 
-import base64
 import os
 import threading
 
@@ -23,7 +24,6 @@ S1M_INDEX_URL = os.environ.get(
     "/cache/s1m/S1M_Products.parquet",
 )
 S1M_EPSG = 6350  # NAD83(2011) Conus Albers
-NODATA = -999999.0
 
 _lock = threading.Lock()
 _reader = None
@@ -148,63 +148,3 @@ def cover_tiles(west: float, south: float, east: float, north: float,
         if max_tiles is not None and len(tiles) >= int(max_tiles):
             break
     return tiles
-
-
-def read_terrain(dataset_s3: str, size: int = 256) -> dict:
-    """Read a downsampled `size`x`size` elevation grid for the whole DEM tile.
-
-    Returns the grid (base64 float32, row-major, NW-origin), the ground step in
-    Albers metres per grid cell, the tile centre in lon/lat (the mesh anchor),
-    and the valid elevation range. The viewer builds a METER_OFFSETS mesh from
-    this: ENU x/y = (col - (W-1)/2)*dx, ((H-1)/2 - row)*|dy|, z = elevation.
-    """
-    import numpy as np
-    import rasterio
-    from rasterio.enums import Resampling
-    from rasterio.env import Env
-    from pyproj import Geod, Transformer
-
-    vsi = "/vsis3/" + dataset_s3[len("s3://"):]
-    with Env(AWS_NO_SIGN_REQUEST="YES", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
-        with rasterio.open(vsi) as ds:
-            arr = ds.read(1, out_shape=(size, size), resampling=Resampling.bilinear).astype("float32")
-            # Vertex grid step: make the mesh span the full tile extent. Using
-            # span / size treats samples like cell centers and shrinks every
-            # tile by one cell, which leaves visible gaps between adjacent DEMs.
-            dx = (ds.width * ds.transform.a) / max(size - 1, 1)   # +east, metres
-            dy = (ds.height * ds.transform.e) / max(size - 1, 1)  # -north (e<0), metres
-            # Tile centre in Albers -> lon/lat anchor.
-            cx = ds.transform.c + (ds.width / 2) * ds.transform.a
-            cy = ds.transform.f + (ds.height / 2) * ds.transform.e
-            nd = ds.nodata if ds.nodata is not None else NODATA
-
-    arr[arr == nd] = np.nan
-    valid = arr[np.isfinite(arr)]
-    to_4326 = Transformer.from_crs(S1M_EPSG, 4326, always_xy=True)
-    clon, clat = to_4326.transform(cx, cy)
-
-    # Albers is equal-area, so its linear scale is anisotropic (one axis stretched,
-    # the other compressed, product ~1). The mesh is laid out in Albers metres but
-    # rendered as true ground metres (METER_OFFSETS), so without correction tiles
-    # fall short on one axis and overlap on the other -> seams. Convert the Albers
-    # cell step to true ground metres per axis by measuring the geodesic distance of
-    # a 1 km Albers step in east and north, so adjacent tiles abut exactly.
-    geod = Geod(ellps="GRS80")  # NAD83(2011) ellipsoid
-    D = 1000.0
-    lon_e, lat_e = to_4326.transform(cx + D, cy)
-    lon_n, lat_n = to_4326.transform(cx, cy + D)
-    scale_east = geod.inv(clon, clat, lon_e, lat_e)[2] / D
-    scale_north = geod.inv(clon, clat, lon_n, lat_n)[2] / D
-
-    # Serialize as float32 with NaN -> sentinel so the viewer can mask voids.
-    out = np.where(np.isfinite(arr), arr, NODATA).astype("<f4")
-    return {
-        "width": size,
-        "height": size,
-        "step": [abs(dx) * scale_east, abs(dy) * scale_north],  # true ground metres/cell (east, north)
-        "center_lnglat": [clon, clat],
-        "nodata": NODATA,
-        "z_range": [float(valid.min()), float(valid.max())] if valid.size else [0.0, 0.0],
-        "epsg": S1M_EPSG,
-        "elev_b64": base64.b64encode(out.tobytes()).decode("ascii"),
-    }
