@@ -71,7 +71,7 @@ Foundation-created buckets receive an `Application=deckgl-s3-cog-s1m` tag
 automatically.
 
 The seed copy is implemented as a CloudFormation custom resource. On create or
-update it copies `lake/` and `collections.geojson` from
+update it copies `lake/`, `collections.geojson`, and `anchors.geojson` from
 `deckgl-s3-cog-s1m-seed-us-west2` into the deployer's bucket. On delete it leaves
 the copied objects in place because the bucket is retained. Cross-account
 deployments require the seed bucket policy to allow the target account's

@@ -54,7 +54,7 @@ unsigned S3 clients, so they do not need identity-policy grants.
 
 ## Seed data
 
-The foundation stack copies `lake/` and `collections.geojson` from
+The foundation stack copies `lake/`, `collections.geojson`, and `anchors.geojson` from
 `deckgl-s3-cog-s1m-seed-us-west2` into the deployer's bucket
 `deckgl-s3-cog-s1m-<account>-us-west2`.
 

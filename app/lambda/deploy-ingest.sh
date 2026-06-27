@@ -40,6 +40,16 @@ sam build --template-file ingest-template.yaml
 
 echo
 echo "==> Deploy ingest stack ($STACK)"
+PARAMETER_OVERRIDES=()
+if [[ -n "${S3_COG_INGEST_TOKEN:-}" ]]; then
+  PARAMETER_OVERRIDES+=("IngestToken=$S3_COG_INGEST_TOKEN")
+else
+  echo "WARN: S3_COG_INGEST_TOKEN is not set; public ingest writes will fail closed with 503." >&2
+fi
+DEPLOY_ARGS=()
+if [[ ${#PARAMETER_OVERRIDES[@]} -gt 0 ]]; then
+  DEPLOY_ARGS+=(--parameter-overrides "${PARAMETER_OVERRIDES[@]}")
+fi
 sam deploy \
   --template-file .aws-sam/build/template.yaml \
   --stack-name "$STACK" \
@@ -47,6 +57,7 @@ sam deploy \
   --capabilities CAPABILITY_IAM \
   --resolve-s3 \
   --resolve-image-repos \
+  "${DEPLOY_ARGS[@]}" \
   --confirm-changeset
 
 INGEST_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" \

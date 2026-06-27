@@ -64,7 +64,19 @@ fi
 
 # 1. Viewer files + generated API base config.
 cp -R "$VIEWER_DIR/." "$STAGE/"
-printf 'window.S3_COG_API_BASE = "%s";\n' "$API_BASE" > "$STAGE/config.js"
+find "$STAGE" -name ".DS_Store" -type f -delete
+find "$STAGE" -name "__pycache__" -type d -prune -exec rm -rf {} +
+find "$STAGE" -name "*.pyc" -type f -delete
+python3 - "$STAGE/config.js" "$API_BASE" "${S3_COG_INGEST_TOKEN:-}" <<'PY'
+import json
+import sys
+
+path, api_base, ingest_token = sys.argv[1:4]
+with open(path, "w", encoding="utf-8") as f:
+    f.write(f"window.S3_COG_API_BASE = {json.dumps(api_base)};\n")
+    if ingest_token:
+        f.write(f"window.S3_COG_INGEST_TOKEN = {json.dumps(ingest_token)};\n")
+PY
 
 # 2. Built JS packages -> /local-modules/<name>/ (matches the importmap paths).
 mkdir -p "$STAGE/local-modules"
@@ -100,4 +112,4 @@ echo
 echo "Published viewer -> $VIEWER_URL"
 echo "  API base       : $API_BASE"
 echo "  bucket         : s3://$BUCKET"
-[ -n "$TILE_BASE" ] && echo "  tile base      : $TILE_BASE"
+[ -n "${TILE_BASE:-}" ] && echo "  tile base      : $TILE_BASE"

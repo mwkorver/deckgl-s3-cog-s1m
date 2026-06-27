@@ -11,6 +11,16 @@ Rules:
       - Assert: !Equals [!Ref "AWS::Region", "us-west-2"]
         AssertDescription: "deckgl-s3-cog-s1m-ingest must be deployed in us-west-2 (data residency)."
 
+Parameters:
+  IngestToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >
+      Shared token required by POST /ingest/run-sync. Set from
+      S3_COG_INGEST_TOKEN during deploy. Empty leaves the Lambda endpoint
+      fail-closed with 503.
+
 Resources:
   # The legacy combined stack used the physical name deckgl-s3-cog-s1m-ingest. Use a new
   # physical name so this stack can be deployed before the read stack removes
@@ -32,6 +42,7 @@ Resources:
           S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
           S3_COG_REQUEST_PAYER: requester
           S3_COG_SIGN_ASSET_URLS: "1"
+          S3_COG_INGEST_TOKEN: !Ref IngestToken
           # Extensions are baked into the image by Dockerfile.ingest.
           DUCKDB_EXT_DIR: /opt/duckdb_extensions
       Policies:

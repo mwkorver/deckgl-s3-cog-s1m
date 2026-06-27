@@ -13,7 +13,8 @@
           "s3:prefix": [
             "lake/",
             "lake/*",
-            "collections.geojson"
+            "collections.geojson",
+            "anchors.geojson"
           ]
         },
         "Bool": {
@@ -28,7 +29,8 @@
       "Action": "s3:GetObject",
       "Resource": [
         "arn:aws:s3:::deckgl-s3-cog-s1m-seed-us-west2/lake/*",
-        "arn:aws:s3:::deckgl-s3-cog-s1m-seed-us-west2/collections.geojson"
+        "arn:aws:s3:::deckgl-s3-cog-s1m-seed-us-west2/collections.geojson",
+        "arn:aws:s3:::deckgl-s3-cog-s1m-seed-us-west2/anchors.geojson"
       ],
       "Condition": {
         "StringLike": {

@@ -76,6 +76,19 @@ enforce deployment in `us-west-2`.
 The viewer contract is unchanged: it calls the read API's `/environment`
 endpoint, which returns the configured ingest URL.
 
+The ingest Lambda requires a shared token for write endpoints. Set it when
+deploying the ingest stack:
+
+```bash
+export S3_COG_INGEST_TOKEN="$(openssl rand -base64 32)"
+./deploy.sh --ingest-only
+```
+
+Callers must send that value as `x-ingest-token` or `Authorization: Bearer ...`.
+For a private demo viewer, keeping `S3_COG_INGEST_TOKEN` set while running
+`deploy-viewer.sh` also writes `window.S3_COG_INGEST_TOKEN` into `config.js` so
+the browser ingest panel sends the token. Do not do this for a public viewer.
+
 > The shared, author-published catalog (`s3://naip-stac-catalog/manifest-index`,
 > read-only) is consumed cross-account; deployers never write to it.
 

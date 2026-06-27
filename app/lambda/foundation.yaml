@@ -44,7 +44,7 @@ Parameters:
     Description: Bucket containing reusable demo seed data copied into each deployer's bucket.
   SeedKeys:
     Type: String
-    Default: lake/,collections.geojson
+    Default: lake/,collections.geojson,anchors.geojson
     Description: Comma-separated source prefixes or object keys to copy from SeedBucketName.
 
 Resources:
@@ -186,7 +186,7 @@ Resources:
           def copy_prefix(source_bucket, target_bucket, prefix):
               copied = 0
               paginator = s3.get_paginator("list_objects_v2")
-              for page in paginator.paginate(Bucket=source_bucket, Prefix=prefix):
+              for page in paginator.paginate(Bucket=source_bucket, Prefix=prefix, RequestPayer="requester"):
                   for obj in page.get("Contents", []):
                       key = obj["Key"]
                       if key.endswith("/"):
@@ -195,6 +195,7 @@ Resources:
                           Bucket=target_bucket,
                           Key=key,
                           CopySource={"Bucket": source_bucket, "Key": key},
+                          RequestPayer="requester",
                       )
                       copied += 1
               return copied
@@ -204,6 +205,7 @@ Resources:
                   Bucket=target_bucket,
                   Key=key,
                   CopySource={"Bucket": source_bucket, "Key": key},
+                  RequestPayer="requester",
               )
               return 1
 
