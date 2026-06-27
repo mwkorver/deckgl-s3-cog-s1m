@@ -1,11 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  DeckGL S3 COG S1M read API on Lambda. Runs api/app.py (handler = Mangum(app)) as a
-  small zip package, with the self-built DuckDB layer mounted at /opt so the
-  baked spatial/httpfs extensions LOAD by path. Exposed via a Lambda Function
-  URL (no API Gateway). The container-image ingest Lambda is deployed by
-  ingest-template.yaml and passed in as IngestUrl.
+  DeckGL S3 COG S1M read API on Lambda. Runs api/app.py (handler = Mangum(app))
+  as an arm64 container image with DuckDB spatial/httpfs/aws extensions baked
+  into the image. Exposed via a Lambda Function URL (no API Gateway). The
+  separate ingest Lambda is deployed by ingest-template.yaml and passed in as
+  IngestUrl.
 
 Parameters:
   BudgetAlertEmail:
@@ -58,29 +58,13 @@ Globals:
     MemorySize: 2048
 
 Resources:
-  DuckDbLayer:
-    Type: AWS::Serverless::LayerVersion
-    Properties:
-      LayerName: deckgl-s3-cog-s1m-duckdb
-      # Directory whose contents (python/, duckdb_extensions/) are mounted at
-      # /opt. Build it first: `ARCH=arm64 ./build-layer.sh`.
-      ContentUri: build/layer
-      CompatibleArchitectures:
-        - arm64
-      CompatibleRuntimes:
-        - python3.12
-
   DeckglS3CogS1mReadFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: deckgl-s3-cog-s1m-read
-      CodeUri: ../
-      Handler: app.handler
-      Runtime: python3.12
+      PackageType: Image
       Architectures:
         - arm64
-      Layers:
-        - !Ref DuckDbLayer
       Environment:
         Variables:
           # s3:// prefix flips on the httpfs + credential_chain + requester-pays
@@ -102,13 +86,13 @@ Resources:
           # so a 1h promise is partly false here. 15min matches the presign
           # cache horizon (min(EXPIRES-60, 900)) and the practical cred life.
           S3_COG_PRESIGN_EXPIRES: "900"
-          # Read-only zip deploy: the trimmed package omits pyarrow/pyproj/pillow,
-          # so /ingest/* returns 501 instead of ImportError. Ingest runs on the
+          # Read-only deploy: /ingest/* returns 501 here. Ingest runs on the
           # dedicated container function instead.
           S3_COG_INGEST_MODE: disabled
           # Point the viewer at the separately deployed container ingest
           # function. /environment surfaces this so the ingest panel POSTs there.
           S3_COG_INGEST_URL: !Ref IngestUrl
+          DUCKDB_EXT_DIR: /opt/duckdb_extensions
       Policies:
         # App output (lake/ footprints) lives in THIS
         # deployer's viewer bucket. /search only reads it -> read-only, scoped to
@@ -173,11 +157,10 @@ Resources:
             - x-search-total-ms
             - x-search-presign-cache-hits
             - x-search-presign-cache-misses
-    # Custom build (Makefile in CodeUri): install only the trimmed read deps so
-    # the package + DuckDB layer fit under Lambda's 250M unzipped limit. A plain
-    # PythonPipBuilder build off api/requirements.txt overflows (pyarrow et al).
     Metadata:
-      BuildMethod: makefile
+      Dockerfile: Dockerfile.read
+      DockerContext: ../api
+      DockerTag: read-arm64
 
   # NOTE: there is no separate lake bucket. The app's PRIVATE output (lake/
   # footprints) lives under prefixes in the per-account

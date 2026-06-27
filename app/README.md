@@ -47,7 +47,7 @@ The AWS deployment has three independently managed stacks:
    COGs directly via their own CORS.)_
 2. `deckgl-s3-cog-s1m-ingest`: container-image ingest Lambda; deployed when ingest code
    or dependencies change.
-3. `deckgl-s3-cog-s1m-read`: zip-based read Lambda and DuckDB layer; deployed frequently.
+3. `deckgl-s3-cog-s1m-read`: container-image read Lambda; deployed frequently.
 
 Run deployments from the `lambda/` directory:
 

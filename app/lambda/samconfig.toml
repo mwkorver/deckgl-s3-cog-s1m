@@ -15,8 +15,8 @@ region = "us-west-2"
 capabilities = "CAPABILITY_IAM"
 # Let SAM create/manage the deployment artifact bucket automatically.
 resolve_s3 = true
-# deploy-ingest.sh supplies --resolve-image-repos for the independent container
-# stack. The default SAM configuration remains the zip-based read stack.
+# deploy-read.sh and deploy-ingest.sh supply --resolve-image-repos for their
+# Lambda image stacks.
 confirm_changeset = true
 fail_on_empty_changeset = false
 

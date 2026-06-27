@@ -58,6 +58,7 @@ sam deploy \
   --resolve-s3 \
   --resolve-image-repos \
   "${DEPLOY_ARGS[@]}" \
+  --no-fail-on-empty-changeset \
   --confirm-changeset
 
 INGEST_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" \

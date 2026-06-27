@@ -112,4 +112,6 @@ echo
 echo "Published viewer -> $VIEWER_URL"
 echo "  API base       : $API_BASE"
 echo "  bucket         : s3://$BUCKET"
-[ -n "${TILE_BASE:-}" ] && echo "  tile base      : $TILE_BASE"
+if [ -n "${TILE_BASE:-}" ]; then
+  echo "  tile base      : $TILE_BASE"
+fi

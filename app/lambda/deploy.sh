@@ -21,7 +21,6 @@ By default: deploy ingest -> read -> publish viewer.
 Options:
   --read-only       Deploy only the read stack and viewer
   --ingest-only     Deploy only the ingest stack
-  --rebuild-layer   Force the read stack's DuckDB layer rebuild
   --no-viewer       Skip publishing the viewer after the read deploy
   --help            Print this message
 
@@ -34,7 +33,7 @@ for arg in "$@"; do
   case "$arg" in
     --read-only) DEPLOY_INGEST=false ;;
     --ingest-only) DEPLOY_READ=false ;;
-    --rebuild-layer|--no-viewer) READ_ARGS+=("$arg") ;;
+    --no-viewer) READ_ARGS+=("$arg") ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown option: $arg" >&2; usage >&2; exit 1 ;;
   esac
@@ -46,7 +45,7 @@ if [[ "$DEPLOY_READ" == false && "$DEPLOY_INGEST" == false ]]; then
 fi
 
 if [[ "$DEPLOY_READ" == false && ${#READ_ARGS[@]} -gt 0 ]]; then
-  echo "ERROR: --rebuild-layer and --no-viewer apply only to read deployments" >&2
+  echo "ERROR: --no-viewer applies only to read deployments" >&2
   exit 1
 fi
 

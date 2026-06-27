@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Build and deploy only the zip-based read stack, then optionally publish the
-# static viewer. The ingest Function URL is read from the independent ingest
-# stack and passed as a CloudFormation parameter.
+# Build and deploy the read stack, then optionally publish the static viewer.
+# The ingest Function URL is read from the independent ingest stack and passed
+# as a CloudFormation parameter.
 #
 set -euo pipefail
 
@@ -13,7 +13,6 @@ INGEST_STACK="${INGEST_STACK:-deckgl-s3-cog-s1m-ingest}"
 FOUNDATION_STACK="${FOUNDATION_STACK:-deckgl-s3-cog-s1m-foundation}"
 BUDGET_ALERT_EMAIL="${BUDGET_ALERT_EMAIL:-}"
 MONTHLY_BUDGET_USD="${MONTHLY_BUDGET_USD:-10}"
-REBUILD_LAYER=false
 DEPLOY_VIEWER=true
 
 usage() {
@@ -21,7 +20,6 @@ usage() {
 Usage: deploy-read.sh [OPTIONS]
 
 Options:
-  --rebuild-layer   Force rebuild of the DuckDB Lambda layer
   --no-viewer       Skip publishing the static viewer
   --help            Print this message
 
@@ -33,7 +31,6 @@ EOF
 
 for arg in "$@"; do
   case "$arg" in
-    --rebuild-layer) REBUILD_LAYER=true ;;
     --no-viewer) DEPLOY_VIEWER=false ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown option: $arg" >&2; usage >&2; exit 1 ;;
@@ -72,14 +69,6 @@ INGEST_URL="$(aws cloudformation describe-stacks --stack-name "$INGEST_STACK" \
 [[ -n "$INGEST_URL" && "$INGEST_URL" != "None" ]] || \
   die "IngestUrl output missing from stack '$INGEST_STACK'"
 
-LAYER_PYTHON="$SCRIPT_DIR/build/layer/python"
-if [[ "$REBUILD_LAYER" == true || ! -d "$LAYER_PYTHON" ]]; then
-  echo "==> Build DuckDB Lambda layer"
-  ARCH=arm64 bash "$SCRIPT_DIR/build-layer.sh"
-else
-  echo "==> DuckDB layer present; skipping rebuild"
-fi
-
 echo
 echo "==> Build read stack ($STACK)"
 cd "$SCRIPT_DIR"
@@ -97,8 +86,10 @@ sam deploy \
   --region "$REGION" \
   --capabilities CAPABILITY_IAM \
   --resolve-s3 \
+  --resolve-image-repos \
   --parameter-overrides "$PARAMETER_OVERRIDES" \
-  --confirm-changeset
+  --no-fail-on-empty-changeset \
+  --no-confirm-changeset
 
 if [[ "$DEPLOY_VIEWER" == true ]]; then
   STACK="$STACK" bash "$SCRIPT_DIR/deploy-viewer.sh"

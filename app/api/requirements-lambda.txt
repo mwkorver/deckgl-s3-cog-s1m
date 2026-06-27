@@ -1,21 +1,14 @@
-# Trimmed runtime deps for the read-only zip Lambda (deckgl-s3-cog-read).
+# Trimmed runtime deps for the read-only Lambda image (deckgl-s3-cog-read).
 #
 # WHY a separate file: api/requirements.txt is shared with the Docker dev image
-# and includes the ingest stack (pyarrow 135M, pyproj 33M, pillow 20M) plus
-# awscli/duckdb. That package + the 148M DuckDB layer blows past Lambda's 250M
-# unzipped limit. The read API only needs FastAPI + Mangum at import time:
-#   - boto3/botocore: provided by the python3.12 Lambda runtime (don't bundle).
-#   - duckdb + spatial/httpfs extensions: provided by DeckglS3CogDuckDbLayer at /opt.
-#   - pyarrow/pillow: ingest-only, lazy-imported; S3_COG_INGEST_MODE=disabled
-#     on this function so /ingest/* returns 501 instead of ImportError.
+# and includes ingest-only deps (pyarrow, pillow, awscli). The read Lambda image
+# installs this file plus boto3 and duckdb in Dockerfile.read, with DuckDB
+# spatial/httpfs/aws extensions baked under /opt/duckdb_extensions.
 fastapi==0.116.1
 mangum==0.17.0
 # pyproj + shapely: needed by /s1m/tiles (terrain coverage), served by this read
 # API after the S1M consolidation. cover_tiles() lazy-imports pyproj (Albers<->4326
 # reproject) and shapely (footprint rings) at request time, so both must be
-# bundled or the endpoint 500s. ~45M unzipped combined; with the 148M DuckDB
-# layer the package stays under Lambda's 250M unzipped limit (pyarrow/pillow stay
-# excluded -- adding those back is what would overflow). duckdb still comes from
-# the layer, not bundled here.
+# bundled or the endpoint 500s.
 pyproj==3.7.2
 shapely==2.1.1
