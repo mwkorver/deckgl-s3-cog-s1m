@@ -52,8 +52,19 @@ echo "Stack   : $STACK"
 echo "Bucket  : $BUCKET"
 
 STACK_EXISTS=false
+STACK_STATUS=""
 aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" >/dev/null 2>&1 \
   && STACK_EXISTS=true
+if [ "$STACK_EXISTS" = true ]; then
+  STACK_STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" \
+    --query "Stacks[0].StackStatus" --output text)"
+  case "$STACK_STATUS" in
+    CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) ;;
+    *)
+      die "Foundation stack '$STACK' exists but is not healthy (status=$STACK_STATUS). Delete or repair it before deploying."
+      ;;
+  esac
+fi
 
 if [ "$STACK_EXISTS" = true ] && [ "$UPDATE" = false ]; then
   echo

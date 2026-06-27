@@ -81,7 +81,8 @@
         "lambda:CreateFunctionUrlConfig",
         "lambda:GetFunctionUrlConfig",
         "lambda:UpdateFunctionUrlConfig",
-        "lambda:DeleteFunctionUrlConfig"
+        "lambda:DeleteFunctionUrlConfig",
+        "lambda:InvokeFunction"
       ],
       "Resource": [
         "arn:aws:lambda:us-west-2:__ACCOUNT_ID__:function:deckgl-s3-cog-s1m-seed-copy",
@@ -196,7 +197,10 @@
         "ecr:CompleteLayerUpload",
         "ecr:PutImage"
       ],
-      "Resource": "arn:aws:ecr:us-west-2:__ACCOUNT_ID__:repository/deckgl-s3-cog-s1m-*"
+      "Resource": [
+        "arn:aws:ecr:us-west-2:__ACCOUNT_ID__:repository/deckgl-s3-cog-s1m-*",
+        "arn:aws:ecr:us-west-2:__ACCOUNT_ID__:repository/deckgls3cogs1m*"
+      ]
     },
     {
       "Sid": "SamBootstrapParam",
