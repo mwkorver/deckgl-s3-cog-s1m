@@ -1,4 +1,4 @@
-# Local COG STAC prototype
+# Local DeckGL S3 COG S1M prototype
 
 This directory contains a local object-key-first prototype for:
 
@@ -42,18 +42,18 @@ this matches the AWS Lambda serverless profile we are targeting.
 
 The AWS deployment has three independently managed stacks:
 
-1. `cog-stac-foundation`: retained S3 viewer/output bucket; admin-owned. _(The
+1. `deckgl-s3-cog-s1m-foundation`: retained S3 viewer/output bucket; created once. _(The
    CloudFront CORS/cache tile proxy was removed — the viewer reads public source
    COGs directly via their own CORS.)_
-2. `cog-stac-ingest`: container-image ingest Lambda; deployed when ingest code
+2. `deckgl-s3-cog-s1m-ingest`: container-image ingest Lambda; deployed when ingest code
    or dependencies change.
-3. `cog-stac-read`: zip-based read Lambda and DuckDB layer; deployed frequently.
+3. `deckgl-s3-cog-s1m-read`: zip-based read Lambda and DuckDB layer; deployed frequently.
 
 Run deployments from the `lambda/` directory:
 
 ```bash
 cd app/lambda
-./deploy-foundation.sh       # admin, once
+./deploy-foundation.sh       # once
 ./deploy.sh                  # ingest -> read -> viewer
 ./deploy.sh --read-only      # update read + viewer without rebuilding ingest
 ./deploy.sh --ingest-only    # update only the ingest container
@@ -64,7 +64,7 @@ cd app/lambda
 it prints outputs without changing anything. If a legacy bucket exists outside
 the stack, it refuses to create duplicates. Intentional foundation updates
 require `./deploy-foundation.sh --update`. Foundation resources are tagged
-`Application=deck.gl-s3-cog`. The script and CloudFormation template both
+`Application=deckgl-s3-cog-s1m`. The script and CloudFormation template both
 enforce deployment in `us-west-2`.
 
 **What it does (in order):**
@@ -90,16 +90,17 @@ endpoint, which returns the configured ingest URL.
 
 **IAM (one-time per account):**
 
-Create and assume the narrowly scoped `cog-stac-deploy` role described in
-`lambda/iam/README.md`. Use short-lived SSO credentials rather than static keys.
+Create and assume the scoped demo deploy role `deckgl-s3-cog-s1m-deploy` described
+in `lambda/iam/README.md`. Use short-lived SSO credentials rather than static
+keys.
 
 **Configure `.env`:**
 
 ```bash
 cp .env.example .env
-# Set AWS_PROFILE=cog-stac-deploy
-# Set S3_COG_LAKE_ROOT=s3://cog-stac-viewer-<your-account-id>-us-west-2/lake
-# (the foundation stack creates and retains this bucket)
+# Set AWS_PROFILE=deckgl-s3-cog-s1m-deploy
+# Set S3_COG_LAKE_ROOT=s3://deckgl-s3-cog-s1m-<your-account-id>-us-west2/lake
+# (the foundation stack creates this bucket and seeds lake/ from deckgl-s3-cog-s1m-seed-us-west2)
 ```
 
 **Costs to expect:**
@@ -148,12 +149,12 @@ host-side `pnpm build` is no longer required for self-deploy.
 
 ## AWS credentials
 
-Local development and deployment use the SSO-assumed `cog-stac-deploy` role:
+Local development and deployment use the SSO-assumed `deckgl-s3-cog-s1m-deploy` role:
 
-1. Configure the `cog-stac-deploy` profile as described in
+1. Configure the `deckgl-s3-cog-s1m-deploy` profile as described in
    `lambda/iam/README.md`.
 2. Authenticate the profile through AWS SSO.
-3. Set `AWS_PROFILE=cog-stac-deploy` in `.env`.
+3. Set `AWS_PROFILE=deckgl-s3-cog-s1m-deploy` in `.env`.
 
 Docker Compose mounts `~/.aws` read-only so the container can resolve the
 profile and its temporary session credentials. No IAM user or static access

@@ -126,7 +126,7 @@ def test_sign():
 
 def test_sign_rejects_private_and_unknown_buckets():
     """The public signer must not expose role-readable or arbitrary buckets."""
-    private_href = "s3://deckgl-s3-cog-viewer-495811053987-us-west-2/lake/item.parquet"
+    private_href = "s3://deckgl-s3-cog-s1m-495811053987-us-west2/lake/item.parquet"
     response = client.get(f"/sign?href={private_href}")
     assert response.status_code == 403
 

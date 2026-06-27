@@ -1,0 +1,1 @@
+{"version":3,"file":"linear-rescale.d.ts","sourceRoot":"","sources":["../../src/gpu-modules/linear-rescale.ts"],"names":[],"mappings":"AAEA;;GAEG;AACH,MAAM,MAAM,kBAAkB,GAAG;IAC/B,mDAAmD;IACnD,UAAU,EAAE,MAAM,CAAC;IACnB,mDAAmD;IACnD,UAAU,EAAE,MAAM,CAAC;CACpB,CAAC;AAIF;;;;;;;;;;;;;GAaG;AACH,eAAO,MAAM,aAAa;;;;;;;;;;kCAiBH,OAAO,CAAC,kBAAkB,CAAC;;;;CAMG,CAAC"}

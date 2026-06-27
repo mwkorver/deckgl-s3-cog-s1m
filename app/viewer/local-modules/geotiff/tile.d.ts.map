@@ -1,0 +1,1 @@
+{"version":3,"file":"tile.d.ts","sourceRoot":"","sources":["../src/tile.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,WAAW,EAAE,MAAM,YAAY,CAAC;AAE9C,wDAAwD;AACxD,MAAM,MAAM,IAAI,GAAG;IACjB,kDAAkD;IAClD,CAAC,EAAE,MAAM,CAAC;IACV,+CAA+C;IAC/C,CAAC,EAAE,MAAM,CAAC;IACV,yCAAyC;IACzC,KAAK,EAAE,WAAW,CAAC;CACpB,CAAC"}

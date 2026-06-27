@@ -6,7 +6,7 @@
 # layer -- `sam build` against requirements.txt would pull pyarrow/pyproj/pillow
 # and overflow. Source files are copied in; ingest modules are present but never
 # imported (S3_COG_INGEST_MODE=disabled), so their pyarrow imports never run.
-build-DeckglS3CogReadFunction:
+build-DeckglS3CogS1mReadFunction:
 	python -m pip install -r requirements-lambda.txt -t "$(ARTIFACTS_DIR)"
 	cp app.py "$(ARTIFACTS_DIR)/"
 	cp aws_s3.py "$(ARTIFACTS_DIR)/"

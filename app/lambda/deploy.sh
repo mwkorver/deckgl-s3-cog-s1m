@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Orchestrate the independently deployable ingest and read application stacks.
-# The persistent viewer/output bucket remains in the separate admin-owned
+# The persistent viewer/output bucket remains in the separate
 # foundation stack. (S1M terrain discovery is now served by the read API, so
 # there is no separate S1M stack.)
 #
@@ -26,7 +26,7 @@ Options:
   --help            Print this message
 
 Deployment order:
-  foundation (admin, once) -> ingest -> read -> viewer
+  foundation (once) -> ingest -> read -> viewer
 EOF
 }
 

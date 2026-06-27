@@ -1,0 +1,43 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowDemoSeedCopyRolesToListSeedData",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::deckgl-s3-cog-s1m-seed-us-west2",
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/deckgl-s3-cog-s1m-seed-copy",
+          "s3:prefix": [
+            "lake/",
+            "lake/*",
+            "collections.geojson"
+          ]
+        },
+        "Bool": {
+          "aws:SecureTransport": "true"
+        }
+      }
+    },
+    {
+      "Sid": "AllowDemoSeedCopyRolesToReadSeedData",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::deckgl-s3-cog-s1m-seed-us-west2/lake/*",
+        "arn:aws:s3:::deckgl-s3-cog-s1m-seed-us-west2/collections.geojson"
+      ],
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/deckgl-s3-cog-s1m-seed-copy"
+        },
+        "Bool": {
+          "aws:SecureTransport": "true"
+        }
+      }
+    }
+  ]
+}

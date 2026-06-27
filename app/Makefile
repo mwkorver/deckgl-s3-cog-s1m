@@ -1,6 +1,6 @@
 # SAM custom build for the read-only zip Lambda (BuildMethod: makefile).
 # Runs in the context of the CodeUri directory (app/).
-build-CogStacReadFunction:
+build-DeckglS3CogS1mReadFunction:
 	python3 -m pip install -r api/requirements-lambda.txt -t "$(ARTIFACTS_DIR)"
 	cp api/app.py "$(ARTIFACTS_DIR)/"
 	# duckdb_s3.py is the read path's DuckDB-on-S3 connection helper (httpfs +

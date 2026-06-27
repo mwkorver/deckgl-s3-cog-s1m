@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Deliberate, GUARDED teardown of the cog-stac app.
+# Deliberate, GUARDED teardown of the deckgl-s3-cog-s1m app.
 #
 # The application has independent read and ingest stacks. The per-account bucket
 # is owned by the separate foundation stack and Retained on deletion.
@@ -8,16 +8,16 @@
 # It does NOT touch the shared, author-published `cog-stac-catalog` bucket.
 #
 # Usage:
-#   ./teardown.sh                # admin: delete app stacks + foundation + retained bucket
+#   ./teardown.sh                # delete app stacks + foundation + retained bucket
 #   ./teardown.sh --keep-bucket  # delete only read + ingest stacks
 #   ./teardown.sh --help
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGION="${REGION:-us-west-2}"
-READ_STACK="${READ_STACK:-cog-stac-read}"
-INGEST_STACK="${INGEST_STACK:-cog-stac-ingest}"
-FOUNDATION_STACK="${FOUNDATION_STACK:-cog-stac-foundation}"
+READ_STACK="${READ_STACK:-deckgl-s3-cog-s1m-read}"
+INGEST_STACK="${INGEST_STACK:-deckgl-s3-cog-s1m-ingest}"
+FOUNDATION_STACK="${FOUNDATION_STACK:-deckgl-s3-cog-s1m-foundation}"
 KEEP_BUCKET=false
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -33,7 +33,7 @@ command -v aws >/dev/null 2>&1 || die "aws CLI not found."
 command -v sam >/dev/null 2>&1 || die "SAM CLI not found."
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)" \
   || die "AWS credentials not working."
-BUCKET="cog-stac-viewer-${ACCOUNT}-${REGION}"
+BUCKET="deckgl-s3-cog-s1m-${ACCOUNT}-us-west2"
 
 echo "Account : $ACCOUNT"
 echo "Region  : $REGION"
@@ -77,7 +77,7 @@ if [ "$KEEP_BUCKET" != true ]; then
   aws s3 rm "s3://$BUCKET" --recursive --region "$REGION"
   echo "==> Deleting bucket s3://$BUCKET"
   aws s3api delete-bucket --bucket "$BUCKET" --region "$REGION" || \
-    die "delete-bucket failed (s3:DeleteBucket is bucket-admin -- re-run the rb with admin creds: aws s3 rb s3://$BUCKET --region $REGION)"
+    die "delete-bucket failed; re-run manually if needed: aws s3 rb s3://$BUCKET --region $REGION"
   echo
   echo "Done. Application stacks, foundation, and bucket data removed."
 else

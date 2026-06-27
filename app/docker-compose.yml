@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: app/api/Dockerfile
-    container_name: cog-stac-api
+    container_name: deckgl-s3-cog-s1m-api
     command: uvicorn app:app --host 0.0.0.0 --port 8080 --reload
     environment:
       S3_COG_COLLECTION_ID: ${S3_COG_COLLECTION_ID:-naip}
@@ -26,7 +26,7 @@ services:
       # from S3 and writes the lake to S3, and /search reads that same lake.
       # Override to a local path for fully-offline runs.
       S3_COG_MANIFEST_INDEX: ${S3_COG_MANIFEST_INDEX:-s3://naip-stac-catalog/manifest-index}
-      S3_COG_LAKE_ROOT: ${S3_COG_LAKE_ROOT:-s3://cog-stac-catalog/lake}
+      S3_COG_LAKE_ROOT: ${S3_COG_LAKE_ROOT:-/cache/exports/naip_rgbir_duckdb}
       S3_COG_REPO_ROOT: /repo-root
     ports:
       - "8089:8080"

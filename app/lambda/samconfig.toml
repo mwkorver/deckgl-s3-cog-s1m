@@ -1,7 +1,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "cog-stac-read"
+stack_name = "deckgl-s3-cog-s1m-read"
 
 [default.build.parameters]
 # Build inside a Lambda-like container so native wheels (duckdb, pyproj,

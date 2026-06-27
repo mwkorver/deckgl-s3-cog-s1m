@@ -16,8 +16,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STACK="${STACK:-cog-stac-read}"
-FOUNDATION_STACK="${FOUNDATION_STACK:-cog-stac-foundation}"
+STACK="${STACK:-deckgl-s3-cog-s1m-read}"
+FOUNDATION_STACK="${FOUNDATION_STACK:-deckgl-s3-cog-s1m-foundation}"
 REGION="${REGION:-us-west-2}"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VIEWER_DIR="$SCRIPT_DIR/../viewer"

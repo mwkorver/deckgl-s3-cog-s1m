@@ -1,52 +1,51 @@
 # Foundation stack -- the STATEFUL, privileged prerequisites that must exist
-# BEFORE the per-account SAM app stack (cog-stac-read) is ever deployed:
+# BEFORE the per-account SAM app stack (deckgl-s3-cog-s1m-read) is ever deployed:
 #
-#   1. the viewer S3 bucket  (cog-stac-viewer-<acct>-<region>)  -- public static
+#   1. the viewer S3 bucket  (deckgl-s3-cog-s1m-<acct>-us-west2)  -- public static
 #      viewer + the app's PRIVATE output (lake/ footprints).
-#   2. the CloudFront CORS + cache proxy in front of the PUBLIC source COG buckets
-#      (KyFromAbove, New Jersey) -- adds CORS for browser range-reads and edge-
-#      caches tiles. (NAIP is requester-pays and stays on the presigned path.)
-#
-# WHY a separate stack (admin, one-time):
-#   * Blast radius. Creating a bucket and a CloudFront distribution are rare,
-#     privileged, stateful operations. Keeping them OUT of the frequently-run
-#     `sam deploy` lets the day-to-day deploy role stay narrowly scoped (no
-#     s3:CreateBucket / cloudfront:CreateDistribution) -- it only deploys app
-#     CODE and invalidates the tile cache.
+# WHY a separate stack (one-time):
+#   * Data boundary. The viewer/output bucket is stateful and must outlive
+#     frequent read/ingest Lambda deploys.
 #   * Data safety. `sam delete` (pause/teardown) removes the Lambdas but NEVER
 #     this bucket or the data in it; the bucket is Retain'd here, and the app
 #     stack only REFERENCES it by (deterministic) name.
 #
-# DEPLOY (admin, once):
+# DEPLOY (once):
 #   ./deploy-foundation.sh        # wraps the cloudformation deploy below
 #   # or directly:
-#   aws cloudformation deploy --stack-name cog-stac-foundation \
+#   aws cloudformation deploy --stack-name deckgl-s3-cog-s1m-foundation \
 #     --template-file app/lambda/foundation.yaml --region us-west-2
 #
-#   # read the outputs the viewer publish + invalidation need:
-#   aws cloudformation describe-stacks --stack-name cog-stac-foundation \
+#   # read the outputs the viewer publish needs:
+#   aws cloudformation describe-stacks --stack-name deckgl-s3-cog-s1m-foundation \
 #     --region us-west-2 --query "Stacks[0].Outputs"
 #
-#   # NOTE: this stack CREATES the bucket and distribution. If either already
-#   # exists out of band, deploy-foundation.sh refuses to create duplicates.
+#   # NOTE: this stack CREATES the bucket. If it already exists out of band,
+#   # deploy-foundation.sh refuses to create duplicates.
 #   # Import or migrate those resources deliberately; do not delete them as a
 #   # routine deployment step.
-#
-# ADD A PUBLIC BUCKET to the proxy: copy one Origin + one CacheBehavior below,
-# changing the bucket name -- that's the only change (the strip function is
-# generic).
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  cog-stac foundation: the Retain'd viewer / app-output S3 bucket.
-  Admin-owned, deployed once before the SAM app stack. (The former CloudFront
-  CORS/cache proxy for public source COGs was removed -- the viewer now reads
-  public buckets directly via their own CORS.)
+  deckgl-s3-cog-s1m foundation: the Retain'd viewer / app-output S3 bucket.
+  Deployed once before the SAM app stack. (The former CloudFront CORS/cache
+  proxy for public source COGs was removed -- the viewer now reads public
+  buckets directly via their own CORS.)
 
 Rules:
   RegionLock:
     Assertions:
       - Assert: !Equals [!Ref "AWS::Region", "us-west-2"]
-        AssertDescription: "cog-stac-foundation must be deployed in us-west-2."
+        AssertDescription: "deckgl-s3-cog-s1m-foundation must be deployed in us-west-2."
+
+Parameters:
+  SeedBucketName:
+    Type: String
+    Default: deckgl-s3-cog-s1m-seed-us-west2
+    Description: Bucket containing reusable demo seed data copied into each deployer's bucket.
+  SeedKeys:
+    Type: String
+    Default: lake/,collections.geojson
+    Description: Comma-separated source prefixes or object keys to copy from SeedBucketName.
 
 Resources:
 
@@ -59,7 +58,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub "cog-stac-viewer-${AWS::AccountId}-${AWS::Region}"
+      BucketName: !Sub "deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2"
       # Static-website hosting; SPA fallback to index.html.
       WebsiteConfiguration:
         IndexDocument: index.html
@@ -78,7 +77,7 @@ Resources:
         RestrictPublicBuckets: false
       Tags:
         - Key: Application
-          Value: deck.gl-s3-cog
+          Value: deckgl-s3-cog-s1m
 
   # Public-read the viewer files, but DENY public reads of the app's PRIVATE
   # output (lake/). Anonymous requests carry no aws:PrincipalAccount,
@@ -106,14 +105,141 @@ Resources:
               StringNotEquals:
                 aws:PrincipalAccount: !Ref "AWS::AccountId"
 
+  SeedCopyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: deckgl-s3-cog-s1m-seed-copy
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: seed-copy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${SeedBucketName}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${SeedBucketName}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${ViewerBucket}"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${ViewerBucket}/*"
+
+  SeedCopyFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: deckgl-s3-cog-s1m-seed-copy
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 900
+      MemorySize: 256
+      Role: !GetAtt SeedCopyRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import urllib.request
+          import boto3
+
+          s3 = boto3.client("s3")
+
+          def respond(event, context, status, data=None, reason=None):
+              body = {
+                  "Status": status,
+                  "Reason": reason or f"See CloudWatch Logs: {context.log_stream_name}",
+                  "PhysicalResourceId": event.get("PhysicalResourceId") or "seed-copy",
+                  "StackId": event["StackId"],
+                  "RequestId": event["RequestId"],
+                  "LogicalResourceId": event["LogicalResourceId"],
+                  "Data": data or {},
+              }
+              body_bytes = json.dumps(body).encode("utf-8")
+              req = urllib.request.Request(
+                  event["ResponseURL"],
+                  data=body_bytes,
+                  method="PUT",
+                  headers={"content-type": "", "content-length": str(len(body_bytes))},
+              )
+              urllib.request.urlopen(req, timeout=30).read()
+
+          def copy_prefix(source_bucket, target_bucket, prefix):
+              copied = 0
+              paginator = s3.get_paginator("list_objects_v2")
+              for page in paginator.paginate(Bucket=source_bucket, Prefix=prefix):
+                  for obj in page.get("Contents", []):
+                      key = obj["Key"]
+                      if key.endswith("/"):
+                          continue
+                      s3.copy_object(
+                          Bucket=target_bucket,
+                          Key=key,
+                          CopySource={"Bucket": source_bucket, "Key": key},
+                      )
+                      copied += 1
+              return copied
+
+          def copy_key(source_bucket, target_bucket, key):
+              s3.copy_object(
+                  Bucket=target_bucket,
+                  Key=key,
+                  CopySource={"Bucket": source_bucket, "Key": key},
+              )
+              return 1
+
+          def handler(event, context):
+              try:
+                  props = event["ResourceProperties"]
+                  source = props["SeedBucketName"]
+                  target = props["TargetBucketName"]
+                  keys = [k.strip() for k in props["SeedKeys"].split(",") if k.strip()]
+                  if event["RequestType"] == "Delete":
+                      respond(event, context, "SUCCESS", {"Copied": 0, "SkippedDelete": True})
+                      return
+                  copied = 0
+                  for key in keys:
+                      copied += copy_prefix(source, target, key) if key.endswith("/") else copy_key(source, target, key)
+                  respond(event, context, "SUCCESS", {"Copied": copied})
+              except Exception as exc:
+                  print(f"seed copy failed: {exc}")
+                  respond(event, context, "FAILED", reason=str(exc))
+
+  SeedDataCopy:
+    Type: Custom::SeedDataCopy
+    Properties:
+      ServiceToken: !GetAtt SeedCopyFunction.Arn
+      SeedBucketName: !Ref SeedBucketName
+      SeedKeys: !Ref SeedKeys
+      TargetBucketName: !Ref ViewerBucket
+
 Outputs:
   ViewerBucketName:
     Description: The viewer / app-output S3 bucket (deploy-viewer.sh target).
     Value: !Ref ViewerBucket
     Export:
-      Name: cog-stac-foundation-ViewerBucketName
+      Name: deckgl-s3-cog-s1m-foundation-ViewerBucketName
   ViewerUrl:
     Description: Static viewer website endpoint (HTTP). Run deploy-viewer.sh to publish.
     Value: !Sub "http://${ViewerBucket}.s3-website-${AWS::Region}.amazonaws.com"
     Export:
-      Name: cog-stac-foundation-ViewerUrl
+      Name: deckgl-s3-cog-s1m-foundation-ViewerUrl

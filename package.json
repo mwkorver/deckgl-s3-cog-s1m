@@ -1,5 +1,5 @@
 {
-  "name": "deck.gl-s3-cog",
+  "name": "deckgl-s3-cog-s1m",
   "private": true,
   "version": "0.7.0",
   "description": "S3-backed client-side Cloud-Optimized GeoTIFF (COG) rendering with serverless spatial data lake indexing",

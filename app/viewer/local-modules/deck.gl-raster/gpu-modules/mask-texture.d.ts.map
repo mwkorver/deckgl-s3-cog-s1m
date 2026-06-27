@@ -1,0 +1,1 @@
+{"version":3,"file":"mask-texture.d.ts","sourceRoot":"","sources":["../../src/gpu-modules/mask-texture.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,OAAO,EAAE,MAAM,eAAe,CAAC;AAG7C,uDAAuD;AACvD,MAAM,MAAM,gBAAgB,GAAG;IAC7B,sEAAsE;IACtE,WAAW,EAAE,OAAO,CAAC;CACtB,CAAC;AAEF;;;;;;;GAOG;AACH,eAAO,MAAM,WAAW;;;;;;kCAWD,OAAO,CAAC,gBAAgB,CAAC;;;CAKG,CAAC"}

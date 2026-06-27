@@ -1,155 +1,70 @@
-# IAM scoping plan — one deploy policy, provisioning separated out
+# IAM strategy
 
-> **IMPLEMENTED (2026-06) — see `app/lambda/iam/README.md` for the live runbook.**
-> The chosen design is a pragmatic variant of the proposal below:
-> - **Foundation stack** `cog-stac-foundation` (`app/lambda/foundation.yaml`) now
->   owns the **viewer bucket** (admin, one-time). It absorbed
->   `bootstrap-app-bucket.sh` (removed). _(The former CloudFront CORS/cache tile
->   proxy was later removed entirely — the viewer reads the public source COG
->   buckets directly via their own CORS — so there is no longer a distribution,
->   tile base, or cache invalidation anywhere in this stack.)_
-> - **Deploy identity** is an **SSO-assumed role `cog-stac-deploy`** (no static
->   keys; `app/.env` now uses `AWS_PROFILE`). Its policy
->   (`iam/cog-stac-deploy.json`) dropped all bucket-admin actions; it needs **no
->   CloudFront permissions** (the proxy is gone).
-> - **Exec roles stay SAM-created** (kept `iam:CreateRole`/`PassRole` +
->   `CAPABILITY_IAM`) — only the *stateful* bucket+CDN moved to foundation, not
->   the roles. (The fuller "roles in foundation / drop CAPABILITY_IAM" idea below
->   remains deferred.)
-> - **Application deployment is split** into `cog-stac-ingest` (container) and
->   `cog-stac-read` (zip). The read deploy consumes the ingest stack's
->   `IngestUrl` output as a parameter; no SSM parameter is used.
->
-> The original design note follows, for context.
+This is a demo application, so the AWS deployment path intentionally stays
+simple: one scoped human/CLI deploy role, plus SAM-managed Lambda runtime roles.
 
-## Goal
+## Resource prefix
 
-Use one scoped, git-managed policy on the SSO-assumed `cog-stac-deploy` role.
-Keep that policy small and safe by provisioning privileged, stateful resources
-independently through the admin-owned foundation stack.
+All app-owned AWS resources use the `deckgl-s3-cog-s1m-*` prefix:
 
-## Principle: separate *provisioning* from *deployment*
+- `deckgl-s3-cog-s1m-foundation`
+- `deckgl-s3-cog-s1m-read`
+- `deckgl-s3-cog-s1m-ingest`
+- `deckgl-s3-cog-s1m-<account>-us-west2`
+- `deckgl-s3-cog-s1m-read-*` / `deckgl-s3-cog-s1m-ingest-*` SAM runtime roles
+- `deckgl-s3-cog-s1m-*` ECR repositories
 
-Two layers, by blast radius and change frequency:
+The shared `cog-stac-catalog` bucket is not app-owned and keeps its existing
+name.
 
-| layer | who | what it owns | changes |
-|-------|-----|--------------|---------|
-| **Foundation** | admin (independent, one-time) | the bucket, the Lambda **roles**, the ECR repo, the SAM artifacts bucket | rare, privileged |
-| **App** | `cog-stac-deploy` (`deploy-*.sh`) | Lambda **code/config**, function URLs, the lake data | frequent, scoped |
+## One deploy role
 
-Creating buckets is independent of application deployment. Keeping that in the
-foundation stack removes those privileged operations from the routine deploy
-role:
+Create one SSO-assumed role named `deckgl-s3-cog-s1m-deploy` using the policy
+files in `lambda/iam/`.
 
-- bucket creation → no `s3:CreateBucket` / `PutBucketPolicy` / `DeleteBucket`
-- role creation → no `iam:CreateRole` / `AttachRolePolicy` / `PutRolePolicy`
+That role can:
 
-…leaving only the *one* safe IAM action the deployer needs: **`iam:PassRole`**
-(pass a pre-created role to Lambda). That distinction — "deploy code that *uses* a
-role" vs "mint/attach roles" — is the whole point.
+- deploy the foundation, read, and ingest CloudFormation stacks;
+- let the foundation stack copy seed data from `deckgl-s3-cog-s1m-seed-us-west2`;
+- let SAM create/update the Lambda execution roles for this demo;
+- push the ingest image to prefix-scoped ECR repositories;
+- manage the viewer/output bucket for this demo;
+- publish the browser viewer files;
+- read the shared catalog and requester-pays NAIP source bucket.
 
-## Foundation resources (created independently, admin)
+The role is intentionally scoped to `us-west-2` and to `deckgl-s3-cog-s1m-*`
+resources wherever AWS supports resource-level constraints.
 
-1. **Bucket** — `cog-stac-viewer-<acct>-<region>` (viewer + lake/ + detections/).
-   **Already done**: out-of-band `bootstrap-app-bucket.sh`, `Retain` in the
-   template, referenced by ARN. Keep.
-2. **Lambda execution roles** — pre-create both, with their runtime policies (see
-   next section). The app stack will reference them by ARN instead of creating
-   them. *(New: today SAM auto-creates these via `CAPABILITY_IAM`.)*
-3. **ECR repository** — for the ingest container image. Pre-create so the deployer
-   needs only push, not `ecr:CreateRepository`. Pin via samconfig
-   `image_repositories`.
-4. **SAM artifacts bucket** — the `sam deploy` packaging bucket. Pre-create and pin
-   via samconfig `s3_bucket=` so the deployer needs no `s3:CreateBucket`.
+## Runtime roles
 
-Cleanest form: a small **foundation CloudFormation stack** (admin-deployed) that
-creates 2–4 above and exports the role ARNs + repo URI; the app SAM stack imports
-them (SSM or `ImportValue`). (A bootstrap script is the lighter alternative.)
+The Lambdas do not run as the deploy role. SAM creates runtime roles from the
+`Policies:` blocks in:
 
-## The two Lambda execution roles (runtime permissions)
+- `lambda/template.yaml` for the read API;
+- `lambda/ingest-template.yaml` for the ingest API.
 
-Derive the exact statements from the current SAM template's `Policies:` blocks when
-implementing; at a high level:
+Runtime permissions stay narrow:
 
-- **read role** (`cog-stac-read`): `s3:ListBucket` on the viewer bucket;
-  `s3:GetObject` on `viewer-bucket/lake/*` + `/detections/*`; `GetObject`+
-  `ListBucket` on `cog-stac-catalog` (manifest index) and `naip-analytic` (NAIP
-  source, requester-pays); CloudWatch Logs write.
-- **ingest role** (`cog-stac-ingest`): read `naip-analytic` + `cog-stac-catalog`;
-  **read/write** the viewer bucket `lake/*`; Logs write.
+- read Lambda: read lake output, shared manifest index, and NAIP source data;
+- ingest Lambda: read/write lake output, read shared manifest index, and read
+  NAIP source data.
 
-**Important:** the public collections (KyFromAbove, New Jersey) are read with an
-**unsigned/anonymous** S3 client, which **bypasses the role's identity policy** — so
-neither role needs (or should get) permissions for `kyfromabove` / `njogis-imagery`.
-(This is exactly why a *signed* request to those cross-account public buckets got
-`AccessDenied` and the unsigned client fixed it.)
+Public COG collections such as New Jersey and KyFromAbove are accessed with
+unsigned S3 clients, so they do not need identity-policy grants.
 
-## The `cog-stac-deploy` policy
+## Seed data
 
-Scoped to `cog-stac-*` resources + `aws:RequestedRegion = us-west-2`:
+The foundation stack copies `lake/` and `collections.geojson` from
+`deckgl-s3-cog-s1m-seed-us-west2` into the deployer's bucket
+`deckgl-s3-cog-s1m-<account>-us-west2`.
 
-- `cloudformation:*` on the app stack(s) + changesets.
-- `lambda:*` on the app functions (+ Function URL config).
-- `ecr:GetAuthorizationToken` (account) + push actions on the **existing** repo.
-- `s3` RW on the **existing** SAM artifacts bucket + viewer bucket (objects);
-  `GetObject`/`ListBucket` on `cog-stac-catalog` + `naip-analytic`.
-- `iam:PassRole` on the **two pre-created role ARNs only**, with
-  `Condition: { StringEquals: { iam:PassedToService: lambda.amazonaws.com } }`.
-- CloudWatch Logs read (`FilterLogEvents`/`GetLogEvents`/`DescribeLogGroups`) for
-  `aws logs tail`.
-- `sts:GetCallerIdentity`.
+For deployments outside the seed bucket's owning account, the seed bucket policy
+must allow the target account's foundation seed-copy role to list and read those
+objects. The runtime Lambda roles do not need access to the seed bucket after
+the copy finishes.
 
-**Explicitly NOT in it** (stay admin/foundation): `iam:CreateRole`/`*RolePolicy`,
-`s3:CreateBucket`/`PutBucketPolicy`/`DeleteBucket`, `ecr:CreateRepository`,
-`cloudfront:*`, `servicequotas:*`, `ssm:PutParameter`, `budgets:*`.
+## Tradeoff
 
-This set is small enough to fit one customer-managed policy (well under the 6,144-
-char limit), which the original "one policy" goal required.
-
-## Required app-stack changes (when implemented)
-
-- Each `AWS::Serverless::Function`: set `Role: <foundation-role-arn>` (param/SSM).
-  This **drops `CAPABILITY_IAM`** from the deploy.
-- Consequence: SAM no longer auto-generates each function's runtime policy from
-  `Policies:`/events — those permissions **move into the foundation role** (admin-
-  owned). New runtime permission (e.g., a new source bucket) → admin edits the
-  role, not a template change. Document each role's grants so the handoff is clear.
-- `samconfig.toml`: pin `s3_bucket` (artifacts) and `image_repositories` (ingest)
-  to the pre-created ones.
-
-## Trade-offs / caveats
-
-- **Runtime perms live in the role, not the template** — a coordination point
-  (admin owns identity *and* its permissions). Acceptable; document it.
-- **`iam:PassRole` is still required** — it's the safe IAM action, scoped to the
-  two role ARNs + the lambda service condition.
-- **Short-lived sessions only:** `cog-stac-deploy` is assumed through AWS SSO;
-  the repository does not use IAM-user access keys.
-- **More bootstrap up front** (roles + ECR + artifacts bucket) for ongoing safety +
-  a stable, rarely-edited deploy policy. Matches the bucket pattern already chosen.
-
-## Status
-
-- ✅ **Foundation stack** (`foundation.yaml`, `cog-stac-foundation`) owns the
-  viewer bucket (Retain'd bucket; absorbed `bootstrap-app-bucket.sh`). _CloudFront
-  CORS/cache tile proxy since removed — the viewer reads public source COGs
-  directly._
-- ✅ **Deploy identity = SSO-assumed role `cog-stac-deploy`** (no static `.env`
-  keys; `cog-stac-deploy-trust.json` + `AWS_PROFILE`).
-- ✅ Scoped deploy policy: bucket-admin actions removed; no CloudFront
-  permissions (proxy removed) (`iam/cog-stac-deploy.json`).
-- ✅ Independent read and ingest stacks; read updates no longer rebuild the
-  ingest container.
-- ⬜ Deferred (this pass kept exec roles SAM-created): roles/ECR/artifacts bucket
-  moved to foundation, `Role:` references, dropping `CAPABILITY_IAM`, `samconfig` pins.
-
-## Verify checklist (for the implementation pass)
-
-1. Pre-create roles/ECR/artifacts bucket (foundation); record ARNs/URIs.
-2. Attach the scoped policy to `cog-stac-deploy`.
-3. Run the split ingest and read deployment scripts.
-4. `deploy-viewer.sh` — succeeds (S3 RW only).
-5. A real ingest via run-sync — succeeds (role reads sources + writes lake;
-   public buckets via unsigned).
-6. `aws logs tail` — works.
-7. Only then delete the superseded policies.
+This is not the tightest possible production IAM model. It is the right shape
+for a demo: one role to hand to a deployer, predictable prefixed resources, and
+runtime roles that remain narrower than deploy permissions.

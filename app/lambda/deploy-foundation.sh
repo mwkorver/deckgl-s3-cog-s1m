@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
 #
-# Provision the FOUNDATION stack (cog-stac-foundation): the Retain'd viewer /
-# app-output S3 bucket + the CloudFront CORS/cache proxy for public source COG
-# buckets. ADMIN, one-time -- run BEFORE the per-account SAM app stack.
+# Provision the FOUNDATION stack (deckgl-s3-cog-s1m-foundation): the Retain'd
+# viewer / app-output S3 bucket. Run once before the per-account SAM app stack.
 #
-# Why separate from `sam deploy`: creating a bucket + a CloudFront distribution
-# are rare, privileged, stateful ops. Keeping them here lets the day-to-day
-# deploy role stay scoped (no s3:CreateBucket / cloudfront create).
+# Why separate from `sam deploy`: the viewer/output bucket is stateful and must
+# outlive app stack updates and deletes.
 #
-# Usage (admin creds):
+# Usage:
 #   ./deploy-foundation.sh            # create only, or safely report existing state
 #   ./deploy-foundation.sh --update   # explicitly update an existing foundation stack
 #
 # Safety rules:
 #   * Existing foundation stack + no --update: print outputs and exit without changes.
 #   * Existing legacy bucket or tile distribution + no foundation stack: refuse
-#     to create duplicates. Import/migration must be performed deliberately.
+#     to create duplicates when detected. Import/migration must be deliberate.
 #   * Empty account: create the foundation stack.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGION="${REGION:-us-west-2}"
-STACK="${FOUNDATION_STACK:-cog-stac-foundation}"
+STACK="${FOUNDATION_STACK:-deckgl-s3-cog-s1m-foundation}"
 TEMPLATE="$SCRIPT_DIR/foundation.yaml"
-APPLICATION_TAG="${APPLICATION_TAG:-deck.gl-s3-cog}"
+APPLICATION_TAG="${APPLICATION_TAG:-deckgl-s3-cog-s1m}"
 UPDATE=false
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -45,8 +43,8 @@ done
 
 command -v aws >/dev/null 2>&1 || die "aws CLI not found."
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)" \
-  || die "AWS credentials not working (admin creds required for foundation)."
-BUCKET="cog-stac-viewer-${ACCOUNT}-${REGION}"
+  || die "AWS credentials not working for foundation deploy."
+BUCKET="deckgl-s3-cog-s1m-${ACCOUNT}-us-west2"
 
 echo "Account : $ACCOUNT"
 echo "Region  : $REGION"
@@ -114,6 +112,7 @@ fi
 aws cloudformation deploy \
   --stack-name "$STACK" \
   --template-file "$TEMPLATE" \
+  --capabilities CAPABILITY_NAMED_IAM \
   --region "$REGION"
 
 echo

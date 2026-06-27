@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a self-contained AWS Lambda layer for the COG STAC read API.
+# Build a self-contained AWS Lambda layer for the DeckGL S3 COG S1M read API.
 #
 # The layer bundles, all version- and architecture-matched:
 #   - the Python deps the read path needs (duckdb, fastapi, pydantic, mangum)
@@ -91,7 +91,7 @@ du -sh "$LAYER_DIR"
 echo
 echo "Publish with:"
 echo "  aws lambda publish-layer-version \\"
-echo "    --layer-name cog-stac-duckdb-${ARCH} \\"
+echo "    --layer-name deckgl-s3-cog-s1m-duckdb-${ARCH} \\"
 echo "    --zip-file fileb://${OUT_ZIP##*/} \\"
 echo "    --compatible-runtimes python3.12 \\"
 echo "    --compatible-architectures ${ARCH} \\"

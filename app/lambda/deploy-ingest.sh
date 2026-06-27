@@ -6,8 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGION="${REGION:-us-west-2}"
-STACK="${INGEST_STACK:-cog-stac-ingest}"
-FOUNDATION_STACK="${FOUNDATION_STACK:-cog-stac-foundation}"
+STACK="${INGEST_STACK:-deckgl-s3-cog-s1m-ingest}"
+FOUNDATION_STACK="${FOUNDATION_STACK:-deckgl-s3-cog-s1m-foundation}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -23,7 +23,7 @@ docker info >/dev/null 2>&1 || die "Docker daemon not running"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)" || \
   die "AWS credentials not working"
-VIEWER_BUCKET="${VIEWER_BUCKET:-cog-stac-viewer-${ACCOUNT_ID}-${REGION}}"
+VIEWER_BUCKET="${VIEWER_BUCKET:-deckgl-s3-cog-s1m-${ACCOUNT_ID}-us-west2}"
 
 if aws cloudformation describe-stacks --stack-name "$FOUNDATION_STACK" \
      --region "$REGION" >/dev/null 2>&1; then

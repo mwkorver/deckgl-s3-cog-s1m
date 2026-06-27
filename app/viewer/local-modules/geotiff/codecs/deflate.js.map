@@ -1,0 +1,1 @@
+{"version":3,"file":"deflate.js","sourceRoot":"","sources":["../../src/codecs/deflate.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,iCAAiC,EAAE,MAAM,2BAA2B,CAAC;AAE9E,MAAM,CAAC,KAAK,UAAU,MAAM,CAAC,KAAkB;IAC7C,OAAO,iCAAiC,CAAC,KAAK,EAAE,EAAE,MAAM,EAAE,SAAS,EAAE,CAAC,CAAC;AACzE,CAAC"}

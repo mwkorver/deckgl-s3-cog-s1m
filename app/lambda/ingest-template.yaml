@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  COG STAC ingest API on Lambda. Runs the full ingest dependency set as an
+  DeckGL S3 COG S1M ingest API on Lambda. Runs the full ingest dependency set as an
   arm64 container image with a 15-minute timeout. Deployed independently from
   the zip-based read API so routine read changes do not rebuild this image.
 
@@ -9,17 +9,17 @@ Rules:
   RegionLock:
     Assertions:
       - Assert: !Equals [!Ref "AWS::Region", "us-west-2"]
-        AssertDescription: "cog-stac-ingest must be deployed in us-west-2 (data residency)."
+        AssertDescription: "deckgl-s3-cog-s1m-ingest must be deployed in us-west-2 (data residency)."
 
 Resources:
-  # The legacy combined stack used the physical name cog-stac-ingest. Use a new
+  # The legacy combined stack used the physical name deckgl-s3-cog-s1m-ingest. Use a new
   # physical name so this stack can be deployed before the read stack removes
   # the legacy resource. This avoids a name collision and minimizes migration
   # disruption.
-  CogStacIngestFunction:
+  DeckglS3CogS1mIngestFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: cog-stac-ingest-worker
+      FunctionName: deckgl-s3-cog-s1m-ingest-worker
       PackageType: Image
       Architectures:
         - arm64
@@ -27,7 +27,7 @@ Resources:
       MemorySize: 1769
       Environment:
         Variables:
-          S3_COG_LAKE_ROOT: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"
+          S3_COG_LAKE_ROOT: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake"
           S3_COG_MANIFEST_INDEX: s3://cog-stac-catalog/manifest-index
           S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
           S3_COG_REQUEST_PAYER: requester
@@ -38,14 +38,14 @@ Resources:
         - Statement:
             - Effect: Allow
               Action: s3:ListBucket
-              Resource: !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}"
+              Resource: !Sub "arn:aws:s3:::deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2"
             - Effect: Allow
               Action:
                 - s3:GetObject
                 - s3:PutObject
                 - s3:DeleteObject
               Resource:
-                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/*"
+                - !Sub "arn:aws:s3:::deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake/*"
         - Statement:
             - Effect: Allow
               Action:
@@ -79,8 +79,8 @@ Resources:
 
 Outputs:
   IngestUrl:
-    Description: Base invoke URL for the COG STAC ingest function.
-    Value: !GetAtt CogStacIngestFunctionUrl.FunctionUrl
+    Description: Base invoke URL for the DeckGL S3 COG S1M ingest function.
+    Value: !GetAtt DeckglS3CogS1mIngestFunctionUrl.FunctionUrl
   LakeRoot:
     Description: Private GeoParquet output prefix shared with the read stack.
-    Value: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"
+    Value: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake"

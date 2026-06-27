@@ -1,4 +1,4 @@
-# deck.gl-s3-cog
+# deckgl-s3-cog-s1m
 
 A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG) rendering** and **serverless spatial data lake indexing**.
 
@@ -152,7 +152,7 @@ The USGS 3DEP **Seamless 1-meter (S1M)** DEM is a CONUS-wide elevation dataset d
 
 S1M coverage is CONUS-only and still expanding; viewport areas with no S1M tile simply render no terrain mesh there.
 
-> **Consolidated into the main read API (2026-06):** S1M was previously a standalone `cog-stac-s1m` container Lambda fronted by a token-guarded Function URL (`/s1m/terrain`, `S1M_DEMO_TOKEN`, `deploy-s1m.sh`). That service was removed — terrain discovery (`/s1m/tiles`) is now part of `cog-stac-read`, and the DEM read moved entirely into the browser.
+> **Consolidated into the main read API (2026-06):** S1M was previously a standalone terrain Lambda fronted by a token-guarded Function URL (`/s1m/terrain`, `S1M_DEMO_TOKEN`, `deploy-s1m.sh`). That service was removed; terrain discovery (`/s1m/tiles`) is now part of the `deckgl-s3-cog-s1m-read` API, and the DEM read moved entirely into the browser.
 
 ---
 
@@ -197,7 +197,7 @@ Configure the environment variables:
 ```bash
 cd app
 cp .env.example .env
-# Set AWS_PROFILE=cog-stac-deploy and any local parameters
+# Set AWS_PROFILE=deckgl-s3-cog-s1m-deploy and any local parameters
 ```
 
 To spin up the local stack (FastAPI server + static viewer) via Docker Compose:

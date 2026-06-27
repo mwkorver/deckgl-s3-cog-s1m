@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  COG STAC read API on Lambda. Runs api/app.py (handler = Mangum(app)) as a
+  DeckGL S3 COG S1M read API on Lambda. Runs api/app.py (handler = Mangum(app)) as a
   small zip package, with the self-built DuckDB layer mounted at /opt so the
   baked spatial/httpfs extensions LOAD by path. Exposed via a Lambda Function
   URL (no API Gateway). The container-image ingest Lambda is deployed by
@@ -28,7 +28,7 @@ Parameters:
     Type: String
     MinLength: 1
     Description: >
-      Base invoke URL for the separately deployed cog-stac-ingest function. The
+      Base invoke URL for the separately deployed deckgl-s3-cog-s1m-ingest function. The
       read API surfaces this through /environment so the static viewer can POST
       ingest requests without knowing about the ingest stack.
 
@@ -44,7 +44,7 @@ Rules:
   RegionLock:
     Assertions:
       - Assert: !Equals [!Ref "AWS::Region", "us-west-2"]
-        AssertDescription: "cog-stac-read must be deployed in us-west-2 (data residency)."
+        AssertDescription: "deckgl-s3-cog-s1m-read must be deployed in us-west-2 (data residency)."
 
 Globals:
   Function:
@@ -61,7 +61,7 @@ Resources:
   DuckDbLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      LayerName: cog-stac-duckdb
+      LayerName: deckgl-s3-cog-s1m-duckdb
       # Directory whose contents (python/, duckdb_extensions/) are mounted at
       # /opt. Build it first: `ARCH=arm64 ./build-layer.sh`.
       ContentUri: build/layer
@@ -70,10 +70,10 @@ Resources:
       CompatibleRuntimes:
         - python3.12
 
-  CogStacReadFunction:
+  DeckglS3CogS1mReadFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: cog-stac-read
+      FunctionName: deckgl-s3-cog-s1m-read
       CodeUri: ../
       Handler: app.handler
       Runtime: python3.12
@@ -92,7 +92,7 @@ Resources:
           # read on lake/, so app output stays private while the
           # same bucket serves the public viewer. S3_COG_MANIFEST_INDEX stays on the
           # shared, author-published cog-stac-catalog bucket (read-only, below).
-          S3_COG_LAKE_ROOT: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"
+          S3_COG_LAKE_ROOT: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake"
           S3_COG_MANIFEST_INDEX: s3://cog-stac-catalog/manifest-index
           S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
           S3_COG_REQUEST_PAYER: requester
@@ -117,11 +117,11 @@ Resources:
         - Statement:
             - Effect: Allow
               Action: s3:ListBucket
-              Resource: !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}"
+              Resource: !Sub "arn:aws:s3:::deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2"
             - Effect: Allow
               Action: s3:GetObject
               Resource:
-                - !Sub "arn:aws:s3:::cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake/*"
+                - !Sub "arn:aws:s3:::deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake/*"
         # Read-only on the SHARED, author-published bucket holding the prebuilt
         # manifest index (S3_COG_MANIFEST_INDEX = s3://cog-stac-catalog/manifest-index).
         # Deployers read this to skip the 404MB manifest download + index build;
@@ -190,13 +190,13 @@ Resources:
   # HTTP-only website endpoint (no HTTPS) -- fine for this open-source demo; an
   # HTTP page calling the HTTPS Function URL is allowed (mixed-content blocking
   # only applies the other way). Add CloudFront later for HTTPS/custom domain.
-  # NOTE: the per-account bucket (cog-stac-viewer-<acct>-<region>) is NOT
+  # NOTE: the per-account bucket (deckgl-s3-cog-s1m-<acct>-us-west2) is NOT
   # declared here. It holds the app's PRIVATE data (lake/ footprints) and must
   # OUTLIVE the stack -- a `sam delete` (shutdown/pause)
   # tears down the Lambdas but must never touch the bucket or its data -- and a
   # fresh `sam deploy` must reference an already-existing bucket instead of
   # colliding on the global S3 name. It is created and retained by the separate
-  # admin-owned cog-stac-foundation stack. This stack references it by its
+  # separate deckgl-s3-cog-s1m-foundation stack. This stack references it by its
   # deterministic name and ARN.
 
   # Monthly spend alert. Opt-in: only created when BudgetAlertEmail is set.
@@ -206,7 +206,7 @@ Resources:
   #   - 100% forecasted → projected to exceed within the billing period
   # After first deploy AWS sends a subscription confirmation email to the
   # address -- click "Confirm subscription" to activate the alerts.
-  CogStacBudget:
+  DeckglS3CogS1mBudget:
     Type: AWS::Budgets::Budget
     Condition: CreateBudget
     Properties:
@@ -237,17 +237,17 @@ Resources:
 
 Outputs:
   ApiUrl:
-    Description: Base invoke URL for the COG STAC read API (Lambda Function URL).
-    Value: !GetAtt CogStacReadFunctionUrl.FunctionUrl
+    Description: Base invoke URL for the DeckGL S3 COG S1M read API (Lambda Function URL).
+    Value: !GetAtt DeckglS3CogS1mReadFunctionUrl.FunctionUrl
   ViewerUrl:
     Description: Static viewer website endpoint (HTTP). Run deploy-viewer.sh to publish.
-    Value: !Sub "http://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}.s3-website-${AWS::Region}.amazonaws.com"
+    Value: !Sub "http://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2.s3-website-${AWS::Region}.amazonaws.com"
   ViewerBucketName:
     Description: S3 bucket the viewer is synced to (deploy-viewer.sh target).
-    Value: !Sub "cog-stac-viewer-${AWS::AccountId}-${AWS::Region}"
+    Value: !Sub "deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2"
   IngestUrl:
-    Description: Base invoke URL configured for the separately deployed COG STAC ingest function.
+    Description: Base invoke URL configured for the separately deployed DeckGL S3 COG S1M ingest function.
     Value: !Ref IngestUrl
   LakeRoot:
     Description: Where the app writes its private GeoParquet output -- the lake/ prefix of this deployer's single per-account bucket (the viewer bucket).
-    Value: !Sub "s3://cog-stac-viewer-${AWS::AccountId}-${AWS::Region}/lake"
+    Value: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake"

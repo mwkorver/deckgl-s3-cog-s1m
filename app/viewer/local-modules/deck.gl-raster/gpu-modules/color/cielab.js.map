@@ -1,0 +1,1 @@
+{"version":3,"file":"cielab.js","sourceRoot":"","sources":["../../../src/gpu-modules/color/cielab.ts"],"names":[],"mappings":"AAEA,MAAM,MAAM,GAAG,UAAU,CAAC;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;CA0CzB,CAAC;AAEF;;;;GAIG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG;IACzB,IAAI,EAAE,eAAe;IACrB,MAAM,EAAE;QACN,UAAU,EAAE,MAAM;QAClB,wBAAwB,EAAE,UAAU,CAAC;;KAEpC;KACF;CAC8B,CAAC"}
