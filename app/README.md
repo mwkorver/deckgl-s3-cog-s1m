@@ -89,7 +89,7 @@ For a private demo viewer, keeping `S3_COG_INGEST_TOKEN` set while running
 `deploy-viewer.sh` also writes `window.S3_COG_INGEST_TOKEN` into `config.js` so
 the browser ingest panel sends the token. Do not do this for a public viewer.
 
-> The shared, author-published catalog (`s3://naip-stac-catalog/manifest-index`,
+> The shared, author-published catalog (`s3://cog-stac-catalog/manifest-index`,
 > read-only) is consumed cross-account; deployers never write to it.
 
 **Prerequisites** (one-time setup before first deploy):
@@ -98,7 +98,7 @@ the browser ingest panel sends the token. Do not do this for a public viewer.
 |------|---------|
 | AWS CLI v2 | https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html |
 | SAM CLI | `brew install aws-sam-cli` |
-| Docker (arm64) | Colima: `colima start --arch aarch64 --vm-type vz`  or Docker Desktop |
+| Docker (arm64) | Docker CLI with `docker-compose` available |
 | pnpm (for viewer) | `npm install -g pnpm` then `pnpm install && pnpm build` at repo root |
 
 **IAM (one-time per account):**
@@ -113,6 +113,7 @@ keys.
 cp .env.example .env
 # Set AWS_PROFILE=deckgl-s3-cog-s1m-deploy
 # Set S3_COG_LAKE_ROOT=s3://deckgl-s3-cog-s1m-<your-account-id>-us-west2/lake
+# Set S1M_INDEX_URL=s3://deckgl-s3-cog-s1m-<your-account-id>-us-west2/lake/s1m/S1M_Products.parquet
 # (the foundation stack creates this bucket and seeds lake/ from deckgl-s3-cog-s1m-seed-us-west2)
 ```
 

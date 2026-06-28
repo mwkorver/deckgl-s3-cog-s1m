@@ -12,6 +12,11 @@ export interface ChunkCacheStats {
   misses: number;
   networkBytes: number;
   requestedBytes: number;
+  memoryBytes: number;
+  memoryMaxBytes: number;
+  memoryEntries: number;
+  inflight: number;
+  chunkSize: number;
 }
 
 export interface ChunkCachedSourceOptions {
@@ -133,7 +138,10 @@ export class ChunkCachedSource implements Source {
   private readonly memory = new Map<string, MemoryEntry>();
   private readonly inflight = new Map<string, Promise<ArrayBuffer>>();
   private memoryBytes = 0;
-  private readonly counters: ChunkCacheStats = {
+  private readonly counters: Omit<
+    ChunkCacheStats,
+    "memoryBytes" | "memoryMaxBytes" | "memoryEntries" | "inflight" | "chunkSize"
+  > = {
     memoryHits: 0,
     persistentHits: 0,
     misses: 0,
@@ -173,7 +181,14 @@ export class ChunkCachedSource implements Source {
   }
 
   stats(): ChunkCacheStats {
-    return { ...this.counters };
+    return {
+      ...this.counters,
+      memoryBytes: this.memoryBytes,
+      memoryMaxBytes: this.memoryMaxBytes,
+      memoryEntries: this.memory.size,
+      inflight: this.inflight.size,
+      chunkSize: this.chunkSize,
+    };
   }
 
   clearMemory(): void {

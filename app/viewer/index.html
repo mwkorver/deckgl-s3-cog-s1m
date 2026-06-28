@@ -399,21 +399,37 @@
                   <button id="center-data" type="button" title="Move the map to the selected Collection/Region/Year extent" style="white-space:nowrap;">Center</button>
                 </div>
               </label>
-              <label class="small">
-                Max footprints
-                <input id="limit" type="number" value="18000" min="1" max="18000" />
-              </label>
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <button id="search" class="search-active">Search current map</button>
-                <label class="small" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
-                  <input id="auto-search" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                  Auto search on pan
-                </label>
-              </div>
             </div>
             <div class="legend-row">
               <div class="swatch" style="background:#3b82f6"></div>
               <span>Returned order is the draw priority order from the API.</span>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Vector Layers</h2>
+            <div class="controls">
+              <div class="small" role="radiogroup" aria-label="Footprint overlay" style="display:flex; flex-direction:column; gap:8px;">
+                <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; cursor:pointer; user-select:none;">
+                  <input id="footprint-layer-search" name="footprint-layer-mode" value="search" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                  <strong>Search Result Footprints</strong>
+                  <span class="muted">— COGs returned by Search</span>
+                  <span style="display:flex; align-items:center; gap:6px; margin-left:8px;">
+                    Max footprints
+                    <input id="limit" type="number" value="18000" min="1" max="18000" style="width:92px;" />
+                  </span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; cursor:pointer; user-select:none;">
+                  <input id="footprint-layer-coverage" name="footprint-layer-mode" value="coverage" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                  <strong id="naip-coverage-label">NAIP Coverage Footprints — MVT outlines, z3-15</strong>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;">
+                  <input id="footprint-layer-off" name="footprint-layer-mode" value="" type="radio" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                  <strong>Off</strong>
+                </label>
+              </div>
+              <input id="toggle-naip-coverage-mvt-layer" type="checkbox" autocomplete="off" hidden />
+              <input id="toggle-naip-search-footprints-layer" type="checkbox" autocomplete="off" hidden />
             </div>
           </div>
 
@@ -423,16 +439,6 @@
               <label class="small" style="display:flex; align-items:center; gap:8px;">
                 <input id="toggle-cog-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                 <strong id="cog-layer-label">NAIP Imagery (COG Tiles)</strong>
-              </label>
-              <label class="small" style="display:flex; align-items:center; gap:8px;">
-                <input id="toggle-naip-coverage-mvt-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                <strong id="naip-coverage-label">NAIP Coverage Footprints</strong>
-                <span class="muted">— MVT outlines, z4-15</span>
-              </label>
-              <label class="small" style="display:flex; align-items:center; gap:8px;">
-                <input id="toggle-naip-search-footprints-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                <strong>Search Result Footprints</strong>
-                <span class="muted">— outlines of the COGs returned by Search</span>
               </label>
               <div class="display-adjustments">
                 <label class="small">
@@ -775,7 +781,7 @@
         if (el) el.textContent = `${title} Imagery (COG Tiles)`;
         
         const elCov = document.getElementById("naip-coverage-label");
-        if (elCov) elCov.textContent = `${title} Coverage Footprints`;
+        if (elCov) elCov.textContent = `${title} Coverage Footprints — MVT outlines, z3-15`;
       }
       function renderActiveCollectionSummary() {
         if (!activeCollectionSummaryEl) return;
@@ -791,7 +797,8 @@
       // that drives `maxCacheSize` below. The server hard-caps `limit` at 18000.
       const SEARCH_LIMIT_DEFAULT = 18000;
       limitEl.value = String(SEARCH_LIMIT_DEFAULT);
-      const autoSearchEl = document.getElementById("auto-search");
+      const footprintLayerModeEls = Array.from(document.querySelectorAll('input[name="footprint-layer-mode"]'));
+      const footprintLayerOffEl = document.getElementById("footprint-layer-off");
       const toggleCogEl = document.getElementById("toggle-cog-layer");
       const toggleUsgsNaipWmsLayerEl = document.getElementById("toggle-usgs-naip-wms-layer");
       const toggleNaipSearchFootprintsLayerEl = document.getElementById("toggle-naip-search-footprints-layer");
@@ -809,24 +816,14 @@
       // Default view: focus on the S1M terrain drape only. The flat background
       // imagery (NAIP COG tiles, USGS WMS) and the vector overlays (S1M coverage
       // footprints, NAIP coverage MVT, tile borders) start OFF so the map opens on
-      // just the draped 3D terrain; each can be re-enabled from its toggle. The
+      // just the draped 3D terrain; each can be re-enabled from its control. The
       // terrain mesh+drape is driven by s1mActive, independent of these toggles.
-      autoSearchEl.checked = false;          // no background /search; the drape runs its own source search
+      if (footprintLayerOffEl) footprintLayerOffEl.checked = true;
       toggleCogEl.checked = false;           // background NAIP raster (COG tiles) off
       toggleUsgsNaipWmsLayerEl.checked = false;
       toggleS1MFootprintsLayerEl.checked = false;   // coverage-footprint vector off
       toggleNaipCoverageMvtLayerEl.checked = false; // NAIP coverage MVT vector off
 
-
-      const searchBtn = document.getElementById("search");
-
-      function syncSearchButton() {
-        const auto = autoSearchEl.checked;
-        searchBtn.disabled = auto;
-        searchBtn.classList.toggle("search-active", !auto);
-      }
-      autoSearchEl.addEventListener("change", syncSearchButton);
-      syncSearchButton(); // apply initial state
       const summaryEl = document.getElementById("summary");
       const timingSummaryEl = document.getElementById("timing-summary");
       const imageryStatusEl = document.getElementById("imagery-status");
@@ -872,6 +869,7 @@
       let autoSearchTimeoutId = null;
       let imageryRenderGeneration = 0;
       const geotiffSourceCache = new Map();
+      const geotiffSourceResolved = new Map();
       const GEOTIFF_SOURCE_CACHE_MAX = 12;
       let drapeProjectionCache = new WeakMap();
       // Lazy per-tile presign: /search returns raw s3:// hrefs and we sign each
@@ -886,6 +884,16 @@
       // Hrefs we've already re-signed once after a 403/expired error, so a
       // persistently failing tile doesn't loop. Reset on each new search.
       let resignAttempted = new Set();
+
+      function deleteGeotiffSourceCacheEntry(s3href) {
+        geotiffSourceCache.delete(s3href);
+        geotiffSourceResolved.delete(s3href);
+      }
+
+      function clearGeotiffSourceCache() {
+        geotiffSourceCache.clear();
+        geotiffSourceResolved.clear();
+      }
 
       function isExpiredSignatureError(error) {
         for (let e = error; e; e = e.cause) {
@@ -1143,6 +1151,7 @@
             generatedAt: new Date().toISOString(),
             bench: s1mBenchReport(),
             fill: s1mFillReport(),
+            memory: cacheMemoryReport(),
           };
           const text = JSON.stringify(payload, null, 2);
           
@@ -1180,6 +1189,7 @@
           }
 
           const activeCol = activeCollection();
+          const memory = payload.memory;
           const displayHtml = `
             <div class="section-title">General / Viewport Status</div>
             <div class="stat-line">
@@ -1264,7 +1274,7 @@
             ${drapeListsHtml}
             <div class="stat-line">
               <span class="stat-label">COG Source Search Latency</span>
-              <span class="stat-value">${payload.bench.sourceSearchMs.toFixed(1)} ms</span>
+              <span class="stat-value">${Number.isFinite(payload.bench.sourceSearchMs) ? `${payload.bench.sourceSearchMs.toFixed(1)} ms` : "N/A"}</span>
               <span class="stat-desc">— Time spent querying database /search API for overlapping COGs</span>
             </div>
             <div class="stat-line">
@@ -1307,19 +1317,64 @@
 
             <div class="section-title">Memory & Caches</div>
             <div class="stat-line">
+              <span class="stat-label">Browser JS Heap</span>
+              <span class="stat-value">${memory.browserHeap.available ? `${memory.browserHeap.usedJSHeapSize.label} used` : "Unavailable"}</span>
+              <span class="stat-desc">— ${memory.browserHeap.available ? `${memory.browserHeap.totalJSHeapSize.label} allocated, ${memory.browserHeap.jsHeapSizeLimit.label} limit` : memory.browserHeap.note}</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Tracked Decoded/Chunk Bytes</span>
+              <span class="stat-value">${memory.totals.trackedDecodedAndChunkBytes.label}</span>
+              <span class="stat-desc">— Exact typed-array/ImageData/chunk-cache bytes currently tracked by the viewer</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Estimated String/Ref Bytes</span>
+              <span class="stat-value">${memory.totals.estimatedStringAndReferenceBytes.label}</span>
+              <span class="stat-desc">— Shallow string/reference estimate; excludes object and Map overhead</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Search Result Features</span>
+              <span class="stat-value">${memory.searchResults.count.toLocaleString()} (${memory.searchResults.shallowEstimate.label})</span>
+              <span class="stat-desc">— Full /search feature array retained client-side; deep JSON estimate available via window.__cacheMemoryReport({deep: true})</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Mosaic Imagery Sources</span>
+              <span class="stat-value">${memory.imagery.deckMosaic.sourceCount.toLocaleString()}</span>
+              <span class="stat-desc">— Sources passed to deck.gl MosaicLayer; Flatbush/tile/GPU bytes are not exposed</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Signed URL Cache</span>
+              <span class="stat-value">${memory.signedUrls.entries.toLocaleString()} (${memory.signedUrls.estimatedStrings.label})</span>
+              <span class="stat-desc">— ${memory.signedUrls.inflight} in-flight, ${memory.signedUrls.expired} expired; UTF-16 URL string payload only</span>
+            </div>
+            <div class="stat-line">
               <span class="stat-label">Drape Images Cache</span>
-              <span class="stat-value">${payload.bench.cacheSizes.drapeImages}/${payload.bench.cacheSizes.drapeImageMax} (${Math.round(100 * payload.bench.cacheSizes.drapeImages / payload.bench.cacheSizes.drapeImageMax)}%)</span>
-              <span class="stat-desc">— Painted sub-tile ImageData cache size (Evictions: ${payload.bench.cacheEvictions.drapeImages})</span>
+              <span class="stat-value">${payload.bench.cacheSizes.drapeImages}/${payload.bench.cacheSizes.drapeImageMax} (${memory.s1mDrapeImages.resolvedBytes.label})</span>
+              <span class="stat-desc">— Resolved ImageData bytes; configured cap ${memory.s1mDrapeImages.configuredMaxBytes.label}; evictions ${payload.bench.cacheEvictions.drapeImages}</span>
             </div>
             <div class="stat-line">
               <span class="stat-label">COG Tiles Cache</span>
-              <span class="stat-value">${payload.bench.cacheSizes.decodedCogTiles}/${payload.bench.cacheSizes.decodedCogTileMax} (${Math.round(100 * payload.bench.cacheSizes.decodedCogTiles / payload.bench.cacheSizes.decodedCogTileMax)}%)</span>
-              <span class="stat-desc">— Decoded individual COG tile cache size (Evictions: ${payload.bench.cacheEvictions.decodedCogTiles})</span>
+              <span class="stat-value">${payload.bench.cacheSizes.decodedCogTiles}/${payload.bench.cacheSizes.decodedCogTileMax} (${memory.s1mDecodedCogTiles.resolvedBytes.label})</span>
+              <span class="stat-desc">— Resolved decoded RGBA bytes; evictions ${payload.bench.cacheEvictions.decodedCogTiles}</span>
             </div>
             <div class="stat-line">
               <span class="stat-label">TIFF Sources Cache</span>
-              <span class="stat-value">${payload.bench.cacheSizes.geotiffSources}/${payload.bench.cacheSizes.geotiffSourceMax} (${Math.round(100 * payload.bench.cacheSizes.geotiffSources / payload.bench.cacheSizes.geotiffSourceMax)}%)</span>
-              <span class="stat-desc">— Opened GeoTIFF source handles cache size (Evictions: ${payload.bench.cacheEvictions.geotiffSources})</span>
+              <span class="stat-value">${payload.bench.cacheSizes.geotiffSources}/${payload.bench.cacheSizes.geotiffSourceMax} (${memory.geotiffSources.chunkCache.memory.label})</span>
+              <span class="stat-desc">— Opened imagery GeoTIFF handles; chunk-cache memory only; evictions ${payload.bench.cacheEvictions.geotiffSources}</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">S1M DEM GeoTIFFs</span>
+              <span class="stat-value">${memory.s1mGeotiffs.entries.toLocaleString()} (${memory.s1mGeotiffs.chunkCache.memory.label})</span>
+              <span class="stat-desc">— DEM COG handles are currently unbounded; chunk-cache memory cap ${memory.s1mGeotiffs.chunkCache.memoryMax.label}</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">S1M Terrain Cache</span>
+              <span class="stat-value">${memory.s1mTerrain.entries.toLocaleString()} tiles / ${memory.s1mTerrain.subtiles.toLocaleString()} subtiles (${memory.s1mTerrain.meshAndElevation.label})</span>
+              <span class="stat-desc">— Elevation + mesh typed arrays; attached drape ImageData ${memory.s1mTerrain.attachedDrapeImages.label}</span>
+            </div>
+            <div class="stat-line">
+              <span class="stat-label">Drape Source Queries</span>
+              <span class="stat-value">${memory.s1mDrapeSourceQueries.entries}/${memory.s1mDrapeSourceQueries.maxEntries} (${memory.s1mDrapeSourceQueries.shallowEstimate.label})</span>
+              <span class="stat-desc">— Cached /search bbox query results for terrain drape source selection</span>
             </div>
           `;
           
@@ -1354,6 +1409,7 @@
         window.__s1mFillMetrics = s1mFillMetrics;
         window.__s1mFillReport = s1mFillReport;
         window.__s1mOpenStatsWindow = s1mOpenStatsWindow;
+        window.__cacheMemoryReport = cacheMemoryReport;
       }
       // Memoized filtered views of lastSearchFeatures. Recreated only when
       // lastSearchFeatures changes, so MosaicLayer sees a stable array
@@ -1392,6 +1448,405 @@
         s1mDrapeSourcePending = null;
         s1mDrapeSourceError = null;
       }
+
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes)) return "unknown";
+        const abs = Math.abs(bytes);
+        if (abs >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        if (abs >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+        if (abs >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${Math.round(bytes)} B`;
+      }
+
+      function byteReport(bytes) {
+        const safeBytes = Number.isFinite(bytes) ? Math.max(0, Math.round(bytes)) : null;
+        return {
+          bytes: safeBytes,
+          mb: safeBytes === null ? null : +(safeBytes / (1024 * 1024)).toFixed(2),
+          label: safeBytes === null ? "unknown" : formatBytes(safeBytes),
+        };
+      }
+
+      function jsStringBytes(value) {
+        return typeof value === "string" ? value.length * 2 : 0;
+      }
+
+      function sumNumberValues(map) {
+        let total = 0;
+        for (const value of map.values()) {
+          if (Number.isFinite(value)) total += value;
+        }
+        return total;
+      }
+
+      function typedArrayBytes(value, seen = null) {
+        if (!value || typeof value !== "object" || !Number.isFinite(value.byteLength)) return 0;
+        const token = value.buffer && typeof value.buffer === "object" ? value.buffer : value;
+        if (seen && token) {
+          if (seen.has(token)) return 0;
+          seen.add(token);
+        }
+        return value.byteLength;
+      }
+
+      function meshBytes(gpuMesh, seen = null) {
+        if (!gpuMesh) return 0;
+        const mesh = gpuMesh.mesh || gpuMesh;
+        let bytes = typedArrayBytes(gpuMesh.positions64Low, seen);
+        bytes += typedArrayBytes(mesh?.indices?.value || mesh?.indices, seen);
+        for (const attr of Object.values(mesh?.attributes || {})) {
+          bytes += typedArrayBytes(attr?.value || attr, seen);
+        }
+        return bytes;
+      }
+
+      function imageDataBytes(imageData, seen = null) {
+        return typedArrayBytes(imageData?.data, seen);
+      }
+
+      function featureReferenceMemory(features, options = {}) {
+        const list = Array.isArray(features) ? features : [];
+        let hrefBytes = 0;
+        let idBytes = 0;
+        let bboxNumberBytes = 0;
+        let selectedPropertyBytes = 0;
+        let imageRefs = 0;
+        for (const feature of list) {
+          idBytes += jsStringBytes(feature?.id);
+          if (Array.isArray(feature?.bbox)) bboxNumberBytes += feature.bbox.length * 8;
+          const href = feature?.assets?.image?.href;
+          if (href) {
+            imageRefs += 1;
+            hrefBytes += jsStringBytes(href);
+          }
+          const props = feature?.properties || {};
+          selectedPropertyBytes +=
+            jsStringBytes(props.region) +
+            jsStringBytes(props.state) +
+            jsStringBytes(props["naip:state"]) +
+            jsStringBytes(props.datetime) +
+            jsStringBytes(String(props.year ?? props["naip:year"] ?? "")) +
+            jsStringBytes(String(props["proj:epsg"] ?? ""));
+        }
+        const shallowBytes = hrefBytes + idBytes + bboxNumberBytes + selectedPropertyBytes;
+        let serializedUtf16Bytes = null;
+        if (options.deep === true) {
+          try {
+            serializedUtf16Bytes = jsStringBytes(JSON.stringify(list));
+          } catch (_) {
+            serializedUtf16Bytes = null;
+          }
+        }
+        return {
+          count: list.length,
+          imageRefs,
+          shallowEstimate: byteReport(shallowBytes),
+          hrefStrings: byteReport(hrefBytes),
+          idStrings: byteReport(idBytes),
+          bboxNumbers: byteReport(bboxNumberBytes),
+          selectedProperties: byteReport(selectedPropertyBytes),
+          serializedUtf16: byteReport(serializedUtf16Bytes),
+          note: options.deep === true
+            ? "Serialized UTF-16 is a measurement of a temporary JSON string, not exact live heap."
+            : "Default estimate includes href/id strings, bbox numbers, and selected scalar properties; pass {deep: true} to include temporary serialized JSON size.",
+        };
+      }
+
+      function signedUrlCacheMemoryReport() {
+        const now = Date.now();
+        let keyBytes = 0;
+        let urlBytes = 0;
+        let expired = 0;
+        for (const [href, entry] of signedUrlCache.entries()) {
+          keyBytes += jsStringBytes(href);
+          urlBytes += jsStringBytes(entry?.url);
+          if (Number(entry?.expiresAt) <= now) expired += 1;
+        }
+        return {
+          entries: signedUrlCache.size,
+          inflight: inflightSigns.size,
+          expired,
+          keyStrings: byteReport(keyBytes),
+          urlStrings: byteReport(urlBytes),
+          estimatedStrings: byteReport(keyBytes + urlBytes),
+          note: "String bytes are UTF-16 payload estimates only; Map/object overhead is not included.",
+        };
+      }
+
+      function imageryReferenceMemoryReport(options = {}) {
+        const imagerySources = getImagerySources();
+        const hrefBytes = currentImageryHrefs.reduce((sum, href) => sum + jsStringBytes(href), 0);
+        return {
+          currentImageryHrefs: {
+            count: currentImageryHrefs.length,
+            strings: byteReport(hrefBytes),
+          },
+          imagerySources: featureReferenceMemory(imagerySources, options),
+          signatures: {
+            footprint: byteReport(jsStringBytes(currentFootprintSignature)),
+            imagery: byteReport(jsStringBytes(currentImagerySignature)),
+          },
+          deckMosaic: {
+            sourceCount: imagerySources.length,
+            note: "MosaicLayer also owns a Flatbush index and deck.gl tile-cache objects; those live-object and GPU bytes are not exposed by the browser.",
+          },
+        };
+      }
+
+      function chunkStatsForGeotiff(geotiff) {
+        const source = geotiff?.dataSource;
+        if (!source) return null;
+        let stats = null;
+        try {
+          stats = typeof source.stats === "function" ? source.stats() : null;
+        } catch (_) {
+          stats = null;
+        }
+        const memoryBytes = Number(stats?.memoryBytes ?? source.memoryBytes);
+        const memoryMaxBytes = Number(stats?.memoryMaxBytes ?? source.memoryMaxBytes);
+        const memoryEntries = Number(stats?.memoryEntries ?? source.memory?.size);
+        const inflight = Number(stats?.inflight ?? source.inflight?.size);
+        if (
+          !Number.isFinite(memoryBytes) &&
+          !Number.isFinite(memoryMaxBytes) &&
+          !Number.isFinite(memoryEntries) &&
+          !stats
+        ) {
+          return null;
+        }
+        return {
+          memoryBytes: Number.isFinite(memoryBytes) ? memoryBytes : 0,
+          memoryMaxBytes: Number.isFinite(memoryMaxBytes) ? memoryMaxBytes : 0,
+          memoryEntries: Number.isFinite(memoryEntries) ? memoryEntries : 0,
+          inflight: Number.isFinite(inflight) ? inflight : 0,
+          memoryHits: Number(stats?.memoryHits || 0),
+          persistentHits: Number(stats?.persistentHits || 0),
+          misses: Number(stats?.misses || 0),
+          networkBytes: Number(stats?.networkBytes || 0),
+          requestedBytes: Number(stats?.requestedBytes || 0),
+        };
+      }
+
+      function aggregateChunkStats(resolvedGeotiffs) {
+        const totals = {
+          sources: resolvedGeotiffs.size,
+          chunkCacheSources: 0,
+          memoryBytes: 0,
+          memoryMaxBytes: 0,
+          memoryEntries: 0,
+          inflight: 0,
+          memoryHits: 0,
+          persistentHits: 0,
+          misses: 0,
+          networkBytes: 0,
+          requestedBytes: 0,
+        };
+        for (const geotiff of resolvedGeotiffs.values()) {
+          const stats = chunkStatsForGeotiff(geotiff);
+          if (!stats) continue;
+          totals.chunkCacheSources += 1;
+          totals.memoryBytes += stats.memoryBytes;
+          totals.memoryMaxBytes += stats.memoryMaxBytes;
+          totals.memoryEntries += stats.memoryEntries;
+          totals.inflight += stats.inflight;
+          totals.memoryHits += stats.memoryHits;
+          totals.persistentHits += stats.persistentHits;
+          totals.misses += stats.misses;
+          totals.networkBytes += stats.networkBytes;
+          totals.requestedBytes += stats.requestedBytes;
+        }
+        return {
+          ...totals,
+          memory: byteReport(totals.memoryBytes),
+          memoryMax: byteReport(totals.memoryMaxBytes),
+          network: byteReport(totals.networkBytes),
+          requested: byteReport(totals.requestedBytes),
+        };
+      }
+
+      function geotiffHandleCacheMemoryReport(cache, resolved, maxEntries = null) {
+        let keyBytes = 0;
+        for (const key of cache.keys()) keyBytes += jsStringBytes(key);
+        return {
+          entries: cache.size,
+          maxEntries,
+          resolved: resolved.size,
+          keyStrings: byteReport(keyBytes),
+          chunkCache: aggregateChunkStats(resolved),
+          note: "GeoTIFF object/header-cache and decoder internals are not fully measurable; chunk-cache byte counts are exact for the wrapped tile-data chunk cache.",
+        };
+      }
+
+      function s1mTerrainCacheMemoryReport() {
+        const seen = new WeakSet();
+        let cacheKeyBytes = 0;
+        let rootElevationBytes = 0;
+        let rootMeshBytes = 0;
+        let subtileElevationBytes = 0;
+        let subtileMeshBytes = 0;
+        let attachedDrapeBytes = 0;
+        let subtiles = 0;
+        let texturedSubtiles = 0;
+        for (const [key, cache] of s1mTileCache.entries()) {
+          cacheKeyBytes += jsStringBytes(key);
+          rootElevationBytes += typedArrayBytes(cache?.elevations, seen);
+          rootElevationBytes += typedArrayBytes(cache?.data?.elev, seen);
+          rootMeshBytes += meshBytes(cache?.gpuMesh, seen);
+          for (const sub of cache?.subtiles?.values?.() || []) {
+            subtiles += 1;
+            if (sub.drapeImage) texturedSubtiles += 1;
+            subtileElevationBytes += typedArrayBytes(sub.elev, seen);
+            subtileMeshBytes += meshBytes(sub.gpuMesh, seen);
+            attachedDrapeBytes += imageDataBytes(sub.drapeImage, seen);
+          }
+        }
+        const meshAndElevationBytes = rootElevationBytes + rootMeshBytes + subtileElevationBytes + subtileMeshBytes;
+        return {
+          entries: s1mTileCache.size,
+          activeTiles: s1mActiveTiles.size,
+          subtiles,
+          texturedSubtiles,
+          keyStrings: byteReport(cacheKeyBytes),
+          rootElevations: byteReport(rootElevationBytes),
+          rootMeshes: byteReport(rootMeshBytes),
+          subtileElevations: byteReport(subtileElevationBytes),
+          subtileMeshes: byteReport(subtileMeshBytes),
+          meshAndElevation: byteReport(meshAndElevationBytes),
+          attachedDrapeImages: byteReport(attachedDrapeBytes),
+          totalIncludingAttachedDrapes: byteReport(meshAndElevationBytes + attachedDrapeBytes),
+          note: "Mesh/elevation bytes are typed-array payloads retained by the JS objects; deck.gl/WebGL buffer copies are not exposed.",
+        };
+      }
+
+      function s1mDrapeImageCacheMemoryReport() {
+        const configuredMaxBytes = S1M_DRAPE_CACHE_MAX * S1M_SUBTILE_DRAPE_SIZE * S1M_SUBTILE_DRAPE_SIZE * 4;
+        return {
+          entries: s1mDrapeCache.size,
+          maxEntries: S1M_DRAPE_CACHE_MAX,
+          resolvedEntries: s1mDrapeCacheBytes.size,
+          resolvedBytes: byteReport(sumNumberValues(s1mDrapeCacheBytes)),
+          configuredMaxBytes: byteReport(configuredMaxBytes),
+          textureSizePx: S1M_SUBTILE_DRAPE_SIZE,
+          note: "Resolved bytes are exact ImageData RGBA payloads. Browser/GPU texture copies are not included.",
+        };
+      }
+
+      function s1mDecodedCogTileCacheMemoryReport() {
+        return {
+          entries: s1mCogTileCache.size,
+          maxEntries: S1M_COG_TILE_CACHE_MAX,
+          resolvedEntries: s1mCogTileCacheBytes.size,
+          resolvedBytes: byteReport(sumNumberValues(s1mCogTileCacheBytes)),
+          note: "Resolved bytes are exact decoded RGBA typed-array payloads for COG tiles used while building drapes.",
+        };
+      }
+
+      function s1mDrapeSourceQueryMemoryReport() {
+        let keyBytes = 0;
+        let bboxBytes = 0;
+        let hrefBytes = 0;
+        let idBytes = 0;
+        let errorBytes = 0;
+        let sourceRefs = 0;
+        for (const [key, entry] of s1mDrapeSourceCache.entries()) {
+          keyBytes += jsStringBytes(key);
+          if (Array.isArray(entry?.bbox)) bboxBytes += entry.bbox.length * 8;
+          errorBytes += jsStringBytes(entry?.error);
+          for (const source of entry?.sources || []) {
+            sourceRefs += 1;
+            hrefBytes += jsStringBytes(source?.assets?.image?.href);
+            idBytes += jsStringBytes(source?.id);
+            if (Array.isArray(source?.bbox)) bboxBytes += source.bbox.length * 8;
+          }
+        }
+        const sourceStats = s1mDrapeSourceCacheStats();
+        return {
+          entries: s1mDrapeSourceCache.size,
+          maxEntries: S1M_DRAPE_SOURCE_CACHE_MAX,
+          ready: sourceStats.ready,
+          pending: sourceStats.pending,
+          failed: sourceStats.failed,
+          sourceRefs,
+          rawSources: sourceStats.rawSources,
+          shallowEstimate: byteReport(keyBytes + bboxBytes + hrefBytes + idBytes + errorBytes),
+          keyStrings: byteReport(keyBytes),
+          hrefStrings: byteReport(hrefBytes),
+          idStrings: byteReport(idBytes),
+          bboxNumbers: byteReport(bboxBytes),
+          errorStrings: byteReport(errorBytes),
+        };
+      }
+
+      function browserHeapMemoryReport() {
+        const memory = performance?.memory;
+        if (!memory) {
+          return {
+            available: false,
+            note: "performance.memory is not available in this browser context.",
+          };
+        }
+        return {
+          available: true,
+          usedJSHeapSize: byteReport(memory.usedJSHeapSize),
+          totalJSHeapSize: byteReport(memory.totalJSHeapSize),
+          jsHeapSizeLimit: byteReport(memory.jsHeapSizeLimit),
+          note: "Browser heap numbers are coarse and Chrome-specific.",
+        };
+      }
+
+      function cacheMemoryReport(options = {}) {
+        const signedUrls = signedUrlCacheMemoryReport();
+        const searchResults = featureReferenceMemory(lastSearchFeatures, options);
+        const imagery = imageryReferenceMemoryReport(options);
+        const geotiffSources = geotiffHandleCacheMemoryReport(
+          geotiffSourceCache,
+          geotiffSourceResolved,
+          GEOTIFF_SOURCE_CACHE_MAX,
+        );
+        const s1mGeotiffs = geotiffHandleCacheMemoryReport(s1mGeotiffCache, s1mGeotiffResolved, null);
+        const s1mTerrain = s1mTerrainCacheMemoryReport();
+        const s1mDrapeImages = s1mDrapeImageCacheMemoryReport();
+        const s1mDecodedCogTiles = s1mDecodedCogTileCacheMemoryReport();
+        const s1mDrapeSourceQueries = s1mDrapeSourceQueryMemoryReport();
+        const trackedBytes =
+          (s1mTerrain.meshAndElevation.bytes || 0) +
+          (s1mDrapeImages.resolvedBytes.bytes || 0) +
+          (s1mDecodedCogTiles.resolvedBytes.bytes || 0) +
+          (geotiffSources.chunkCache.memory.bytes || 0) +
+          (s1mGeotiffs.chunkCache.memory.bytes || 0);
+        const estimatedStringBytes =
+          (signedUrls.estimatedStrings.bytes || 0) +
+          (searchResults.shallowEstimate.bytes || 0) +
+          (imagery.currentImageryHrefs.strings.bytes || 0) +
+          (imagery.signatures.footprint.bytes || 0) +
+          (imagery.signatures.imagery.bytes || 0) +
+          (geotiffSources.keyStrings.bytes || 0) +
+          (s1mGeotiffs.keyStrings.bytes || 0) +
+          (s1mDrapeSourceQueries.shallowEstimate.bytes || 0);
+        return {
+          generatedAt: new Date().toISOString(),
+          browserHeap: browserHeapMemoryReport(),
+          totals: {
+            trackedDecodedAndChunkBytes: byteReport(trackedBytes),
+            estimatedStringAndReferenceBytes: byteReport(estimatedStringBytes),
+            caveats: [
+              "Exact per-object heap size is not exposed by JavaScript.",
+              "Map/object/Promise overhead, MapLibre worker copies, Flatbush index internals, deck.gl tile objects, decoder internals, and GPU texture/buffer copies are not included.",
+              "Deep serialized size is intentionally off by default because it allocates a temporary JSON string.",
+            ],
+          },
+          signedUrls,
+          searchResults,
+          imagery,
+          geotiffSources,
+          s1mGeotiffs,
+          s1mTerrain,
+          s1mDrapeImages,
+          s1mDecodedCogTiles,
+          s1mDrapeSourceQueries,
+        };
+      }
+
       function resetS1MDrapeMetrics() {
         s1mDrapeMetrics.mode = "analytic RGBIR";
         s1mDrapeMetrics.sourceSearchMs = null;
@@ -1683,8 +2138,13 @@
               getPriority,
               chunkCache: chunkCacheForHref(s3href),
             });
-          })().catch((error) => {
-            geotiffSourceCache.delete(s3href);   // never cache a failed resolve
+          })().then((geotiff) => {
+            if (geotiffSourceCache.get(s3href) === pending) {
+              geotiffSourceResolved.set(s3href, geotiff);
+            }
+            return geotiff;
+          }).catch((error) => {
+            deleteGeotiffSourceCacheEntry(s3href);   // never cache a failed resolve
             // A 403/expired signed URL: drop the cached signature so the next
             // resolve re-signs from scratch.
             if (isExpiredSignatureError(error)) {
@@ -1695,7 +2155,7 @@
           });
           geotiffSourceCache.set(s3href, pending);
           while (geotiffSourceCache.size > GEOTIFF_SOURCE_CACHE_MAX) {
-            geotiffSourceCache.delete(geotiffSourceCache.keys().next().value);
+            deleteGeotiffSourceCacheEntry(geotiffSourceCache.keys().next().value);
             s1mBench.tiffEvict += 1;
           }
         } else {
@@ -1852,6 +2312,7 @@
       let s1mLayers = [];                 // tile layers currently pushed to deck
       const s1mTileCache = new Map();     // `${dataset}@${size}` -> {data, elevations, gpuMesh, layer}
       const s1mDrapeCache = new Map();    // drape key -> Promise<ImageData>
+      const s1mDrapeCacheBytes = new Map(); // drape key -> resolved ImageData.data.byteLength
       const s1mDrapedSubdivByDataset = new Map(); // dataset -> finest subdiv actually draped; the drape resolution only ratchets up (zoom-out keeps the finer drape, never re-drapes coarser)
       window.__s1mDrapeRatchet = s1mDrapedSubdivByDataset; // debug handle (like window.__map) for scripted checks
       const S1M_FOOTPRINT_MIN_Z = 3;
@@ -1859,13 +2320,15 @@
       let s1mFootprintKey = "";
       let s1mFootprintPendingKey = "";
       let s1mFootprintSeq = 0;
-      const NAIP_COVERAGE_MVT_MIN_Z = 4;
+      const NAIP_COVERAGE_MVT_MIN_Z = 3;
       const NAIP_COVERAGE_MVT_MAX_SOURCE_Z = 15;
       const NAIP_COVERAGE_MVT_MAX_RENDER_Z = 24;
       const NAIP_COVERAGE_MVT_SOURCE_ID = "naip-coverage-mvt";
       const NAIP_COVERAGE_MVT_LAYER_ID = "naip-coverage-mvt-footprints";
       const NAIP_COVERAGE_MVT_LINE_LAYER_ID = "naip-coverage-mvt-footprint-lines";
       const NAIP_COVERAGE_MVT_VERSION = "footprints-v2";
+      const NAIP_COVERAGE_FOOTPRINT_RGBA = [251, 146, 60]; // matches the old search-result outline orange
+      const SEARCH_RESULT_FOOTPRINT_COLOR = "#22c55e";
       let naipCoverageMvtKey = "";
       const S1M_MAX_TILES = 96;           // enough to cover wide/pitched views; LOD keeps edge tiles cheap
       // Collections whose source COGs are small (~1-2 km) relative to a ~12 km
@@ -1922,6 +2385,17 @@
       let buildingFootprintKey = "";
       let buildingFeatureData = null;     // raw lon/lat FC from the API, pre terrain-seating
       const BUILDING_MAX_FEATURES = 12000;  // viewport-scoped, so this is only a safety cap
+
+      function deleteS1MDrapeCacheEntry(key) {
+        if (!key) return;
+        s1mDrapeCache.delete(key);
+        s1mDrapeCacheBytes.delete(key);
+      }
+
+      function clearS1MDrapeCacheEntries() {
+        s1mDrapeCache.clear();
+        s1mDrapeCacheBytes.clear();
+      }
 
       function moveMapLibreVectorLayersToTop() {
         const orderedLayerIds = [
@@ -2090,7 +2564,7 @@
                 if (s3href && isExpiredSignatureError(error) && !resignAttempted.has(s3href)) {
                   resignAttempted.add(s3href);
                   signedUrlCache.delete(s3href);
-                  geotiffSourceCache.delete(s3href);
+                  deleteGeotiffSourceCacheEntry(s3href);
                   imageryRevision += 1;
                   updateImageryLayers();
                   return;
@@ -2151,8 +2625,8 @@
             maxCacheSize: 64,
             filled: true,
             stroked: true,
-            getFillColor: [250, 204, 21, 0],
-            getLineColor: [250, 204, 21, 255],
+            getFillColor: [...NAIP_COVERAGE_FOOTPRINT_RGBA, 0],
+            getLineColor: [...NAIP_COVERAGE_FOOTPRINT_RGBA, 128],
             getLineWidth: 1,
             lineWidthUnits: "pixels",
             lineWidthMinPixels: 1,
@@ -2185,7 +2659,13 @@
       const S1M_EPSG = 6350;                 // NAD83(2011) CONUS Albers
       const S1M_CLIENT_NODATA = -999999.0;
       const s1mGeotiffCache = new Map();     // s3 href -> Promise<geotiff>
+      const s1mGeotiffResolved = new Map();  // s3 href -> resolved geotiff
       let _s1mAlbersToWgs = null;
+
+      function deleteS1MGeotiffCacheEntry(href) {
+        s1mGeotiffCache.delete(href);
+        s1mGeotiffResolved.delete(href);
+      }
 
       function s1mCogHttpUrl(href) {
         const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(href);
@@ -2210,7 +2690,13 @@
                 memoryMaxBytes: 16 * 1024 * 1024,
               },
             })
-            .catch((error) => { s1mGeotiffCache.delete(href); throw error; });
+            .then((geotiff) => {
+              if (s1mGeotiffCache.get(href) === pending) {
+                s1mGeotiffResolved.set(href, geotiff);
+              }
+              return geotiff;
+            })
+            .catch((error) => { deleteS1MGeotiffCacheEntry(href); throw error; });
           s1mGeotiffCache.set(href, pending);
         }
         return pending;
@@ -3023,13 +3509,31 @@
       // decoded tiles are read-only, so sharing one array across sub-tiles is safe.
       const S1M_COG_TILE_CACHE_MAX = 24;
       const s1mCogTileCache = new Map();   // key -> Promise<decoded rgba tile>
+      const s1mCogTileCacheBytes = new Map(); // key -> resolved rgba.data.byteLength
+
+      function deleteS1MCogTileCacheEntry(key) {
+        if (!key) return;
+        s1mCogTileCache.delete(key);
+        s1mCogTileCacheBytes.delete(key);
+      }
+
+      function clearS1MCogTileCacheEntries() {
+        s1mCogTileCache.clear();
+        s1mCogTileCacheBytes.clear();
+      }
+
       function getDrapeCogTile(source, image, level, tx, ty) {
         const key = `${source.id}@${level.width}x${level.height}@${tx},${ty}@${imageryRevision}`;
         let pending = s1mCogTileCache.get(key);
         if (pending) {
           s1mBench.cogHit += 1;
+          const cachedBytes = s1mCogTileCacheBytes.get(key);
           s1mCogTileCache.delete(key);     // LRU: move to most-recently-used
           s1mCogTileCache.set(key, pending);
+          if (cachedBytes !== undefined) {
+            s1mCogTileCacheBytes.delete(key);
+            s1mCogTileCacheBytes.set(key, cachedBytes);
+          }
           return pending;
         }
         s1mBench.cogMiss += 1;
@@ -3041,11 +3545,14 @@
           const t2 = performance.now();
           s1mBench.cogFetchMs += t1 - t0; s1mBench.cogFetchN += 1;
           s1mBench.decodeMs += t2 - t1; s1mBench.decodeN += 1;
+          if (s1mCogTileCache.get(key) === pending) {
+            s1mCogTileCacheBytes.set(key, rgba?.data?.byteLength || 0);
+          }
           return rgba;
-        })().catch((error) => { s1mCogTileCache.delete(key); throw error; });
+        })().catch((error) => { deleteS1MCogTileCacheEntry(key); throw error; });
         s1mCogTileCache.set(key, pending);
         while (s1mCogTileCache.size > S1M_COG_TILE_CACHE_MAX) {
-          s1mCogTileCache.delete(s1mCogTileCache.keys().next().value);  // evict oldest
+          deleteS1MCogTileCacheEntry(s1mCogTileCache.keys().next().value);  // evict oldest
           s1mBench.cogEvict += 1;
         }
         return pending;
@@ -3241,7 +3748,7 @@
         for (const key of s1mDrapeCache.keys()) {
           if (s1mDrapeCache.size <= S1M_DRAPE_CACHE_MAX) break;
           if (!active.has(key)) {
-            s1mDrapeCache.delete(key);
+            deleteS1MDrapeCacheEntry(key);
             s1mBench.drapeEvict += 1;
           }
         }
@@ -3255,8 +3762,8 @@
         cache.gpuMesh = null;
         if (!cache.subtiles) return;
         for (const sub of cache.subtiles.values()) {
-          if (sub.drapeKey) s1mDrapeCache.delete(sub.drapeKey);
-          if (sub.drapePending) s1mDrapeCache.delete(sub.drapePending);
+          if (sub.drapeKey) deleteS1MDrapeCacheEntry(sub.drapeKey);
+          if (sub.drapePending) deleteS1MDrapeCacheEntry(sub.drapePending);
           sub.drapeImage = null;
           sub.drapeKey = null;
           sub.drapePending = null;
@@ -3267,10 +3774,10 @@
       }
 
       function releaseS1MDrapeMemory() {
-        s1mDrapeCache.clear();
+        clearS1MDrapeCacheEntries();
         s1mDrapedSubdivByDataset.clear();   // drapes are gone -> drop the ratchet so tiles re-drape at the current zoom
-        s1mCogTileCache.clear();
-        geotiffSourceCache.clear();
+        clearS1MCogTileCacheEntries();
+        clearGeotiffSourceCache();
         clearS1MDrapeSourceCache();
         drapeProjectionCache = new WeakMap();
         for (const cache of s1mTileCache.values()) {
@@ -3472,10 +3979,14 @@
               s1mDrapeMetrics.totalTileMs += elapsed;
               s1mDrapeMetrics.lastTileMs = elapsed;
               s1mBench.drapeBuildMs += elapsed; s1mBench.drapeBuildN += 1;
+              if (s1mDrapeCache.get(key) === pending) {
+                s1mDrapeCacheBytes.set(key, imageData?.data?.byteLength || 0);
+              }
               renderS1MDrapeMetrics();
               return imageData;
             })
             .catch((error) => {
+              s1mDrapeCacheBytes.delete(key);
               s1mDrapeMetrics.tilesFailed += 1;
               s1mDrapeMetrics.sourceError = error?.message || String(error);
               s1mDrapeMetrics.lastTileMs = performance.now() - startedAt;
@@ -3491,7 +4002,7 @@
           sub.drapeImage = imageData;
           sub.drapeKey = key;
           if (sub.drapePending === key) sub.drapePending = null;
-          if (oldDrapeKey && oldDrapeKey !== key) s1mDrapeCache.delete(oldDrapeKey);
+          if (oldDrapeKey && oldDrapeKey !== key) deleteS1MDrapeCacheEntry(oldDrapeKey);
           pruneS1MDrapeCache();
           if (s1mActive && seq === s1mRefreshSeq) {
             schedulePaint?.();
@@ -3633,8 +4144,8 @@
       }
 
       function clearS1MDrapeImages() {
-        s1mDrapeCache.clear();
-        s1mCogTileCache.clear();
+        clearS1MDrapeCacheEntries();
+        clearS1MCogTileCacheEntries();
         clearS1MDrapeSourceCache();
         for (const cache of s1mTileCache.values()) {
           delete cache.drapeImage;
@@ -3835,6 +4346,18 @@
           removeNaipCoverageMvtLayer();
         }
         updateImageryLayers();
+      }
+
+      function syncFootprintLayerMode() {
+        const mode = footprintLayerModeEls.find((el) => el.checked)?.value || "";
+        if (toggleNaipCoverageMvtLayerEl) {
+          toggleNaipCoverageMvtLayerEl.checked = mode === "coverage";
+        }
+        if (toggleNaipSearchFootprintsLayerEl) {
+          toggleNaipSearchFootprintsLayerEl.checked = mode === "search";
+        }
+        updateNaipSearchFootprintsVisibility();
+        updateNaipCoverageMvtLayer();
       }
 
       // Per-tile screen-error LOD. Pitched views make near tiles project wider
@@ -4153,10 +4676,10 @@
           disposeS1MTileCache(cache);
         }
         s1mTileCache.clear();
-        s1mDrapeCache.clear();
+        clearS1MDrapeCacheEntries();
         s1mDrapedSubdivByDataset.clear();
-        s1mCogTileCache.clear();
-        geotiffSourceCache.clear();
+        clearS1MCogTileCacheEntries();
+        clearGeotiffSourceCache();
         clearS1MDrapeSourceCache();
         drapeProjectionCache = new WeakMap();
         s1mTerrainPending.clear();
@@ -4805,7 +5328,7 @@
             visibility: toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none",
           },
           paint: {
-            "fill-color": "#f97316",
+            "fill-color": SEARCH_RESULT_FOOTPRINT_COLOR,
             "fill-opacity": 0,
           },
         });
@@ -4818,7 +5341,7 @@
             visibility: toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none",
           },
           paint: {
-            "line-color": "#fb923c",
+            "line-color": SEARCH_RESULT_FOOTPRINT_COLOR,
             "line-width": 1,
             "line-opacity": 0.5,
           },
@@ -5030,17 +5553,47 @@
       let searchAvailabilityGsd = {};      // {region: {year: meters}} from /availability
       let searchAvailabilityExtent = {};   // {region: {year: [xmin,ymin,xmax,ymax]}} from /availability
 
-      // Fly to the center of the current Collection/Region/Year selection.
-      // Blank region = union across regions; blank year = union across that
-      // region's vintages (extents barely differ between vintages anyway).
-      // A fixed zoom rather than fitBounds: fitting a large state's full
+      // Fly to the current Collection/Region/Year selection. Specific regions
+      // use a fixed zoom rather than fitBounds: fitting a large state's full
       // extent would trigger an auto-search over the whole state and flood
-      // the footprint limit. Configurable via ?centerZoom= or
-      // window.S3_COG_CENTER_ZOOM (config.js); default z11.
+      // the footprint limit. "All loaded" is intentionally different: it fits
+      // the active collection's registered bbox, e.g. CONUS for NAIP and KY for
+      // KyFromAbove.
       const CENTER_ZOOM = Number(
         new URLSearchParams(location.search).get("centerZoom") ||
         window.S3_COG_CENTER_ZOOM || 11
       );
+      const CONUS_BBOX = [-125, 24, -66.5, 50];
+      const CONUS_CENTER_MAX_ZOOM = Number(
+        new URLSearchParams(location.search).get("conusCenterMaxZoom") ||
+        window.S3_COG_CONUS_CENTER_MAX_ZOOM || 4.8
+      );
+
+      function isValidLngLatBbox(bbox) {
+        return Array.isArray(bbox) && bbox.length === 4 &&
+          bbox.every((v) => Number.isFinite(Number(v))) &&
+          Number(bbox[0]) < Number(bbox[2]) &&
+          Number(bbox[1]) < Number(bbox[3]);
+      }
+
+      function fitLngLatBbox(bbox, extraOptions = {}) {
+        if (!isValidLngLatBbox(bbox)) return false;
+        const b = bbox.map(Number);
+        map.fitBounds(
+          [[b[0], b[1]], [b[2], b[3]]],
+          {
+            padding: { top: 72, right: 48, bottom: 72, left: 48 },
+            duration: 1200,
+            ...extraOptions,
+          },
+        );
+        return true;
+      }
+
+      function activeCollectionBbox() {
+        const collection = collectionById[activeCollection()];
+        return isValidLngLatBbox(collection?.bbox) ? collection.bbox : null;
+      }
 
       // Curated per-state anchors: a visually interesting, recognizable spot
       // (urban texture, water, distinctive infrastructure) instead of the
@@ -5062,6 +5615,12 @@
 
       function centerOnSelection() {
         const st = stateEl.value;
+        if (!st) {
+          if (!fitLngLatBbox(activeCollectionBbox())) {
+            fitLngLatBbox(CONUS_BBOX, { maxZoom: CONUS_CENTER_MAX_ZOOM });
+          }
+          return;
+        }
         const yr = yearEl.value;
         if (st && STATE_ANCHORS[st]) {
           map.flyTo({ center: STATE_ANCHORS[st], zoom: CENTER_ZOOM, duration: 1200 });
@@ -5074,8 +5633,7 @@
             ? [Math.min(box[0], b[0]), Math.min(box[1], b[1]), Math.max(box[2], b[2]), Math.max(box[3], b[3])]
             : [...b];
         };
-        const regions = st ? [st] : Object.keys(searchAvailabilityExtent);
-        for (const region of regions) {
+        for (const region of [st]) {
           const byYear = searchAvailabilityExtent[region] || {};
           if (yr) merge(byYear[yr]);
           else Object.values(byYear).forEach(merge);
@@ -5108,8 +5666,6 @@
 
       function populateSearchYears() {
         const st = stateEl.value;
-        // Save current selection before clearing so we can try to preserve it.
-        const prevYear = yearEl.value;
         yearEl.innerHTML = "";
 
         if (!st) {
@@ -5129,9 +5685,10 @@
             const o = document.createElement("option");
             o.value = y; o.textContent = yearOptionLabel(y, ""); yearEl.appendChild(o);
           });
-          // Restore the previous selection if it is still a valid option;
-          // otherwise fall back to "Latest available" (no year filter).
-          yearEl.value = allYears.map(String).includes(prevYear) ? prevYear : "";
+          // "All loaded" always uses Latest available (no year filter). If the
+          // user comes from a specific region/year, do not carry that year into
+          // a CONUS-level search.
+          yearEl.value = "";
         } else {
           // Specific state: list that state's ingested years newest-first and
           // auto-select the most recent. No "Any" option -- the no-year path
@@ -5255,7 +5812,6 @@
       });
       document.getElementById("center-data").addEventListener("click", centerOnSelection);
 
-      searchBtn.addEventListener("click", () => queueSearch("manual"));
       tabButtons.forEach((button) => {
         button.addEventListener("click", () => switchTab(button.dataset.tab));
       });
@@ -5322,6 +5878,7 @@
       });
       toggleNaipSearchFootprintsLayerEl?.addEventListener("change", updateNaipSearchFootprintsVisibility);
       toggleNaipCoverageMvtLayerEl?.addEventListener("change", updateNaipCoverageMvtLayer);
+      footprintLayerModeEls.forEach((el) => el.addEventListener("change", syncFootprintLayerMode));
 
       toggleCogEl.addEventListener("change", () => {
         updateImagery(lastSearchFeatures);
@@ -5473,7 +6030,7 @@
             if (changed && s1mActive) {
               refreshS1MTerrain();
             }
-            if (ok && (changed || autoSearchEl.checked || toggleCogEl.checked)) queueSearch("auto");
+            if (ok && changed) queueSearch("auto");
             updateNaipCoverageMvtLayer();
           });
         }
@@ -5522,18 +6079,16 @@
         }
         autoSearchTimeoutId = window.setTimeout(() => {
           autoSearchTimeoutId = null;
-          if (autoSearchEl.checked || toggleCogEl.checked) {
-            // Skip the search if existing footprints already cover the viewport
-            if (footprintsCoverViewport(lastSearchFeatures)) {
-              imageryStatusEl.textContent = "Footprints cover viewport — search skipped.";
-              imageryStatusEl.className = "small status-ok";
-              updateResolutionDebug(lastSearchFeatures, getImagerySources());
-              // Still refresh deck.gl layers so panning picks up the new
-              // viewport position with existing features.
-              updateImageryLayers();
-            } else {
-              queueSearch("auto");
-            }
+          // Skip the search if existing footprints already cover the viewport
+          if (footprintsCoverViewport(lastSearchFeatures)) {
+            imageryStatusEl.textContent = "Footprints cover viewport — search skipped.";
+            imageryStatusEl.className = "small status-ok";
+            updateResolutionDebug(lastSearchFeatures, getImagerySources());
+            // Still refresh deck.gl layers so panning picks up the new
+            // viewport position with existing features.
+            updateImageryLayers();
+          } else {
+            queueSearch("auto");
           }
         }, 250);
       });
@@ -5585,7 +6140,7 @@
         await refreshCollections();
         updateCogLayerLabel();
         const availabilityOk = await refreshAvailability();
-        if (availabilityOk) await queueSearch("manual");
+        if (availabilityOk) await queueSearch("auto");
         mapReady = true;
       });
 

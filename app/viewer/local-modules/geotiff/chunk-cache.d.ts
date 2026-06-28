@@ -10,6 +10,11 @@ export interface ChunkCacheStats {
     misses: number;
     networkBytes: number;
     requestedBytes: number;
+    memoryBytes: number;
+    memoryMaxBytes: number;
+    memoryEntries: number;
+    inflight: number;
+    chunkSize: number;
 }
 export interface ChunkCachedSourceOptions {
     /** Stable source identity. Use s3://bucket/key, not a rotating signed URL. */

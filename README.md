@@ -4,6 +4,14 @@ A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG
 
 The core motivation for this project is to make the numerous open Cloud-Optimized GeoTIFF (COG) datasets hosted on Amazon S3 as part of the Registry of Open Data on AWS—including the USDA National Agriculture Imagery Program (NAIP) imagery and the USGS 3DEP Seamless 1-meter (S1M) elevation DEMs—more visible, accessible, and easily explorable for users directly in the browser.
 
+## Intended audience and purpose
+
+This application is intended for developers, cloud architects, geospatial engineers, and stakeholders involved with federal imagery and elevation programs such as NAIP and USGS 3DEP. It is not primarily a consumer map viewer; it is a working demonstration of how existing federal geospatial data already published on Amazon S3 can be accessed, indexed, searched, and visualized using a cloud-native architecture.
+
+The project is meant to showcase practical patterns for public-sector geospatial modernization: Cloud-Optimized GeoTIFF range reads from S3, serverless metadata search over GeoParquet with DuckDB, requester-pays-aware asset signing, and browser-side GPU rendering of imagery and terrain. The goal is to make the architecture concrete enough for technical review, program evaluation, and reuse in operational prototypes around federal open data.
+
+That purpose drives the viewer flow. The `Collection / Region / Year` controls let a user first inspect data availability and footprints in 2D at a CONUS scale, without paying the cost or cognitive load of terrain rendering. Once they understand which imagery exists for an area and vintage, they can move into the Viewer panel's 3D terrain mode and drape that imagery over the currently available USGS 3DEP S1M COG DEM coverage. In other words, the app separates broad federal-data discovery from detailed 3D inspection: first confirm the imagery footprint, then examine how that imagery behaves on the available 1-meter elevation surface.
+
 > [!NOTE]
 > **Gratitude & Attribution:** This application would have been impossible to build without the outstanding foundations of three key open-source projects:
 > - **[DuckDB](https://duckdb.org/)**: The fast, in-process spatial SQL engine that powers the serverless GeoParquet data lake querying.
@@ -182,7 +190,7 @@ The project is managed as a monorepo containing Shared TypeScript Packages (`pnp
 ### Prerequisites
 *   **Node.js** (v24+) & **pnpm** (v10+)
 *   **Python** (v3.12+)
-*   **Docker** / **Colima** (for SAM container packaging and local testing)
+*   **Docker** (for SAM container packaging and local testing)
 *   **AWS CLI** & **AWS SAM CLI** (for cloud deployments)
 
 ### 1. Installation & Build

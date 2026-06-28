@@ -112,7 +112,14 @@ export class ChunkCachedSource {
         return this.source.head(options);
     }
     stats() {
-        return { ...this.counters };
+        return {
+            ...this.counters,
+            memoryBytes: this.memoryBytes,
+            memoryMaxBytes: this.memoryMaxBytes,
+            memoryEntries: this.memory.size,
+            inflight: this.inflight.size,
+            chunkSize: this.chunkSize,
+        };
     }
     clearMemory() {
         this.memory.clear();
