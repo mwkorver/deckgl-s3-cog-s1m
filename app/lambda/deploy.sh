@@ -54,5 +54,9 @@ if [[ "$DEPLOY_INGEST" == true ]]; then
 fi
 
 if [[ "$DEPLOY_READ" == true ]]; then
-  bash "$SCRIPT_DIR/deploy-read.sh" "${READ_ARGS[@]}"
+  if [[ ${#READ_ARGS[@]} -gt 0 ]]; then
+    bash "$SCRIPT_DIR/deploy-read.sh" "${READ_ARGS[@]}"
+  else
+    bash "$SCRIPT_DIR/deploy-read.sh"
+  fi
 fi

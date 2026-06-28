@@ -79,6 +79,7 @@ Resources:
           S3_COG_LAKE_ROOT: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake"
           S3_COG_MANIFEST_INDEX: s3://cog-stac-catalog/manifest-index
           S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
+          S1M_INDEX_URL: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake/s1m/S1M_Products.parquet"
           S3_COG_REQUEST_PAYER: requester
           S3_COG_SIGN_ASSET_URLS: "1"
           # Presigned asset URLs are signed with the Lambda execution role's
