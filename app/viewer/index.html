@@ -501,7 +501,7 @@
                 </select>
               </label>
               <label class="small" style="display:flex; align-items:center; gap:6px;">
-                <input id="ter-buildings" type="checkbox" />
+                <input id="ter-buildings" type="checkbox" autocomplete="off" />
                 Show buildings (3D) <span id="ter-buildings-status" class="muted">— Overture, footprints in the current view</span>
               </label>
               <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -2872,6 +2872,10 @@
         const body = s1mDrapeSearchBody(bbox);
         const key = s1mDrapeSearchKey(body);
         let entry = s1mDrapeSourceCache.get(key);
+        if (entry?.error && !entry.pending && entry.failedSeq !== seq) {
+          s1mDrapeSourceCache.delete(key);
+          entry = null;
+        }
         if (entry?.sources) return entry.sources;
         if (entry?.pending) {
           if (entry.notifySeq !== seq) {
@@ -2891,6 +2895,7 @@
           rawCount: 0,
           pending: null,
           error: null,
+          failedSeq: null,
         };
         s1mDrapeSourceCache.set(key, entry);
         pruneS1MDrapeSourceCache();
@@ -2920,6 +2925,7 @@
           entry.sources = sources;
           entry.rawCount = rawSources.length;
           entry.error = null;
+          entry.failedSeq = null;
           s1mDrapeSourceKey = key;
           s1mDrapeSources = sources;
           s1mDrapeSourceError = null;
@@ -2937,6 +2943,7 @@
           entry.sources = fallbackSources;
           entry.rawCount = fallbackSources.length;
           entry.error = fallbackSources.length ? null : message;
+          entry.failedSeq = entry.error ? seq : null;
           s1mDrapeSourceKey = key;
           s1mDrapeSources = fallbackSources;
           s1mDrapeSourceError = entry.error;
@@ -5571,7 +5578,6 @@
         updateReferenceRasterLayers();
 
         await initImagerySupport();
-await enableS1MTerrain();
         refreshS1MFootprintsLayer();
         updateNaipCoverageMvtLayer();
         await refreshEnvironment();
