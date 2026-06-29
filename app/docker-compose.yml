@@ -15,7 +15,10 @@ services:
       AWS_CONFIG_FILE: /root/.aws/config
       AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
       S3_COG_SIGN_ASSET_URLS: ${S3_COG_SIGN_ASSET_URLS:-1}
-      S3_COG_PRESIGN_EXPIRES: ${S3_COG_PRESIGN_EXPIRES:-3600}
+      # 24h ceiling. Effective lifetime is still min(this, signing-creds
+      # remaining): temporary creds (aws login / Lambda role) cap it to the
+      # session, but this lets a presign use the FULL session instead of 1h.
+      S3_COG_PRESIGN_EXPIRES: ${S3_COG_PRESIGN_EXPIRES:-86400}
       S3_COG_PRESIGN_CACHE_TTL: ${S3_COG_PRESIGN_CACHE_TTL:-900}
       S3_COG_PRESIGN_CACHE_MAXSIZE: ${S3_COG_PRESIGN_CACHE_MAXSIZE:-10000}
       S3_COG_PRESIGN_MAX_WORKERS: ${S3_COG_PRESIGN_MAX_WORKERS:-8}
