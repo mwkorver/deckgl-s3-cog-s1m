@@ -56,6 +56,34 @@
         margin: 0 0 10px;
         font-size: 16px;
       }
+      .tier {
+        border-bottom: 1px solid #343434;
+      }
+      .tier:last-child {
+        border-bottom: none;
+      }
+      .tier > .section {
+        border-bottom: none;
+        padding-top: 4px;
+        padding-bottom: 10px;
+      }
+      .tier > .section h2 {
+        font-size: 14px;
+        color: #d4d4d4;
+      }
+      .tier-label {
+        padding: 13px 14px 2px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: #5e9bf0;
+      }
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
       .tabs {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
@@ -370,8 +398,10 @@
         </div>
 
         <div id="tab-viewer" class="tab-panel active">
+          <div class="tier">
+            <div class="tier-label">Data &amp; 2D</div>
           <div class="section">
-            <h2>Collections in View</h2>
+            <h2>Collections in view</h2>
             <div id="collections-here" class="small muted">
               Move the map to see which imagery collections cover the view.
             </div>
@@ -379,7 +409,7 @@
           </div>
 
           <div class="section">
-            <h2>COG Footprints</h2>
+            <h2>Footprints</h2>
             <div class="controls">
               <div id="active-collection-summary" class="small muted">
                 Search collection follows the selected searchable collection above.
@@ -392,44 +422,38 @@
               </label>
               <label class="small">
                 Year
-                <div style="display:flex; gap:6px; align-items:center;">
+                <div class="field" style="gap:6px;">
                   <select id="year" style="flex:1;">
                     <option value="">Latest available</option>
                   </select>
                   <button id="center-data" type="button" title="Move the map to the selected Collection/Region/Year extent" style="white-space:nowrap;">Center</button>
                 </div>
               </label>
-            </div>
-            <div class="legend-row">
-              <div class="swatch" style="background:#3b82f6"></div>
-              <span>Returned order is the draw priority order from the API.</span>
-            </div>
-          </div>
-
-          <div class="section">
-            <h2>Vector Layers</h2>
-            <div class="controls">
-              <div class="small" role="radiogroup" aria-label="Footprint overlay" style="display:flex; flex-direction:column; gap:8px;">
-                <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; cursor:pointer; user-select:none;">
+              <div class="small" role="radiogroup" aria-label="Footprint overlay" style="display:flex; flex-direction:column; gap:8px; margin-top:2px;">
+                <label class="field" style="flex-wrap:wrap; cursor:pointer; user-select:none;">
                   <input id="footprint-layer-search" name="footprint-layer-mode" value="search" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                  <strong>Search Result Footprints</strong>
-                  <span class="muted">— COGs returned by Search</span>
-                  <span style="display:flex; align-items:center; gap:6px; margin-left:8px;">
-                    Max footprints
-                    <input id="limit" type="number" value="18000" min="1" max="18000" style="width:92px;" />
+                  <strong>Search results</strong>
+                  <span class="muted">— COGs returned by search</span>
+                  <span class="field" style="gap:6px; margin-left:8px;">
+                    Max
+                    <input id="limit" type="number" value="18000" min="1" max="18000" style="width:84px;" />
                   </span>
                 </label>
-                <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; cursor:pointer; user-select:none;">
+                <label class="field" style="flex-wrap:wrap; cursor:pointer; user-select:none;">
                   <input id="footprint-layer-coverage" name="footprint-layer-mode" value="coverage" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                  <strong id="naip-coverage-label">NAIP Coverage Footprints — MVT outlines, z3-15</strong>
+                  <strong id="naip-coverage-label">NAIP coverage — MVT outlines, z3-15</strong>
                 </label>
-                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;">
+                <label class="field" style="cursor:pointer; user-select:none;">
                   <input id="footprint-layer-off" name="footprint-layer-mode" value="" type="radio" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
                   <strong>Off</strong>
                 </label>
               </div>
               <input id="toggle-naip-coverage-mvt-layer" type="checkbox" autocomplete="off" hidden />
               <input id="toggle-naip-search-footprints-layer" type="checkbox" autocomplete="off" hidden />
+            </div>
+            <div class="legend-row">
+              <div class="swatch" style="background:#3b82f6"></div>
+              <span>Returned order is the draw priority order from the API.</span>
             </div>
           </div>
 
@@ -455,6 +479,10 @@
             </div>
           </div>
 
+          </div>
+
+          <div class="tier">
+            <div class="tier-label">3D terrain</div>
           <div class="section">
             <h2>Terrain (S1M)</h2>
             <div class="controls">
@@ -465,37 +493,39 @@
                 Vertical exaggeration <span id="ter-exag-val" class="muted">2.0&times;</span>
                 <input id="ter-exag" type="range" min="1" max="8" step="0.5" value="2" />
               </label>
-              <label class="small" style="display:flex; align-items:center; gap:6px;">
-                <input id="ter-gpu" type="checkbox" checked disabled />
-                GPU displacement <span class="muted">— elevation as a texture, displaced in the vertex shader; exaggeration updates live</span>
-              </label>
+              <input id="ter-gpu" type="checkbox" checked hidden />
+              <div class="small muted">
+                GPU displacement — elevation displaced in the vertex shader; exaggeration updates live.
+              </div>
 
-              <label class="small" style="display:flex; align-items:center; gap:6px;">
+              <label class="field small" style="gap:6px;">
                 <input id="toggle-s1m-footprints-layer" type="checkbox" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                <strong>S1M Coverage Footprints</strong>
+                <strong>S1M coverage</strong>
                 <span class="muted">— available source tiles, layer 3+</span>
               </label>
-              <label class="small">
-                Surface
-                <select id="ter-surface">
-                  <option value="shaded">Terrain shading</option>
-                  <option value="imagery" selected>Imagery texture</option>
-                </select>
-              </label>
-              <label class="small">
-                Render
-                <select id="ter-mode">
-                  <option value="shaded" selected>Shaded</option>
-                  <option value="wireframe">Wireframe</option>
-                </select>
-              </label>
-              <label class="small">
-                Color
-                <select id="ter-color">
-                  <option value="adaptive" selected>Adaptive (per view)</option>
-                  <option value="absolute">Absolute (fixed scale)</option>
-                </select>
-              </label>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;">
+                <label class="small" style="display:block;">
+                  Surface
+                  <select id="ter-surface" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                    <option value="shaded">Terrain shading</option>
+                    <option value="imagery" selected>Imagery texture</option>
+                  </select>
+                </label>
+                <label class="small" style="display:block;">
+                  Render
+                  <select id="ter-mode" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                    <option value="shaded" selected>Shaded</option>
+                    <option value="wireframe">Wireframe</option>
+                  </select>
+                </label>
+                <label class="small" style="display:block;">
+                  Color
+                  <select id="ter-color" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                    <option value="adaptive" selected>Adaptive (per view)</option>
+                    <option value="absolute">Absolute (fixed scale)</option>
+                  </select>
+                </label>
+              </div>
               <label class="small" style="display:flex; align-items:center; gap:6px;">
                 <input id="ter-buildings" type="checkbox" autocomplete="off" />
                 Show buildings (3D) <span id="ter-buildings-status" class="muted">— Overture, footprints in the current view</span>
@@ -519,7 +549,9 @@
               </label>
             </div>
           </div>
+          </div>
 
+          <div class="tier">
           <details class="section">
             <summary style="cursor:pointer; font-size:16px; font-weight:600; color:#eee; list-style:revert;">
               Diagnostics <span class="muted" style="font-weight:400;">— search summary &amp; ordered sources</span>
@@ -542,6 +574,7 @@
               <div id="results"></div>
             </div>
           </details>
+          </div>
         </div>
 
         <div id="tab-ingest" class="tab-panel">
@@ -6061,7 +6094,7 @@
         }
         const canSearch = p.active && isSearchableCollection(p.id);
         const hint = canSearch
-          ? `<div class="small status-ok" style="margin-top:4px;">Selected for search — use COG Footprints filters below.</div>`
+          ? `<div class="small status-ok" style="margin-top:4px;">Selected for search — use Footprints filters below.</div>`
           : (p.active
               ? `<div class="small status-warn" style="margin-top:4px;">Not in the lake yet — ingest needed before it can be searched.</div>`
               : `<div class="small muted" style="margin-top:4px;">Outside the current us-west-2 scope.</div>`);
