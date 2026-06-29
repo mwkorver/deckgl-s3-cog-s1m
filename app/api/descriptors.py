@@ -56,6 +56,12 @@ class KeyFields:
     properties: dict       # collection-scoped extras (resolution, tile id, ...)
 
 
+# Well-known public buckets that have S3 Requester Pays enabled, so reads/lists
+# must be signed and carry RequestPayer=requester. Used to coerce the access mode
+# for ad-hoc/panel ingests targeting them, so a "public" selection doesn't 403.
+REQUESTER_PAYS_BUCKETS = {"naip-analytic", "naip-visualization"}
+
+
 def s3_client_for(access: str):
     """A signed client, or an UNSIGNED one for public buckets (== --no-sign-request)."""
     import boto3
@@ -385,7 +391,11 @@ def register_adhoc_collection(
 ) -> CollectionDescriptor:
     """Dynamically build and register a generic CollectionDescriptor for an ad-hoc S3 bucket."""
     bucket_name = bucket.replace("s3://", "").split("/")[0]
-    
+    # Force requester-pays for buckets known to require it, so a "public" panel
+    # selection doesn't fail with AccessDenied on a requester-pays bucket.
+    if bucket_name in REQUESTER_PAYS_BUCKETS:
+        access = "requester-pays"
+
     fixed_prefix = prefix.strip()
     if fixed_prefix and not fixed_prefix.endswith("/"):
         fixed_prefix += "/"
@@ -453,7 +463,7 @@ def register_lake_collections():
                 if "/" in source_key:
                     prefix = source_key.rsplit("/", 1)[0] + "/"
                 
-                access = "requester-pays" if bucket == "naip-analytic" else "public"
+                access = "requester-pays" if bucket in REQUESTER_PAYS_BUCKETS else "public"
                 register_adhoc_collection(
                     collection_id=cid,
                     bucket=bucket,
