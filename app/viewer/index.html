@@ -84,6 +84,39 @@
         align-items: center;
         gap: 8px;
       }
+      .cd-badge {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        white-space: nowrap;
+      }
+      .cd-badge.ok {
+        background: #0e2a20;
+        color: #5dcaa5;
+        border-color: #1c5040;
+      }
+      .cd-badge.warn {
+        background: #2e2510;
+        color: #f0c674;
+        border-color: #5a4a1c;
+      }
+      .cd-badge.neutral {
+        background: #222;
+        color: #9a9a9a;
+        border-color: #3a3a3a;
+      }
+      .cd-kv {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 3px 10px;
+        margin-top: 6px;
+      }
+      .cd-kv .cd-key {
+        color: #8a8a8a;
+      }
       .tabs {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
@@ -106,20 +139,32 @@
       }
       .display-adjustments {
         display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px 10px;
+        grid-template-columns: auto 1fr auto;
+        gap: 6px 10px;
         align-items: center;
         padding: 8px 10px;
         border: 1px solid #333;
         border-radius: 6px;
         background: #1d1d1d;
       }
-      .display-adjustments label {
-        grid-column: 1 / -1;
+      .display-adjustments .da-label {
+        color: #cfcfcf;
+      }
+      .display-adjustments .da-val {
+        color: #aaa;
+        min-width: 36px;
+        text-align: right;
       }
       .display-adjustments input[type="range"] {
         width: 100%;
         box-sizing: border-box;
+        margin: 0;
+      }
+      .display-adjustments .da-footer {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
       }
       input,
       button,
@@ -464,17 +509,17 @@
                 <input id="toggle-cog-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                 <strong id="cog-layer-label">NAIP Imagery (COG Tiles)</strong>
               </label>
-              <div class="display-adjustments">
-                <label class="small">
-                  Brightness <span id="brightness-value" class="muted">0%</span>
-                  <input id="brightness" type="range" min="-100" max="100" step="1" value="0" />
-                </label>
-                <label class="small">
-                  Contrast <span id="contrast-value" class="muted">100%</span>
-                  <input id="contrast" type="range" min="0" max="200" step="1" value="100" />
-                </label>
-                <span class="small muted">Display only</span>
-                <button id="reset-display" type="button">Reset</button>
+              <div class="display-adjustments small">
+                <span class="da-label">Brightness</span>
+                <input id="brightness" type="range" min="-100" max="100" step="1" value="0" aria-label="Brightness" />
+                <span id="brightness-value" class="da-val">0%</span>
+                <span class="da-label">Contrast</span>
+                <input id="contrast" type="range" min="0" max="200" step="1" value="100" aria-label="Contrast" />
+                <span id="contrast-value" class="da-val">100%</span>
+                <div class="da-footer">
+                  <span class="muted">Display only</span>
+                  <button id="reset-display" type="button">Reset</button>
+                </div>
               </div>
             </div>
           </div>
@@ -530,8 +575,8 @@
                 <input id="ter-buildings" type="checkbox" autocomplete="off" />
                 Show buildings (3D) <span id="ter-buildings-status" class="muted">— Overture, footprints in the current view</span>
               </label>
-              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                <button id="ter-run" class="search-active">Show terrain in view</button>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <button id="ter-run" class="search-active" style="grid-column:1 / -1;">Show terrain in view</button>
                 <button id="ter-clear">Clear</button>
                 <button id="ter-stats-window" type="button">Stats window</button>
               </div>
@@ -6078,9 +6123,9 @@
         const p = id && collectionById[id];
         if (!p) { el.innerHTML = ""; return; }
         const avail = collectionAvailability(p);
+        const badgeCls = avail.cls === "status-ok" ? "ok" : avail.cls === "status-warn" ? "warn" : "neutral";
         const yrs = Array.isArray(p.years) && p.years.length === 2 ? `${p.years[0]}–${p.years[1]}` : "—";
         const rows = [
-          ["status", `<span class="${avail.cls}">${avail.label}</span>`],
           ["bucket", `${p.bucket} <span class="muted">(${p.bucket_region}, ${p.access})</span>`],
           ["region", `${p.region_code || p.region_kind || "—"}`],
           ["years", yrs],
@@ -6094,12 +6139,16 @@
         }
         const canSearch = p.active && isSearchableCollection(p.id);
         const hint = canSearch
-          ? `<div class="small status-ok" style="margin-top:4px;">Selected for search — use Footprints filters below.</div>`
+          ? `<div class="small status-ok" style="margin-top:6px;">Selected for search — use Footprints filters below.</div>`
           : (p.active
-              ? `<div class="small status-warn" style="margin-top:4px;">Not in the lake yet — ingest needed before it can be searched.</div>`
-              : `<div class="small muted" style="margin-top:4px;">Outside the current us-west-2 scope.</div>`);
-        el.innerHTML = `<div style="font-weight:600;margin-bottom:2px;">${p.title}</div>`
-          + rows.map(([k, v]) => `<div><span class="muted">${k}:</span> ${v}</div>`).join("")
+              ? `<div class="small status-warn" style="margin-top:6px;">Not in the lake yet — ingest needed before it can be searched.</div>`
+              : `<div class="small muted" style="margin-top:6px;">Outside the current us-west-2 scope.</div>`);
+        el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`
+          + `<span style="font-weight:600;">${p.title}</span>`
+          + `<span class="cd-badge ${badgeCls}">${avail.label}</span></div>`
+          + `<div class="cd-kv">`
+          + rows.map(([k, v]) => `<span class="cd-key">${k}</span><span>${v}</span>`).join("")
+          + `</div>`
           + hint;
       }
 
