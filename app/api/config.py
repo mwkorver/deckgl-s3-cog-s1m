@@ -117,11 +117,14 @@ TILE_PX = 1008
 DEFAULT_TILE_OVERLAP_PX = max(0, int(os.environ.get("DEFAULT_TILE_OVERLAP_PX", "126")))
 MAX_TILES = max(1, int(os.environ.get("MAX_TILES", "36")))
 
-# Default + ceiling on rows per (state, year, resolution) partition for the
-# synchronous path. Keeps a single request well under the HTTP API 30s timeout
-# by bounding the STAC/COG fan-out; raise as confidence grows.
+# Default + ceiling on COGs per (region, year) partition for the synchronous
+# path. DEFAULT keeps an empty/absent request light; MAX is the largest finite
+# value the panel/sync path accepts (0 = unlimited bypasses it). The sync path is
+# still bounded by the invocation timeout (~30s via API Gateway, ~900s via the
+# ingest Lambda at ~50 COG-header reads/s), so big partitions should use the
+# async/background job; this ceiling just stops the panel from silently clamping.
 SYNC_INGEST_DEFAULT_LIMIT = int(os.environ.get("S3_COG_SYNC_INGEST_DEFAULT_LIMIT", "50"))
-SYNC_INGEST_MAX_LIMIT = int(os.environ.get("S3_COG_SYNC_INGEST_MAX_LIMIT", "500"))
+SYNC_INGEST_MAX_LIMIT = int(os.environ.get("S3_COG_SYNC_INGEST_MAX_LIMIT", "20000"))
 
 
 STATE_BBOXES = {

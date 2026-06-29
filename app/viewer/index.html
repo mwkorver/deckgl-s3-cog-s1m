@@ -662,7 +662,7 @@
               </div>
               <label class="small">
                 Max per partition (0 = unlimited)
-                <input id="ingest-limit" type="number" value="500" min="0" max="500" title="Set to 0 for unlimited (keeps going until finished)" />
+                <input id="ingest-limit" type="number" value="500" min="0" max="20000" title="COGs per partition. 0 = unlimited (keeps going until finished). Large values run via the async/background job." />
               </label>
               <button id="run-ingest" class="search-active" style="width:100%;">Run ingest</button>
             </div>
@@ -937,7 +937,8 @@
       const ingestLimitEl = document.getElementById("ingest-limit");
       // Server-side sync ingest hard cap (S3_COG_SYNC_INGEST_MAX_LIMIT). Sending a
       // larger value is rejected; clamp here so the panel can't ask for more.
-      const INGEST_SYNC_MAX_LIMIT = 500;
+      const INGEST_SYNC_MAX_LIMIT = 500;   // empty-field default
+      const INGEST_LIMIT_MAX = 20000;      // panel hard ceiling (0 still = unlimited)
       const runIngestBtn = document.getElementById("run-ingest");
       const ingestSummaryEl = document.getElementById("ingest-summary");
       const ingestLogsEl = document.getElementById("ingest-logs");
@@ -5106,8 +5107,10 @@
         return ingestModeCache;
       }
 
-      // Clamp the panel's "Max per partition" to [0, server cap]. The server
-      // rejects values above S3_COG_SYNC_INGEST_MAX_LIMIT (500) unless it is 0 (unlimited).
+      // Clamp the panel's "Max per partition" to [0, INGEST_LIMIT_MAX]. 0 means
+      // unlimited; an empty field defaults to 500. The server must allow the same
+      // ceiling (S3_COG_SYNC_INGEST_MAX_LIMIT) for the sync path; large values are
+      // really for the async/background job (no per-request timeout).
       function ingestLimitPerPartition() {
         const valStr = ingestLimitEl.value.trim();
         if (valStr === "") {
@@ -5121,7 +5124,7 @@
         if (val === 0) {
           return 0;
         }
-        return Math.min(Math.max(1, val), INGEST_SYNC_MAX_LIMIT);
+        return Math.min(Math.max(1, val), INGEST_LIMIT_MAX);
       }
 
       function ingestRequestHeaders() {
