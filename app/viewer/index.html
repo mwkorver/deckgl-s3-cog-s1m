@@ -355,9 +355,9 @@
     <div id="app">
       <div id="sidebar">
         <div class="section">
-          <h1>Local COG Viewer</h1>
+          <h1>NAIP &amp; 3DEP explorer</h1>
           <div class="muted">
-            Debug viewer for ordered STAC search results from the local GeoParquet lake prototype.
+            Find NAIP imagery, then drape it on 3DEP terrain.
           </div>
         </div>
 
@@ -434,7 +434,7 @@
           </div>
 
           <div class="section">
-            <h2>Raster Layers</h2>
+            <h2>Imagery</h2>
             <div class="controls">
               <label class="small" style="display:flex; align-items:center; gap:8px;">
                 <input id="toggle-cog-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
@@ -452,16 +452,6 @@
                 <span class="small muted">Display only</span>
                 <button id="reset-display" type="button">Reset</button>
               </div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h2>Reference Layer</h2>
-            <div class="controls">
-              <label class="small" style="display:flex; align-items:center; gap:8px;">
-                <input id="toggle-usgs-naip-wms-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                <strong>USGS NAIP Reference Imagery (WMS)</strong>
-              </label>
             </div>
           </div>
 
@@ -521,23 +511,37 @@
           </div>
 
           <div class="section">
-            <h2>Result summary</h2>
-            <div id="summary" class="muted">No search yet.</div>
-            <div id="timing-summary" class="small muted" style="margin-top:8px;">
-              Timing unavailable.
-            </div>
-            <div id="imagery-status" class="small status-warn" style="margin-top:8px;">
-              Imagery not requested yet.
-            </div>
-            <div id="resolution-debug" class="small muted" style="margin-top:8px;">
-              Resolution debug unavailable.
+            <h2>Reference imagery (USGS)</h2>
+            <div class="controls">
+              <label class="small" style="display:flex; align-items:center; gap:8px;">
+                <input id="toggle-usgs-naip-wms-layer" type="checkbox" autocomplete="off" style="width:auto; padding:0; margin:0;" />
+                <strong>USGS NAIP reference imagery (WMS)</strong>
+              </label>
             </div>
           </div>
 
-          <div class="section">
-            <h2>Ordered sources</h2>
-            <div id="results"></div>
-          </div>
+          <details class="section">
+            <summary style="cursor:pointer; font-size:16px; font-weight:600; color:#eee; list-style:revert;">
+              Diagnostics <span class="muted" style="font-weight:400;">— search summary &amp; ordered sources</span>
+            </summary>
+            <div style="margin-top:12px;">
+              <h2>Result summary</h2>
+              <div id="summary" class="muted">No search yet.</div>
+              <div id="timing-summary" class="small muted" style="margin-top:8px;">
+                Timing unavailable.
+              </div>
+              <div id="imagery-status" class="small status-warn" style="margin-top:8px;">
+                Imagery not requested yet.
+              </div>
+              <div id="resolution-debug" class="small muted" style="margin-top:8px;">
+                Resolution debug unavailable.
+              </div>
+            </div>
+            <div style="margin-top:16px;">
+              <h2>Ordered sources</h2>
+              <div id="results"></div>
+            </div>
+          </details>
         </div>
 
         <div id="tab-ingest" class="tab-panel">
