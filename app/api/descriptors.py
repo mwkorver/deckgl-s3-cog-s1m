@@ -61,6 +61,11 @@ class KeyFields:
 # for ad-hoc/panel ingests targeting them, so a "public" selection doesn't 403.
 REQUESTER_PAYS_BUCKETS = {"naip-analytic", "naip-visualization"}
 
+# Buckets known to hold NO cloud-optimized imagery (metadata, FGDC sidecars, and
+# tile-index shapefiles only), so an ingest would find nothing usable. Reject
+# ad-hoc ingests targeting them early with a clear message.
+NON_COG_BUCKETS = {"naip-source"}
+
 
 def s3_client_for(access: str):
     """A signed client, or an UNSIGNED one for public buckets (== --no-sign-request)."""
@@ -391,6 +396,12 @@ def register_adhoc_collection(
 ) -> CollectionDescriptor:
     """Dynamically build and register a generic CollectionDescriptor for an ad-hoc S3 bucket."""
     bucket_name = bucket.replace("s3://", "").split("/")[0]
+    # Reject buckets known to carry no cloud-optimized imagery (metadata/index only).
+    if bucket_name in NON_COG_BUCKETS:
+        raise ValueError(
+            f"{bucket_name} has no cloud-optimized imagery (metadata/index only); "
+            "use naip-analytic (RGBIR) or naip-visualization (RGB)"
+        )
     # Force requester-pays for buckets known to require it, so a "public" panel
     # selection doesn't fail with AccessDenied on a requester-pays bucket.
     if bucket_name in REQUESTER_PAYS_BUCKETS:
