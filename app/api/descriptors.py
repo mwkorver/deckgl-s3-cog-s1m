@@ -68,11 +68,13 @@ def s3_client_for(access: str):
     return boto3.client("s3")
 
 
-def _common_prefixes(s3, bucket: str, prefix: str) -> list[str]:
+def _common_prefixes(s3, bucket: str, prefix: str, request_payer: str | None = None) -> list[str]:
     """One level of "folders" under prefix (ListObjectsV2 with Delimiter='/')."""
     out, token = [], None
     while True:
         kw = {"Bucket": bucket, "Prefix": prefix, "Delimiter": "/"}
+        if request_payer:
+            kw["RequestPayer"] = request_payer
         if token:
             kw["ContinuationToken"] = token
         resp = s3.list_objects_v2(**kw)
@@ -84,7 +86,7 @@ def _common_prefixes(s3, bucket: str, prefix: str) -> list[str]:
     return out
 
 
-def _iter_keys(s3, bucket: str, prefix: str):
+def _iter_keys(s3, bucket: str, prefix: str, request_payer: str | None = None):
     """Lazily yield every object key under prefix (recursive, page by page). The
     caller applies cog_filter and counts COGs, so the per-partition cap counts
     INGESTABLE tiles -- not .tfw sidecars / folder markers we never use -- and
@@ -92,6 +94,8 @@ def _iter_keys(s3, bucket: str, prefix: str):
     token = None
     while True:
         kw = {"Bucket": bucket, "Prefix": prefix}
+        if request_payer:
+            kw["RequestPayer"] = request_payer
         if token:
             kw["ContinuationToken"] = token
         resp = s3.list_objects_v2(**kw)
@@ -132,6 +136,10 @@ class S3PrefixListing:
     def enumerate(self, *, regions, years, latest_year_only, limit_per_partition, s3=None):
         if s3 is None:  # injectable for offline tests
             s3 = s3_client_for(self.access)
+        # Requester-pays buckets (e.g. naip-analytic) reject ListObjectsV2 without
+        # the payer header; thread it through the key crawl. s3_client_for already
+        # returns a signed client for non-public access.
+        request_payer = "requester" if self.access == "requester-pays" else None
         target_regions = self._target_regions(regions)
         target_years = set(years) if years else {None}  # None -> discover all years
         cap = limit_per_partition or 0
@@ -142,7 +150,7 @@ class S3PrefixListing:
                 for prefix in self.enumerate_prefixes(s3, self.bucket, region, year):
                     kept = 0  # COGs kept for this prefix; the cap counts these,
                               # not raw keys (so .tfw sidecars don't eat the limit)
-                    for key in _iter_keys(s3, self.bucket, prefix):
+                    for key in _iter_keys(s3, self.bucket, prefix, request_payer=request_payer):
                         if not self.cog_filter(key):
                             continue
                         kf = self.key_parser(key)
