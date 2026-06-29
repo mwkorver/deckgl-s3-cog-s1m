@@ -437,7 +437,7 @@
         <div class="section">
           <div class="tabs">
             <button class="tab-button active" data-tab="viewer">Viewer</button>
-            <button class="tab-button" data-tab="ingest">Data Ingest</button>
+            <button class="tab-button" data-tab="ingest">COG ingest</button>
             <button class="tab-button" data-tab="environment">Environment</button>
           </div>
         </div>
@@ -630,20 +630,20 @@
             <div class="controls">
               <label class="small">
                 S3 bucket
-                <input id="ingest-source-bucket" type="text" value="kyfromabove" placeholder="kyfromabove" />
+                <input id="ingest-source-bucket" type="text" value="gisimageryingov" placeholder="gisimageryingov" />
               </label>
               <label class="small">
                 S3 prefix
-                <input id="ingest-source-prefix" type="text" value="imagery/orthos/Phase2/KY_KYAPED_2022_6IN/" placeholder="imagery/orthos/Phase2/KY_KYAPED_2022_6IN/" />
+                <input id="ingest-source-prefix" type="text" value="imageryoptimized/statewide/2024/SPW/03in/" placeholder="imageryoptimized/statewide/2024/SPW/03in/" />
               </label>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;">
                 <label class="small" style="display:block;">
                   Region
-                  <input id="ingest-source-region" type="text" value="ky" maxlength="16" placeholder="ky" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  <input id="ingest-source-region" type="text" value="in" maxlength="16" placeholder="in" style="width:100%; box-sizing:border-box; margin-top:2px;" />
                 </label>
                 <label class="small" style="display:block;">
                   Year
-                  <input id="ingest-source-year" type="number" value="2022" min="1900" max="2100" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  <input id="ingest-source-year" type="number" value="2024" min="1900" max="2100" style="width:100%; box-sizing:border-box; margin-top:2px;" />
                 </label>
                 <label class="small" style="display:block;">
                   Access
@@ -5039,10 +5039,16 @@
         const yearRaw = ingestSourceYearEl.value.trim();
         const year = yearRaw ? Number(yearRaw) : NaN;
         if (!bucket) throw new Error("Enter an S3 bucket.");
-        if (!region) throw new Error("Enter a region partition, for example ky.");
+        if (!region) throw new Error("Enter a region partition, for example in.");
         if (!Number.isInteger(year)) throw new Error("Enter a numeric year.");
+        // Prefer the registry collection id for a known source bucket (e.g.
+        // gisimageryingov -> in-imagery, njogis-imagery -> nj-imagery) so the
+        // ingested lake partition lines up with the registered collection and
+        // shows as searchable; fall back to a sanitized bucket name otherwise.
+        const bareBucket = bucket.startsWith("s3://") ? bucket.slice(5).split("/")[0] : bucket;
+        const registered = collectionFeatures.find((p) => p.bucket === bareBucket);
         return {
-          collection: sanitizeCollectionId(bucket.startsWith("s3://") ? bucket.slice(5).split("/")[0] : bucket),
+          collection: registered ? registered.id : sanitizeCollectionId(bareBucket),
           source_bucket: bucket,
           source_prefix: prefix,
           source_region: region,

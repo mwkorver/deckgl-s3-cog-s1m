@@ -98,33 +98,38 @@ collections:
       domain: [0, 65535]
     notes: Mixed formats per year (cog/ vs MG3/MG4/sid zips); COG only in recent years.
 
-  # ---------------------------------------------------------------------------
-  # PARKED  (bucket not in us-west-2 — out of current scope, layout preserved)
-  # ---------------------------------------------------------------------------
-
   - id: in-imagery
     title: Indiana Statewide Digital Aerial Imagery
-    active: false                  # parked: bucket is us-east-2
-    status: ready                  # layout pinned
+    active: true                   # us-east-2 bucket, read cross-region (public, anonymous)
+    status: ready
     extent:
       region_kind: us-state
       region_code: IN
       bbox: [-88.1, 37.77, -84.78, 41.76]
-      years: [2025, 2025]          # 2025 SPW 03in confirmed; refine across statewide/<year>/
+      years: [2011, 2025]          # modern statewide annual; also 1970/1998/2005 archives
     source:
       bucket: gisimageryingov
       bucket_region: us-east-2
       access: public
       root_prefix: imageryoptimized/statewide/   # the distributable COGs, NOT the ArcGIS cache/raw
       region: const:in
-      discovery: s3-prefix         # statewide/<year>/<product>/<res>/in<year>_<tile>_<res>.tif
+      discovery: s3-prefix         # statewide/<year>/<SPE|SPW>/<res>in/in<year>_<tile>_<res>.tif
       cog_filter: "key.endswith('.tif') and '/imageryoptimized/statewide/' in key"
+    cog_verified: "2026-06: real COG (tiled 512, 5000x5000, 4-band RGBIR uint8, Deflate, internal overviews)"
+    display:
+      sample_bits: 8
+      domain: [0, 255]
     notes: >
-      COGs at imageryoptimized/statewide/<year>/<product>/<res>/ (e.g.
-      .../2025/SPW/03in/in2025_28222356_3in.tif). `product` (SPW) + `res` (03in) ->
-      properties. .tfw sidecars present — confirm geokeys are embedded in the .tif
-      (header reader needs the GeoTIFF tags, not the world file). Skip imagerycache/,
+      COGs at imageryoptimized/statewide/<year>/<SPE|SPW>/<res>in/ (e.g.
+      .../2024/SPW/03in/in2024_28222356_03.tif); NAD83(HARN) Indiana State Plane
+      East/West, US survey feet. Tile-index shapefiles under
+      imageryindex/statewide/<year>/<zone>/<res>/ give ready footprints. Older
+      years differ (1970 per-county *cog.tif; 2005 CIR/RGB). Skip imagerycache/,
       archive/, dem* (ArcGIS-server artifacts).
+
+  # ---------------------------------------------------------------------------
+  # PARKED  (bucket not in us-west-2 — out of current scope, layout preserved)
+  # ---------------------------------------------------------------------------
 
   - id: vt-opendata
     title: Vermont Open Geospatial (VTORTHO)

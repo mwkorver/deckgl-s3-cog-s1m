@@ -172,19 +172,25 @@
       "properties": {
         "id": "in-imagery",
         "title": "Indiana Statewide Digital Aerial Imagery",
-        "active": false,
+        "active": true,
         "status": "ready",
         "region_kind": "us-state",
         "region_code": "IN",
         "years": [
-          2025,
+          2011,
           2025
         ],
         "bucket": "gisimageryingov",
         "bucket_region": "us-east-2",
         "access": "public",
-        "cog_verified": false,
-        "display": null,
+        "cog_verified": true,
+        "display": {
+          "sample_bits": 8,
+          "domain": [
+            0,
+            255
+          ]
+        },
         "bbox": [
           -88.1,
           37.77,
