@@ -192,6 +192,25 @@ def ingest_options(body: dict[str, Any]):
 
 @app.post("/ingest/run")
 def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
+    """Start an ingest as a background job and return a job_id to poll via
+    /ingest/status/{job_id}.
+
+    This is the LOCAL/Docker path (config.INGEST_MODE == "async", the default off
+    Lambda). The work runs in a background thread tracked in-process, so the HTTP
+    response returns immediately and there is no per-request timeout -- large or
+    long ingests (many COGs, full years) are fine here, and the panel polls for
+    progress.
+
+    On Lambda this path is NOT used: INGEST_MODE is "sync" (set because
+    AWS_LAMBDA_FUNCTION_NAME is present), so the viewer calls /ingest/run-sync
+    instead. A background thread/subprocess can't outlive the response there --
+    Lambda freezes the execution environment once the handler returns and keeps no
+    cross-request job state -- so the ingest must run inline within the function's
+    invocation timeout. Net effect: locally an ingest can run for minutes via this
+    async job; on Lambda it must finish within the (sync) request budget, which is
+    why the panel's per-partition cap matters there but not here. The viewer learns
+    which path to call from /ingest/options' `ingest_mode`.
+    """
     state = str(body.get("state") or "").strip().lower()
     if not state:
         raise HTTPException(status_code=400, detail="state is required")

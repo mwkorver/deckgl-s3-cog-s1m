@@ -665,6 +665,13 @@
                 <input id="ingest-limit" type="number" value="500" min="0" max="20000" title="COGs per partition. 0 = unlimited (keeps going until finished). Large values run via the async/background job." />
               </label>
               <button id="run-ingest" class="search-active" style="width:100%;">Run ingest</button>
+              <div class="small muted">
+                Running locally: the ingest runs as a background job with no time
+                limit, so large partitions (or 0 = unlimited) are fine and progress
+                shows below. On the deployed Lambda it runs synchronously within the
+                function timeout, so keep partitions small there — use the cap above,
+                or run big jobs from the CLI.
+              </div>
             </div>
           </div>
           </div>
