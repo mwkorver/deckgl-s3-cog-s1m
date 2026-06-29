@@ -623,8 +623,10 @@
         </div>
 
         <div id="tab-ingest" class="tab-panel">
+          <div class="tier">
+            <div class="tier-label">Source</div>
           <div class="section">
-            <h2>Options</h2>
+            <h2>Ingest source</h2>
             <div class="controls">
               <label class="small">
                 S3 bucket
@@ -634,35 +636,41 @@
                 S3 prefix
                 <input id="ingest-source-prefix" type="text" value="imagery/orthos/Phase2/KY_KYAPED_2022_6IN/" placeholder="imagery/orthos/Phase2/KY_KYAPED_2022_6IN/" />
               </label>
-              <label class="small">
-                Region
-                <input id="ingest-source-region" type="text" value="ky" maxlength="16" placeholder="ky" />
-              </label>
-              <label class="small">
-                Year
-                <input id="ingest-source-year" type="number" value="2022" min="1900" max="2100" />
-              </label>
-              <label class="small">
-                Access
-                <select id="ingest-source-access">
-                  <option value="public" selected>Public</option>
-                  <option value="private">Private/signed</option>
-                  <option value="requester-pays">Requester pays</option>
-                </select>
-              </label>
-              <label class="small">
-                Strategy
-                <select id="ingest-strategy">
-                  <option value="manifest-cog-headers" selected>COG headers</option>
-                </select>
-              </label>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;">
+                <label class="small" style="display:block;">
+                  Region
+                  <input id="ingest-source-region" type="text" value="ky" maxlength="16" placeholder="ky" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                </label>
+                <label class="small" style="display:block;">
+                  Year
+                  <input id="ingest-source-year" type="number" value="2022" min="1900" max="2100" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                </label>
+                <label class="small" style="display:block;">
+                  Access
+                  <select id="ingest-source-access" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                    <option value="public" selected>Public</option>
+                    <option value="private">Private/signed</option>
+                    <option value="requester-pays">Requester pays</option>
+                  </select>
+                </label>
+                <label class="small" style="display:block;">
+                  Strategy
+                  <select id="ingest-strategy" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                    <option value="manifest-cog-headers" selected>COG headers</option>
+                  </select>
+                </label>
+              </div>
               <label class="small">
                 Max per partition (0 = unlimited)
                 <input id="ingest-limit" type="number" value="500" min="0" max="500" title="Set to 0 for unlimited (keeps going until finished)" />
               </label>
-              <button id="run-ingest">Run ingest</button>
+              <button id="run-ingest" class="search-active" style="width:100%;">Run ingest</button>
             </div>
           </div>
+          </div>
+
+          <div class="tier">
+            <div class="tier-label">Progress</div>
           <div class="section">
             <h2>Status</h2>
             <div id="ingest-summary" class="muted">No ingest started.</div>
@@ -671,22 +679,25 @@
             <h2>Logs</h2>
             <pre id="ingest-logs" class="log-box">No logs yet.</pre>
           </div>
+          </div>
         </div>
 
         <div id="tab-environment" class="tab-panel">
-          <div class="section">
-            <h2>Environment</h2>
-            <div class="controls">
-              <button id="refresh-environment">Refresh environment status</button>
-            </div>
-          </div>
+          <div class="tier">
+            <div class="tier-label">Environment</div>
           <div class="section">
             <h2>Checks</h2>
+            <div class="controls" style="margin-bottom:8px;">
+              <button id="refresh-environment">Refresh status</button>
+            </div>
             <div id="environment-checks" class="key-value"></div>
           </div>
-          <div class="section">
-            <h2>Effective config</h2>
-            <div id="environment-config" class="key-value"></div>
+          <details class="section">
+            <summary style="cursor:pointer; font-size:14px; font-weight:600; color:#d4d4d4; list-style:revert;">
+              Effective config <span class="muted" style="font-weight:400;">— resolved settings</span>
+            </summary>
+            <div id="environment-config" class="key-value" style="margin-top:8px;"></div>
+          </details>
           </div>
         </div>
       </div>
