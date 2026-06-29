@@ -38,7 +38,9 @@ from config import (
     LOCAL_MODULE_DIRS,
     MAX_TILES,
     MODULE_DIR,
+    OVERTURE_BUILDINGS_INDEX,
     OVERTURE_BUILDINGS_PARQUET,
+    OVERTURE_SOURCE_REGION,
     PRESIGN_EXPIRES,
     SAM3_PYTHON,
     SAM3_SCRIPT,
@@ -51,6 +53,7 @@ from config import (
     TILE_PX,
     VIEWER_DIR,
 )
+from duckdb_s3 import load_extensions
 from ingest_options import build_ingest_options
 from ingest_jobs import get_ingest_job, run_ingest_job, set_ingest_job
 from lake import get_lake_duckdb, is_expired_token_error, lake_collections, reset_lake_duckdb
@@ -1509,21 +1512,69 @@ def naip_coverage_mvt(
     )
 
 
-@app.post("/buildings/overture")
-def overture_buildings(body: dict[str, Any]):
-    """Return Overture building footprints intersecting one or more lon/lat bboxes.
+# Columns read from Overture row groups -- geometry + bbox (for the in-memory
+# viewport prefilter) + the attributes the viewer's 3D layer renders. Skipping
+# the facade_*/roof_* columns keeps each row-group fetch small.
+_OVERTURE_READ_COLS = [
+    "id", "height", "min_height", "num_floors", "subtype", "class",
+    "has_parts", "bbox", "geometry",
+]
+# A viewport intersecting more row groups than this is too zoomed-out to stream
+# cheaply (each row group is ~38k buildings / ~5 MB). The viewer only enables
+# buildings in close terrain views, so this is a safety rail, not a normal path.
+_OVERTURE_MAX_ROW_GROUPS = 96
+# Module-level caches: an anonymous S3 handle, the small CONUS index, and parquet
+# footers, so repeated viewports don't re-list S3 or re-read 600 KB footers.
+_overture_s3fs = None
+_overture_index = None  # (path, list[dict]) -- the loaded row-group index
+_overture_pf_cache: dict[str, Any] = {}
 
-    The viewer sends active S1M tile bboxes, already transformed to OGC:CRS84.
-    The local Overture file carries explicit bbox columns, so DuckDB can filter
-    cheaply before the exact geometry intersection.
-    """
-    path = Path(OVERTURE_BUILDINGS_PARQUET)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Overture buildings parquet not found: {path}")
 
+def _overture_s3():
+    global _overture_s3fs
+    if _overture_s3fs is None:
+        import pyarrow.fs as pa_fs
+        _overture_s3fs = pa_fs.S3FileSystem(region=OVERTURE_SOURCE_REGION, anonymous=True)
+    return _overture_s3fs
+
+
+def _load_overture_index():
+    """Load (and cache) the CONUS row-group index. Returns a list of dicts with
+    file/row_group/bbox_* keys, or None if the index is unreachable."""
+    global _overture_index
+    if _overture_index and _overture_index[0] == OVERTURE_BUILDINGS_INDEX:
+        return _overture_index[1]
+    import pyarrow.parquet as pq
+    try:
+        if OVERTURE_BUILDINGS_INDEX.startswith("s3://"):
+            import pyarrow.fs as pa_fs
+            fsys = pa_fs.S3FileSystem(region=OVERTURE_SOURCE_REGION)
+            table = pq.read_table(OVERTURE_BUILDINGS_INDEX[5:], filesystem=fsys)
+        else:
+            if not Path(OVERTURE_BUILDINGS_INDEX).exists():
+                return None
+            table = pq.read_table(OVERTURE_BUILDINGS_INDEX)
+    except Exception as exc:  # noqa: BLE001 -- treated as "index unavailable"
+        print(f"Overture buildings index unavailable ({OVERTURE_BUILDINGS_INDEX}): {exc}", flush=True)
+        return None
+    records = table.to_pylist()
+    _overture_index = (OVERTURE_BUILDINGS_INDEX, records)
+    return records
+
+
+def _overture_pf(key: str):
+    pf = _overture_pf_cache.get(key)
+    if pf is None:
+        import pyarrow.parquet as pq
+        pf = pq.ParquetFile(key, filesystem=_overture_s3())
+        _overture_pf_cache[key] = pf
+    return pf
+
+
+def _parse_viewport_bboxes(body: dict[str, Any]):
     raw_bboxes = body.get("bboxes") or []
-    bboxes: list[tuple[int, float, float, float, float]] = []
-    for idx, bbox in enumerate(raw_bboxes[:32]):
+    bboxes: list[tuple[float, float, float, float]] = []
+    for bbox in raw_bboxes[:32]:
         if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
             continue
         try:
@@ -1532,106 +1583,199 @@ def overture_buildings(body: dict[str, Any]):
             continue
         if west >= east or south >= north:
             continue
-        bboxes.append((idx, west, south, east, north))
-    if not bboxes:
-        return {"type": "FeatureCollection", "features": [], "links": []}
+        bboxes.append((west, south, east, north))
+    return bboxes
 
-    try:
-        limit = int(body.get("limit") or 30000)
-    except (TypeError, ValueError):
-        limit = 30000
-    limit = max(1, min(limit, 100000))
 
+def _overture_features_from_index(bboxes, limit):
+    """Index-pruned, on-demand read: bbox-prune the CONUS row-group index to the
+    viewport, fetch only the matching row groups from Overture's public S3, then
+    bbox-prefilter + exact-intersect with DuckDB into GeoJSON features."""
+    index = _load_overture_index()
+    if index is None:
+        return None
+
+    # 1. Prune the index to row groups whose extent hits any viewport box.
+    by_file: dict[str, set[int]] = {}
+    for rec in index:
+        rx0, ry0, rx1, ry1 = rec["bbox_xmin"], rec["bbox_ymin"], rec["bbox_xmax"], rec["bbox_ymax"]
+        for west, south, east, north in bboxes:
+            if rx1 >= west and rx0 <= east and ry1 >= south and ry0 <= north:
+                by_file.setdefault(rec["file"], set()).add(rec["row_group"])
+                break
+    total_rg = sum(len(v) for v in by_file.values())
+    if total_rg == 0:
+        return {"type": "FeatureCollection", "features": [], "links": [], "limit": limit,
+                "bboxes": len(bboxes), "row_groups": 0, "source": "overture-index"}
+    if total_rg > _OVERTURE_MAX_ROW_GROUPS:
+        raise HTTPException(
+            status_code=413,
+            detail=(f"viewport spans {total_rg} Overture row groups "
+                    f"(max {_OVERTURE_MAX_ROW_GROUPS}); zoom in to load buildings"),
+        )
+
+    # 2. Fetch only the matching row groups from Overture's public S3.
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    tables = []
+    for key, rgs in by_file.items():
+        tables.append(_overture_pf(key).read_row_groups(sorted(rgs), columns=_OVERTURE_READ_COLS))
+    table = pa.concat_tables(tables)
+
+    # 3. In-memory bbox prefilter (cheap, no geometry parse) down to ~viewport.
+    bx = table.column("bbox")
+    bxmin, bymin = pc.struct_field(bx, "xmin"), pc.struct_field(bx, "ymin")
+    bxmax, bymax = pc.struct_field(bx, "xmax"), pc.struct_field(bx, "ymax")
+    mask = None
+    for west, south, east, north in bboxes:
+        m = pc.and_(
+            pc.and_(pc.greater_equal(bxmax, west), pc.less_equal(bxmin, east)),
+            pc.and_(pc.greater_equal(bymax, south), pc.less_equal(bymin, north)),
+        )
+        mask = m if mask is None else pc.or_(mask, m)
+    table = table.filter(mask)
+    if table.num_rows == 0:
+        return {"type": "FeatureCollection", "features": [], "links": [], "limit": limit,
+                "bboxes": len(bboxes), "row_groups": total_rg, "source": "overture-index"}
+
+    # 4. Exact intersect + GeoJSON via DuckDB over the (small) fetched table.
     values_sql = ",\n".join(
-        f"({idx}, {west:.12f}, {south:.12f}, {east:.12f}, {north:.12f})"
-        for idx, west, south, east, north in bboxes
+        f"({i}, {w:.12f}, {s:.12f}, {e:.12f}, {n:.12f})"
+        for i, (w, s, e, n) in enumerate(bboxes)
     )
-    parquet_path = str(path).replace("'", "''")
     import duckdb
-
     con = duckdb.connect(":memory:")
     try:
-        con.execute("LOAD spatial")
+        load_extensions(con, spatial=True)
+        con.register("hits_arrow", table)
         rows = con.execute(
             f"""
-            with boxes(idx, west, south, east, north) as (
-              values {values_sql}
+            with boxes(idx, west, south, east, north) as (values {values_sql}),
+            parsed as (
+              select b.id, b.height, b.min_height, b.num_floors, b.subtype,
+                     b.class, b.has_parts,
+                     struct_extract(b.bbox, 'xmin') as bxmin,
+                     struct_extract(b.bbox, 'ymin') as bymin,
+                     struct_extract(b.bbox, 'xmax') as bxmax,
+                     struct_extract(b.bbox, 'ymax') as bymax,
+                     ST_GeomFromWKB(b.geometry) as geom
+              from hits_arrow b
             ),
-            hits as (
-              select
-                b.id,
-                b.height,
-                b.min_height,
-                b.num_floors,
-                b.subtype,
-                b.class,
-                b.has_parts,
-                b.bbox_xmin,
-                b.bbox_ymin,
-                b.bbox_xmax,
-                b.bbox_ymax,
-                ST_AsGeoJSON(b.geometry) as geom_json,
-                row_number() over (partition by b.id order by boxes.idx) as rn
-              from read_parquet('{parquet_path}') b
-              join boxes
-                on b.bbox_xmax >= boxes.west
-               and b.bbox_xmin <= boxes.east
-               and b.bbox_ymax >= boxes.south
-               and b.bbox_ymin <= boxes.north
-              where ST_Intersects(
-                b.geometry,
-                ST_MakeEnvelope(boxes.west, boxes.south, boxes.east, boxes.north)
-              )
+            joined as (
+              select p.*, ST_AsGeoJSON(p.geom) as geom_json,
+                     row_number() over (partition by p.id order by boxes.idx) as rn
+              from parsed p join boxes
+                on p.bxmax >= boxes.west and p.bxmin <= boxes.east
+               and p.bymax >= boxes.south and p.bymin <= boxes.north
+              where ST_Intersects(p.geom,
+                ST_MakeEnvelope(boxes.west, boxes.south, boxes.east, boxes.north))
             )
-            select *
-            from hits
-            where rn = 1
-            limit {limit}
+            select id, height, min_height, num_floors, subtype, class, has_parts,
+                   bxmin, bymin, bxmax, bymax, geom_json
+            from joined where rn = 1 limit {limit}
             """
         ).fetchall()
     finally:
         con.close()
 
     features = []
-    for row in rows:
-        (
-            bid,
-            height,
-            min_height,
-            num_floors,
-            subtype,
-            building_class,
-            has_parts,
-            xmin,
-            ymin,
-            xmax,
-            ymax,
-            geom_json,
-            _rn,
-        ) = row
+    for (bid, height, min_height, num_floors, subtype, building_class, has_parts,
+         xmin, ymin, xmax, ymax, geom_json) in rows:
         props = {
-            "id": bid,
-            "height": height,
-            "min_height": min_height,
-            "num_floors": num_floors,
-            "subtype": subtype,
-            "class": building_class,
+            "id": bid, "height": height, "min_height": min_height,
+            "num_floors": num_floors, "subtype": subtype, "class": building_class,
             "has_parts": has_parts,
         }
         features.append({
-            "type": "Feature",
-            "id": bid,
-            "geometry": json.loads(geom_json),
+            "type": "Feature", "id": bid, "geometry": json.loads(geom_json),
             "bbox": [xmin, ymin, xmax, ymax],
             "properties": {k: v for k, v in props.items() if v is not None},
         })
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-        "links": [],
-        "limit": limit,
-        "bboxes": len(bboxes),
-    }
+    return {"type": "FeatureCollection", "features": features, "links": [],
+            "limit": limit, "bboxes": len(bboxes), "row_groups": total_rg,
+            "source": "overture-index"}
+
+
+def _overture_features_from_local(bboxes, limit):
+    """Offline fallback: query a local bbox-clipped Overture GeoParquet
+    (build_overture_buildings.py output) when the index is unreachable."""
+    path = Path(OVERTURE_BUILDINGS_PARQUET)
+    if not OVERTURE_BUILDINGS_PARQUET or not path.exists():
+        return None
+    values_sql = ",\n".join(
+        f"({i}, {w:.12f}, {s:.12f}, {e:.12f}, {n:.12f})"
+        for i, (w, s, e, n) in enumerate(bboxes)
+    )
+    parquet_path = str(path).replace("'", "''")
+    import duckdb
+    con = duckdb.connect(":memory:")
+    try:
+        load_extensions(con, spatial=True)
+        rows = con.execute(
+            f"""
+            with boxes(idx, west, south, east, north) as (values {values_sql}),
+            hits as (
+              select b.id, b.height, b.min_height, b.num_floors, b.subtype,
+                     b.class, b.has_parts, b.bbox_xmin, b.bbox_ymin,
+                     b.bbox_xmax, b.bbox_ymax, ST_AsGeoJSON(b.geometry) as geom_json,
+                     row_number() over (partition by b.id order by boxes.idx) as rn
+              from read_parquet('{parquet_path}') b join boxes
+                on b.bbox_xmax >= boxes.west and b.bbox_xmin <= boxes.east
+               and b.bbox_ymax >= boxes.south and b.bbox_ymin <= boxes.north
+              where ST_Intersects(b.geometry,
+                ST_MakeEnvelope(boxes.west, boxes.south, boxes.east, boxes.north))
+            )
+            select * from hits where rn = 1 limit {limit}
+            """
+        ).fetchall()
+    finally:
+        con.close()
+    features = []
+    for (bid, height, min_height, num_floors, subtype, building_class, has_parts,
+         xmin, ymin, xmax, ymax, geom_json, _rn) in rows:
+        props = {
+            "id": bid, "height": height, "min_height": min_height,
+            "num_floors": num_floors, "subtype": subtype, "class": building_class,
+            "has_parts": has_parts,
+        }
+        features.append({
+            "type": "Feature", "id": bid, "geometry": json.loads(geom_json),
+            "bbox": [xmin, ymin, xmax, ymax],
+            "properties": {k: v for k, v in props.items() if v is not None},
+        })
+    return {"type": "FeatureCollection", "features": features, "links": [],
+            "limit": limit, "bboxes": len(bboxes), "source": "overture-local"}
+
+
+@app.post("/buildings/overture")
+def overture_buildings(body: dict[str, Any]):
+    """Return Overture building footprints intersecting one or more lon/lat bboxes.
+
+    The viewer sends active S1M tile bboxes (OGC:CRS84). Discovery uses a small
+    CONUS row-group index (build_overture_buildings_index.py): bbox-prune it to
+    the viewport, then read only the matching row groups straight from Overture's
+    public S3 -- no building geometry is materialized in this repo or the bucket.
+    Falls back to a local bbox-clipped GeoParquet when the index is unreachable.
+    """
+    bboxes = _parse_viewport_bboxes(body)
+    if not bboxes:
+        return {"type": "FeatureCollection", "features": [], "links": []}
+    try:
+        limit = int(body.get("limit") or 30000)
+    except (TypeError, ValueError):
+        limit = 30000
+    limit = max(1, min(limit, 100000))
+
+    result = _overture_features_from_index(bboxes, limit)
+    if result is None:
+        result = _overture_features_from_local(bboxes, limit)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(f"Overture buildings index not found: {OVERTURE_BUILDINGS_INDEX} "
+                    "(and no local fallback configured)"),
+        )
+    return result
 
 
 @app.post("/s1m/tiles")

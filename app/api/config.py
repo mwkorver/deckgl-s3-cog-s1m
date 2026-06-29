@@ -14,13 +14,23 @@ COLLECTION_ID = os.environ.get("S3_COG_COLLECTION_ID", "naip")
 # connection -- there is no database server. The api container mounts ./cache at
 # /cache, so this resolves to local Parquet files (or an s3:// prefix on Lambda).
 LAKE_ROOT = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb")
-# Local bbox-clipped Overture buildings GeoParquet (built by
-# build_overture_buildings.py), served by /buildings/overture for the viewer's
-# 3D building layer. A bundled/public file -- no ingest needed.
-OVERTURE_BUILDINGS_PARQUET = os.environ.get(
-    "S3_COG_OVERTURE_BUILDINGS_PARQUET",
-    "/cache/overture/buildings_nj.parquet",
+# CONUS row-group index over the public Overture buildings release (built by
+# build_overture_buildings_index.py, seeded into the lake at
+# lake/overture-buildings/index.parquet). /buildings/overture bbox-prunes this
+# index to a viewport, then reads the matching row groups straight from Overture's
+# public S3 -- the same thin-index/stream-on-demand strategy as the NAIP/S1M
+# lakes, so no building geometry is materialized into this repo or the bucket.
+OVERTURE_BUILDINGS_INDEX = os.environ.get(
+    "S3_COG_OVERTURE_BUILDINGS_INDEX",
+    "/cache/overture/buildings-index.parquet",
 )
+# AWS region of the public Overture bucket the index points into. Reads are
+# anonymous (the dataset is public, no requester-pays, no signing).
+OVERTURE_SOURCE_REGION = os.environ.get("S3_COG_OVERTURE_SOURCE_REGION", "us-west-2")
+# Optional offline fallback: a local bbox-clipped Overture GeoParquet (built by
+# build_overture_buildings.py). Used only when the index above is unreachable,
+# so fully-offline runs still draw buildings. Empty/unset disables the fallback.
+OVERTURE_BUILDINGS_PARQUET = os.environ.get("S3_COG_OVERTURE_BUILDINGS_PARQUET", "")
 # Root of the embedding lake (written by the embedding-harvester repo). Same
 # hive layout as the imagery lake (collection=/region=/year=), one file per
 # 1-degree block, schema per that repo's LAKE_SCHEMA.md. /similar queries it

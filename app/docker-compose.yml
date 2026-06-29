@@ -28,6 +28,10 @@ services:
       S3_COG_MANIFEST_INDEX: ${S3_COG_MANIFEST_INDEX:-s3://cog-stac-catalog/manifest-index}
       S3_COG_LAKE_ROOT: ${S3_COG_LAKE_ROOT:-/cache/exports/naip_rgbir_duckdb}
       S1M_INDEX_URL: ${S1M_INDEX_URL:-/cache/s1m/S1M_Products.parquet}
+      # CONUS Overture buildings row-group index (build_overture_buildings_index.py).
+      # /buildings/overture bbox-prunes it, then streams matching row groups from
+      # Overture's public S3. Deploy points this at the seeded lake copy.
+      S3_COG_OVERTURE_BUILDINGS_INDEX: ${S3_COG_OVERTURE_BUILDINGS_INDEX:-/cache/overture/buildings-index.parquet}
       S3_COG_REPO_ROOT: /repo-root
     ports:
       - "8089:8080"

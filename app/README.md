@@ -275,6 +275,33 @@ accumulate stale keys. **Re-run it whenever AWS publishes a new manifest**
 overridable via `--manifest` / `--out` (or `S3_COG_MANIFEST_PATH` /
 `S3_COG_MANIFEST_INDEX`); `--manifest` may be an `s3://` URL.
 
+### Build the Overture buildings index (run whenever Overture cuts a release)
+
+The viewer's optional **3D buildings layer** (terrain mode) follows the same
+thin-index/stream-on-demand strategy as the imagery lake. Rather than materialize
+building geometry, `build_overture_buildings_index.py` scans the public Overture
+buildings release's parquet **footers** (metadata only) and writes one row per
+row group whose bbox intersects CONUS — file key, row-group ordinal, row count,
+and bbox extent (~8.5k rows, ~190 KB):
+
+```bash
+# Build locally (anonymous read of Overture's public us-west-2 bucket)...
+docker-compose run --rm api python build_overture_buildings_index.py
+# ...or build and publish straight to the seed lake in one step:
+docker-compose run --rm api python build_overture_buildings_index.py \
+  --upload-uri s3://deckgl-s3-cog-s1m-seed-us-west2/lake/overture-buildings/index.parquet
+```
+
+`/buildings/overture` bbox-prunes this index to the viewport, then reads **only
+the matching row groups** straight from Overture's public S3 (anonymous, no
+requester-pays) — so no footprint geometry lives in this repo or the bucket. The
+index is published under the seed bucket's `lake/` prefix, so `deploy-foundation`
+seeds it into each deployer's bucket automatically (no `SeedKeys` change). The
+read API finds it via `S3_COG_OVERTURE_BUILDINGS_INDEX` (defaults to the seeded
+`lake/overture-buildings/index.parquet`; falls back to a local clip from
+`build_overture_buildings.py` for fully-offline runs). **Re-run whenever Overture
+publishes a new release** (`--release`), updating the default in the script.
+
 ## Metadata strategies
 
 `ingest_duckdb.py` supports two metadata strategies (`--strategy`):
