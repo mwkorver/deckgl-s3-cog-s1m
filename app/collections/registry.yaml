@@ -55,6 +55,28 @@ collections:
       cog_filter: "key.endswith('.tif') and '/rgbir_cog/' in key"
     cog_verified: "canonical RGBIR COG; in production ingest since project start"
 
+  - id: naip-visualization
+    title: NAIP Visualization (RGB)
+    active: true
+    status: ready
+    extent:
+      region_kind: us-conus        # national; region is key-parsed
+      bbox: [-125.0, 24.0, -66.5, 49.5]
+      years: [2011, 2023]
+    source:
+      bucket: naip-visualization   # 3-band RGB COG (visualization product)
+      bucket_region: us-west-2
+      access: requester-pays
+      root_prefix: ""              # <state>/<year>/<gsd>/rgb/ is the top level
+      region: key-parsed
+      discovery: s3-prefix
+      cog_filter: "key.endswith('.tif') and '/rgb/' in key"
+    cog_verified: "2026-06: real COG (tiled 512, 3-band RGB uint8, internal overviews)"
+    display:
+      sample_bits: 8
+      domain: [0, 255]
+    notes: RGB sibling of naip-analytic; products at <state>/<year>/<gsd>/rgb/.
+
   - id: kyfromabove
     title: KyFromAbove (Kentucky)
     active: true
