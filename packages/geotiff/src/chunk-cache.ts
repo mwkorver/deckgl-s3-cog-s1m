@@ -289,7 +289,16 @@ export class ChunkCachedSource implements Source {
     key: string,
     options?: { signal: AbortSignal },
   ): Promise<ArrayBuffer> {
-    const stored = await this.store?.get(key);
+    // Persistent-cache reads/writes are best-effort: a full or unavailable
+    // store (e.g. NS_ERROR_FILE_NO_DEVICE_SPACE / QuotaExceededError when the
+    // browser Cache API is out of space) must never fail a tile read -- fall
+    // back to the network and keep the freshly-fetched bytes.
+    let stored: ArrayBuffer | undefined;
+    try {
+      stored = await this.store?.get(key);
+    } catch {
+      stored = undefined;
+    }
     if (stored) {
       this.counters.persistentHits += 1;
       return stored;
@@ -299,7 +308,11 @@ export class ChunkCachedSource implements Source {
     const offset = chunkIndex * this.chunkSize;
     const bytes = await this.source.fetch(offset, this.chunkSize, options);
     this.counters.networkBytes += bytes.byteLength;
-    await this.store?.put(key, bytes);
+    try {
+      await this.store?.put(key, bytes);
+    } catch {
+      /* cache full/unavailable: skip persisting, keep the bytes */
+    }
     return bytes;
   }
 
