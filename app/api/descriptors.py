@@ -380,18 +380,10 @@ NAIP = CollectionDescriptor(
     key_filter=lambda key: key.endswith(".tif") and "/rgbir_cog/" in key,
 )
 
-NAIP_VISUALIZATION = CollectionDescriptor(
-    id="naip-visualization",
-    bucket="naip-visualization",
-    access="requester-pays",
-    discovery=None,
-    key_filter=lambda key: key.endswith(".tif") and "/rgb/" in key,
-)
-
 # Assemble the live registry now that all descriptors are defined. The public
 # S3-prefix collections (KyFromAbove, New Jersey) are ingestable via the generic
 # path. Keep in sync with collections/registry.yaml (active collections).
-_REGISTRY.update({c.id: c for c in (NAIP, NAIP_VISUALIZATION, KYFROMABOVE, NJ)})
+_REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ)})
 
 
 def register_adhoc_collection(

@@ -124,17 +124,6 @@ def test_sign():
         assert data["expires_in"] == 600
 
 
-def test_sign_accepts_naip_visualization_source():
-    """The RGB NAIP requester-pays bucket is a first-class signable source."""
-    href = "s3://naip-visualization/ny/2022/60cm/rgb/40073/item.tif"
-    with patch("app.maybe_sign_s3_href") as mock_maybe_sign:
-        mock_maybe_sign.return_value = ("https://signed-url.example.com/item.tif", {}, 600)
-
-        response = client.get("/sign", params={"href": href})
-        assert response.status_code == 200
-        assert response.json()["href"] == href
-
-
 def test_sign_rejects_private_and_unknown_buckets():
     """The public signer must not expose role-readable or arbitrary buckets."""
     private_href = "s3://deckgl-s3-cog-s1m-495811053987-us-west2/lake/item.parquet"
