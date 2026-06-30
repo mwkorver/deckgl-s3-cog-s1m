@@ -137,6 +137,19 @@ def get_aws_credentials() -> dict[str, Any]:
 
 
 def get_s3_client():
+    """S3 client for browser-facing presigned asset URLs.
+
+    Virtual-hosted, REGIONAL endpoint (bucket.s3.<region>.amazonaws.com). The
+    browser reads COG byte ranges with a single-range `Range` header, which is
+    CORS-safelisted -- so no preflight is sent, and the regional virtual-hosted
+    GET returns 206 + Access-Control-Allow-Origin directly.
+
+    Do NOT use the global path-style endpoint (s3.amazonaws.com/bucket): although
+    its OPTIONS preflight returns 200, a GET to it 301-redirects a non-us-east-1
+    bucket, and that 301 carries no Access-Control-Allow-Origin -- so the browser
+    blocks the read before it ever reaches the ranged GET (the regression this
+    docstring previously rationalized).
+    """
     global _global_s3_client, _global_s3_client_creds_expiry
     now = time.time()
 
@@ -151,7 +164,12 @@ def get_s3_client():
         creds = get_aws_credentials()
         _global_s3_client_creds_expiry = _cached_creds[3] if _cached_creds else now + 300.0
 
-        client = boto3.client("s3", region_name=region, config=s3_config, **creds)
+        client = boto3.client(
+            "s3",
+            region_name=region,
+            config=s3_config,
+            **creds,
+        )
 
         def move_request_payer_to_query(request, **kwargs):
             if "x-amz-request-payer" in request.headers:

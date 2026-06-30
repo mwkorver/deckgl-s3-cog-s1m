@@ -75,7 +75,23 @@ collections:
     display:
       sample_bits: 8
       domain: [0, 255]
-    notes: RGB sibling of naip-analytic; products at <state>/<year>/<gsd>/rgb/.
+    notes: >
+      RGB sibling of naip-analytic; products at <state>/<year>/<gsd>/rgb/.
+      NOT browser-renderable yet: the naip-visualization bucket has NO S3 CORS
+      configuration, so a cross-origin GET returns the COG bytes with no
+      Access-Control-Allow-Origin header and the browser blocks the read (the
+      tiles are fetched directly from S3; the API only vends presigned URLs).
+      Ingest/footprints work (server-side), but imagery won't draw until the
+      bucket owner adds a CORS config. Minimum needed (naip-analytic already has
+      the equivalent, which is why it renders):
+        [{"AllowedOrigins": ["*"],
+          "AllowedMethods": ["GET", "HEAD"],
+          "AllowedHeaders": ["*"],
+          "ExposeHeaders": ["Content-Range", "Content-Length", "Accept-Ranges", "ETag"]}]
+      ExposeHeaders matters for COG readers (Content-Range carries the true file
+      size); AllowedMethods GET is what makes the GET response carry the ACAO the
+      browser requires. Single-range Range reads are CORS-safelisted, so no
+      preflight/OPTIONS allowance is needed.
 
   - id: kyfromabove
     title: KyFromAbove (Kentucky)
