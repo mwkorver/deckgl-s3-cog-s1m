@@ -3473,7 +3473,7 @@
         const [zmin, zmax] = range || subData.z_range;
         const [clon, clat] = subData.center_lnglat;
         return new TerrainMeshLayerClass({
-          id: `s1m-terrain-${subData.dataset}-${sub.N}-${sub.ix}-${sub.iy}`,
+          id: `s1m-terrain-${subData.dataset}-${subData.width}-${sub.N}-${sub.ix}-${sub.iy}`,
           coordinateSystem: S1M_COORD.METER_OFFSETS,
           coordinateOrigin: [clon, clat, 0],
           mesh: sub.gpuMesh.mesh,
@@ -3626,7 +3626,7 @@
         const [zmin, zmax] = range || data.z_range;
         const [clon, clat] = data.center_lnglat;
         return new TerrainMeshLayerClass({
-          id: "s1m-terrain-" + data.dataset,
+          id: "s1m-terrain-" + data.dataset + "-" + data.width,
           coordinateSystem: S1M_COORD.METER_OFFSETS,
           coordinateOrigin: [clon, clat, 0],
           mesh: gpuMesh.mesh,

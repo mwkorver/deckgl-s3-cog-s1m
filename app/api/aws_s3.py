@@ -122,7 +122,7 @@ def get_aws_credentials() -> dict[str, Any]:
         }
 
     expiry_time = getattr(resolved, "_expiry_time", None)
-    expires_at_ts = expiry_time.timestamp() if expiry_time is not None else now + 300
+    expires_at_ts = expiry_time.timestamp() if expiry_time is not None else now + 3600
     _cached_creds = (
         frozen.access_key,
         frozen.secret_key,
@@ -199,7 +199,7 @@ def get_s3_direct_client():
 
         s3_config = Config(signature_version="s3v4", s3={"addressing_style": "virtual"})
         creds = get_aws_credentials()
-        _global_s3_direct_client_creds_expiry = _cached_creds[3] if _cached_creds else now + 300.0
+        _global_s3_direct_client_creds_expiry = _cached_creds[3] if _cached_creds else now + 3600.0
         _global_s3_direct_client = boto3.client("s3", region_name=region, config=s3_config, **creds)
         return _global_s3_direct_client
 

@@ -100,10 +100,15 @@ def lake_query(run, *, retried: bool = False):
     try:
         return run(get_lake_duckdb().cursor())
     except Exception as exc:
-        if retried or not is_expired_token_error(exc):
+        expired = is_expired_token_error(exc)
+        invalidated = "has been invalidated" in str(exc).lower() or "must be restarted" in str(exc).lower()
+        if not expired and not invalidated:
             raise
         reset_lake_duckdb()
-        reset_aws_credentials_cache()
+        if expired:
+            reset_aws_credentials_cache()
+        if retried:
+            raise
         return lake_query(run, retried=True)
 
 
@@ -525,7 +530,8 @@ def availability(collection: str = COLLECTION_ID):
         "group by region, year"
     )
     try:
-        for state, year, year_gsd, xmin, ymin, xmax, ymax in get_lake_duckdb().cursor().execute(lake_sql).fetchall():
+        rows = lake_query(lambda cur: cur.execute(lake_sql).fetchall())
+        for state, year, year_gsd, xmin, ymin, xmax, ymax in rows:
             if state is not None and year is not None:
                 region = str(state).strip().lower()
                 states.setdefault(region, []).append(int(year))
