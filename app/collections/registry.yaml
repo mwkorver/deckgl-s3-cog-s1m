@@ -55,43 +55,10 @@ collections:
       cog_filter: "key.endswith('.tif') and '/rgbir_cog/' in key"
     cog_verified: "canonical RGBIR COG; in production ingest since project start"
 
-  - id: naip-visualization
-    title: NAIP Visualization (RGB)
-    active: true
-    status: ready
-    extent:
-      region_kind: us-conus        # national; region is key-parsed
-      bbox: [-125.0, 24.0, -66.5, 49.5]
-      years: [2011, 2023]
-    source:
-      bucket: naip-visualization   # 3-band RGB COG (visualization product)
-      bucket_region: us-west-2
-      access: requester-pays
-      root_prefix: ""              # <state>/<year>/<gsd>/rgb/ is the top level
-      region: key-parsed
-      discovery: s3-prefix
-      cog_filter: "key.endswith('.tif') and '/rgb/' in key"
-    cog_verified: "2026-06: real COG (tiled 512, 3-band RGB uint8, internal overviews)"
-    display:
-      sample_bits: 8
-      domain: [0, 255]
-    notes: >
-      RGB sibling of naip-analytic; products at <state>/<year>/<gsd>/rgb/.
-      NOT browser-renderable yet: the naip-visualization bucket has NO S3 CORS
-      configuration, so a cross-origin GET returns the COG bytes with no
-      Access-Control-Allow-Origin header and the browser blocks the read (the
-      tiles are fetched directly from S3; the API only vends presigned URLs).
-      Ingest/footprints work (server-side), but imagery won't draw until the
-      bucket owner adds a CORS config. Minimum needed (naip-analytic already has
-      the equivalent, which is why it renders):
-        [{"AllowedOrigins": ["*"],
-          "AllowedMethods": ["GET", "HEAD"],
-          "AllowedHeaders": ["*"],
-          "ExposeHeaders": ["Content-Range", "Content-Length", "Accept-Ranges", "ETag"]}]
-      ExposeHeaders matters for COG readers (Content-Range carries the true file
-      size); AllowedMethods GET is what makes the GET response carry the ACAO the
-      browser requires. Single-range Range reads are CORS-safelisted, so no
-      preflight/OPTIONS allowance is needed.
+  # naip-visualization (3-band RGB) intentionally NOT registered: the bucket has
+  # no S3 CORS config, so its COGs can't be range-read from the browser (a
+  # cross-origin GET returns no Access-Control-Allow-Origin). Re-add only if the
+  # bucket owner adds CORS (GET/HEAD + ExposeHeaders Content-Range).
 
   - id: kyfromabove
     title: KyFromAbove (Kentucky)
