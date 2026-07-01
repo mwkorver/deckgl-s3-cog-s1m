@@ -249,7 +249,18 @@ class S3PrefixListing:
         for pre in self.enumerate_prefixes(s3, self.bucket, region, None):
             m = re.search(r"(?:19|20)\d\d", pre)
             if m:
-                years.add(int(m.group(0)))
+                y = int(m.group(0))
+                # Filter by Indiana regional tiers matching if this is the Indiana bucket
+                if self.bucket == "gisimageryingov":
+                    if region == "in-central" and y not in (2021, 2025):
+                        continue
+                    if region == "in-east" and y not in (2022, 2026):
+                        continue
+                    if region == "in-west" and y not in (2023, 2027):
+                        continue
+                    if region == "in" and y in (2021, 2022, 2023, 2025, 2026, 2027):
+                        continue
+                years.add(y)
         return sorted(years, reverse=True)
 
 
@@ -500,8 +511,27 @@ def in_key_parser(key: str) -> KeyFields | None:
     except ValueError:
         return None
     tile = parts[-1].removesuffix(".tif")
+    
+    # Map years to their corresponding regional acquisition tiers:
+    # 2021-2023 Program:
+    #   2021: Central Tier (in-central)
+    #   2022: Eastern Tier (in-east)
+    #   2023: Western/Southern Tier (in-west)
+    # 2025-2027 Program:
+    #   2025: Central Tier (in-central)
+    #   2026: Eastern Tier (in-east)
+    #   2027: Western/Southern Tier (in-west)
+    if year in (2021, 2025):
+        region = "in-central"
+    elif year in (2022, 2026):
+        region = "in-east"
+    elif year in (2023, 2027):
+        region = "in-west"
+    else:
+        region = "in"  # statewide fallback for older years
+        
     return KeyFields(
-        region="in",
+        region=region,
         year=year,
         properties={"in:tile": tile, "in:zone": parts[3], "in:resolution": parts[4]},
     )
@@ -536,7 +566,7 @@ IN_IMAGERY = CollectionDescriptor(
         cog_filter=in_cog_filter,
         key_parser=in_key_parser,
         enumerate_prefixes=in_enumerate_prefixes,
-        regions=("in",),
+        regions=("in", "in-central", "in-east", "in-west"),
     ),
     key_filter=in_cog_filter,
 )
