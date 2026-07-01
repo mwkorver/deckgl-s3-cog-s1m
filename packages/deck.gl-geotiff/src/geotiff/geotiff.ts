@@ -4,6 +4,8 @@ import type {
   ConcurrencyLimiter,
   Priority,
   RasterArray,
+  RasterArrayBandSeparate,
+  RasterArrayPixelInterleaved,
 } from "@s3-cog/geotiff";
 import { GeoTIFF } from "@s3-cog/geotiff";
 import type { Converter } from "proj4";
@@ -14,44 +16,84 @@ import type { Converter } from "proj4";
  * Only supports input arrays with 3 (RGB) or 4 (RGBA) channels. If the input is
  * already RGBA, it is returned unchanged.
  */
-export function addAlphaChannel(rgbImage: RasterArray): RasterArray {
-  const { height, width } = rgbImage;
+/**
+ * Interleave a band-separate image array into a contiguous pixel-interleaved array.
+ */
+export function interleaveBands(image: RasterArray): RasterArrayPixelInterleaved {
+  if (image.layout !== "band-separate") {
+    return image as RasterArrayPixelInterleaved;
+  }
+  const { width, height, bands } = image;
+  if (!bands || bands.length === 0) {
+    throw new Error("Band-separate image has no bands.");
+  }
+  const numBands = bands.length;
+  const numPixels = width * height;
+  const firstBand = bands[0];
 
-  if (rgbImage.layout === "band-separate") {
-    // This should be pretty easy to do by just returning an additional array of
-    // 255s
-    // But not sure if we'll want to do that, because it's fine to upload 3
-    // separate textures.
-    throw new Error("Band-separate images not yet implemented.");
+  let interleavedData: any;
+  if (firstBand instanceof Uint16Array) {
+    interleavedData = new Uint16Array(numPixels * numBands);
+  } else if (firstBand instanceof Int16Array) {
+    interleavedData = new Int16Array(numPixels * numBands);
+  } else if (firstBand instanceof Float32Array) {
+    interleavedData = new Float32Array(numPixels * numBands);
+  } else if (firstBand instanceof Uint8ClampedArray) {
+    interleavedData = new Uint8ClampedArray(numPixels * numBands);
+  } else {
+    interleavedData = new Uint8Array(numPixels * numBands);
   }
 
-  if (rgbImage.data.length === height * width * 4) {
+  for (let i = 0; i < numPixels; ++i) {
+    for (let j = 0; j < numBands; ++j) {
+      interleavedData[i * numBands + j] = bands[j]![i];
+    }
+  }
+
+  return {
+    ...image,
+    layout: "pixel-interleaved" as any,
+    data: interleavedData,
+  } as RasterArrayPixelInterleaved;
+}
+
+export function addAlphaChannel(rgbImage: RasterArray): RasterArray {
+  let img: RasterArrayPixelInterleaved;
+  if (rgbImage.layout === "band-separate") {
+    img = interleaveBands(rgbImage);
+  } else {
+    img = rgbImage as RasterArrayPixelInterleaved;
+  }
+
+  const { height, width } = img;
+
+  if (img.data.length === height * width * 4) {
     // Already has alpha channel
-    return rgbImage;
-  } else if (rgbImage.data.length === height * width * 3) {
+    return img;
+  } else if (img.data.length === height * width * 3) {
     // Need to add alpha channel
 
-    const rgbaLength = (rgbImage.data.length / 3) * 4;
-    const isUint16 = rgbImage.data instanceof Uint16Array;
+    const rgbaLength = (img.data.length / 3) * 4;
+    const isUint16 = img.data instanceof Uint16Array;
     const rgbaArray = isUint16
       ? new Uint16Array(rgbaLength)
       : new Uint8ClampedArray(rgbaLength);
     const maxAlpha = isUint16 ? 65535 : 255;
-    for (let i = 0; i < rgbImage.data.length / 3; ++i) {
-      rgbaArray[i * 4] = rgbImage.data[i * 3]!;
-      rgbaArray[i * 4 + 1] = rgbImage.data[i * 3 + 1]!;
-      rgbaArray[i * 4 + 2] = rgbImage.data[i * 3 + 2]!;
+    for (let i = 0; i < img.data.length / 3; ++i) {
+      rgbaArray[i * 4] = img.data[i * 3]!;
+      rgbaArray[i * 4 + 1] = img.data[i * 3 + 1]!;
+      rgbaArray[i * 4 + 2] = img.data[i * 3 + 2]!;
       rgbaArray[i * 4 + 3] = maxAlpha;
     }
 
     return {
-      ...rgbImage,
+      ...img,
       count: 4,
       data: rgbaArray,
     };
   } else {
     throw new Error(
-      `Unexpected number of channels in raster data: ${rgbImage.data.length / (height * width)}`,
+      `Unexpected number of channels in raster data: ${img.data.length / (height * width)}`,
     );
   }
 }

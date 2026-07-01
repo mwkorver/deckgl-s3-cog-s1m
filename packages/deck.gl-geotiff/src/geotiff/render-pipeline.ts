@@ -15,7 +15,7 @@ import type { GeoTIFF, Overview } from "@s3-cog/geotiff";
 import { parseColormap } from "@s3-cog/geotiff";
 import type { Device, SamplerProps, Texture } from "@luma.gl/core";
 import type { GetTileDataOptions } from "../cog-layer.js";
-import { addAlphaChannel } from "./geotiff.js";
+import { addAlphaChannel, interleaveBands } from "./geotiff.js";
 import { inferTextureFormat } from "./texture.js";
 
 export type TextureDataT = {
@@ -168,7 +168,7 @@ function createUnormPipeline(
     }
 
     if (array.layout === "band-separate") {
-      throw new Error("Band-separate images not yet implemented.");
+      array = interleaveBands(array);
     }
 
     const textureFormat = inferTextureFormat(
