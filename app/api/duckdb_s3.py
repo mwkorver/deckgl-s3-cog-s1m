@@ -95,7 +95,7 @@ def load_login_session_credentials(profile_name: str):
     return fallback_creds
 
 
-def enable_s3(con) -> None:
+def enable_s3(con, aws_access_key_id: str | None = None, aws_secret_access_key: str | None = None) -> None:
     """Wire S3 access: credential_chain secret + requester-pays.
 
     The credential_chain provider lives in DuckDB's `aws` extension (separate
@@ -110,42 +110,44 @@ def enable_s3(con) -> None:
         con.execute("INSTALL aws; LOAD aws;")
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
     
-    # Try to resolve credentials using boto3 to pass them explicitly
-    access_key = None
-    secret_key = None
+    access_key = aws_access_key_id
+    secret_key = aws_secret_access_key
     token = None
-    try:
-        import boto3
-        profile = os.environ.get("AWS_PROFILE") or os.environ.get("AWS_DEFAULT_PROFILE")
-        
-        session = boto3.Session(profile_name=profile) if profile else boto3.Session()
+    
+    # Try to resolve credentials using boto3 if not explicitly provided
+    if not (access_key and secret_key):
         try:
-            credentials = session.get_credentials()
-        except Exception as exc:
-            # botocore without the [crt] extra raises for `aws login` sessions;
-            # fall through to the login-cache parser below instead of bailing.
-            print(f"Warning: boto3 get_credentials failed: {exc}", flush=True)
-            credentials = None
-        if credentials:
+            import boto3
+            profile = os.environ.get("AWS_PROFILE") or os.environ.get("AWS_DEFAULT_PROFILE")
+            
+            session = boto3.Session(profile_name=profile) if profile else boto3.Session()
             try:
-                # Freezing refreshable login-session credentials raises
-                # RuntimeError when the cached token has lapsed; fall through
-                # to the login-cache parser below instead of bailing.
-                frozen = credentials.get_frozen_credentials()
-                access_key = frozen.access_key
-                secret_key = frozen.secret_key
-                token = frozen.token
+                credentials = session.get_credentials()
             except Exception as exc:
-                print(f"Warning: freezing credentials failed: {exc}", flush=True)
-        
-        # Fall back to custom login session credentials parser if no credentials resolved
-        if not access_key:
-            pname = profile or "default"
-            fallback = load_login_session_credentials(pname)
-            if fallback:
-                access_key, secret_key, token, _ = fallback
-    except Exception as e:
-        print(f"Warning: failed to get AWS credentials: {e}", flush=True)
+                # botocore without the [crt] extra raises for `aws login` sessions;
+                # fall through to the login-cache parser below instead of bailing.
+                print(f"Warning: boto3 get_credentials failed: {exc}", flush=True)
+                credentials = None
+            if credentials:
+                try:
+                    # Freezing refreshable login-session credentials raises
+                    # RuntimeError when the cached token has lapsed; fall through
+                    # to the login-cache parser below instead of bailing.
+                    frozen = credentials.get_frozen_credentials()
+                    access_key = frozen.access_key
+                    secret_key = frozen.secret_key
+                    token = frozen.token
+                except Exception as exc:
+                    print(f"Warning: freezing credentials failed: {exc}", flush=True)
+            
+            # Fall back to custom login session credentials parser if no credentials resolved
+            if not access_key:
+                pname = profile or "default"
+                fallback = load_login_session_credentials(pname)
+                if fallback:
+                    access_key, secret_key, token, _ = fallback
+        except Exception as e:
+            print(f"Warning: failed to get AWS credentials: {e}", flush=True)
 
     if access_key and secret_key:
         sql = f"""
@@ -172,7 +174,7 @@ def uses_s3(*paths: str) -> bool:
     return any(str(p).startswith("s3://") for p in paths if p)
 
 
-def configure(con, *paths: str, spatial: bool = True) -> None:
+def configure(con, *paths: str, spatial: bool = True, aws_access_key_id: str | None = None, aws_secret_access_key: str | None = None) -> None:
     """Load the needed extensions and wire S3 if any path is s3://.
 
     httpfs is only loaded when S3 is in play (local reads don't need it).
@@ -180,4 +182,4 @@ def configure(con, *paths: str, spatial: bool = True) -> None:
     s3 = uses_s3(*paths)
     load_extensions(con, spatial=spatial, httpfs=s3)
     if s3:
-        enable_s3(con)
+        enable_s3(con, aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)

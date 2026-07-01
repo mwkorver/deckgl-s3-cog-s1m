@@ -327,7 +327,12 @@ def payloads_to_arrow(payloads, collection: str) -> pa.Table:
     return pa.Table.from_pylist(rows)
 
 
-def _delete_partition_prefixes(out_path: str, parts) -> None:
+def _delete_partition_prefixes(
+    out_path: str,
+    parts,
+    aws_access_key_id: str | None = None,
+    aws_secret_access_key: str | None = None,
+) -> None:
     """Remove the (collection, region, year) partition dirs we're about to
     rewrite, so a re-ingest replaces rather than appends.
 
@@ -343,11 +348,13 @@ def _delete_partition_prefixes(out_path: str, parts) -> None:
 
         bucket, _, base_key = out_path[len("s3://"):].partition("/")
         base_key = base_key.rstrip("/")
-        s3 = boto3.client(
-            "s3",
-            region_name=os.environ.get("AWS_REGION")
-            or os.environ.get("AWS_DEFAULT_REGION", "us-west-2"),
-        )
+        kwargs = {
+            "region_name": os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+        }
+        if aws_access_key_id and aws_secret_access_key:
+            kwargs["aws_access_key_id"] = aws_access_key_id
+            kwargs["aws_secret_access_key"] = aws_secret_access_key
+        s3 = boto3.client("s3", **kwargs)
 
     for collection, region, year in parts:
         rel = f"collection={collection}/region={region}/year={year}"
@@ -378,7 +385,15 @@ def _delete_partition_prefixes(out_path: str, parts) -> None:
                 print(f"cleared {p}", flush=True)
 
 
-def export(payloads, out_path: str, row_group_size: int, single_file: bool, collection: str) -> int:
+def export(
+    payloads,
+    out_path: str,
+    row_group_size: int,
+    single_file: bool,
+    collection: str,
+    aws_access_key_id: str | None = None,
+    aws_secret_access_key: str | None = None,
+) -> int:
     table = payloads_to_arrow(payloads, collection)  # noqa: F841 -- referenced by DuckDB scan
 
     import duckdb_s3
@@ -393,7 +408,11 @@ def export(payloads, out_path: str, row_group_size: int, single_file: bool, coll
             out.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect()
-    duckdb_s3.configure(con, out_path, spatial=True)
+    duckdb_s3.configure(
+        con, out_path, spatial=True,
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+    )
     con.register("staging", table)
 
     if not single_file:
@@ -402,7 +421,7 @@ def export(payloads, out_path: str, row_group_size: int, single_file: bool, coll
         parts = con.execute(
             "select distinct collection, region, year from staging"
         ).fetchall()
-        _delete_partition_prefixes(out_path, parts)
+        _delete_partition_prefixes(out_path, parts, aws_access_key_id, aws_secret_access_key)
 
     if single_file:
         copy_opts = f"format parquet, geoparquet_version 'V2', row_group_size {row_group_size}"
@@ -475,7 +494,10 @@ def main():
     args = parse_args()
 
     payloads = acquire_payloads(args)
-    count = export(payloads, args.out, args.row_group_size, args.single_file, args.collection)
+    count = export(
+        payloads, args.out, args.row_group_size, args.single_file, args.collection,
+        args.source_access_key_id, args.source_secret_access_key,
+    )
 
     total_ms = (perf_counter() - started_at) * 1000
     print(f"timings total_ms={total_ms:.1f}", flush=True)
