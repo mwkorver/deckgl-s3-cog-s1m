@@ -23,6 +23,7 @@
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceFile } from "@chunkd/source-file";
+import { SourceHttp } from "@chunkd/source-http";
 import { toBandSeparate, toPixelInterleaved } from "../src/array.js";
 import { GeoTIFF } from "../src/geotiff.js";
 
@@ -62,6 +63,30 @@ describe("collection COG decode (real fixtures)", () => {
     });
   }
 });
+
+// Real end-to-end LERC decode against a live public Vermont CLRIR COG
+// (4-band, PlanarConfig=1, LERC). Opt-in (network): set COG_NETWORK_TESTS=1.
+const VT_CLRIR_URL =
+  "https://vtopendata-prd.s3.us-east-2.amazonaws.com/Imagery/_Tiles/VTORTHO/0_3M/CLRIR/2024/COGS/VT_510141_20240423.tif";
+
+describe.skipIf(!process.env.COG_NETWORK_TESTS)(
+  "real Vermont VTORTHO CLRIR (network, LERC PlanarConfig=1)",
+  () => {
+    it("decodes a real LERC tile to a valid pixel-interleaved RasterArray", async () => {
+      const source = new SourceHttp(VT_CLRIR_URL);
+      const tiff = await GeoTIFF.open({
+        dataSource: source,
+        headerSource: source,
+      });
+      const { array } = await tiff.fetchTile(5, 5);
+
+      const interleaved = toPixelInterleaved(array);
+      expect(interleaved.layout).toBe("pixel-interleaved");
+      expect(interleaved.count).toBe(4);
+      expect(interleaved.data.length).toBe(array.width * array.height * 4);
+    }, 30000);
+  },
+);
 
 describe("LERC codec layout mapping (regression: Vermont VTORTHO CLRIR)", () => {
   afterEach(() => vi.resetModules());
