@@ -44,7 +44,7 @@ Parameters:
     Description: Bucket containing reusable demo seed data copied into each deployer's bucket.
   SeedKeys:
     Type: String
-    Default: lake/,collections.geojson,anchors.geojson
+    Default: lake/,collections.geojson
     Description: Comma-separated source prefixes or object keys to copy from SeedBucketName.
 
 Resources:

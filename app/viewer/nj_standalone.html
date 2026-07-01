@@ -4983,31 +4983,9 @@
         window.S3_COG_CENTER_ZOOM || 11
       );
 
-      // Curated per-state anchors: a visually interesting, recognizable spot
-      // (urban texture, water, distinctive infrastructure) instead of the
-      // bbox centroid, which tends to land in empty farmland or desert.
-      // Data lives in anchors.geojson (same pattern as collections.geojson;
-      // GitHub renders it as a map). Missing/unloaded entries fall back to
-      // the extent centroid.
-      let STATE_ANCHORS = {};
-      fetch("./anchors.geojson", { cache: "no-store" })
-        .then((r) => r.json())
-        .then((fc) => {
-          for (const f of fc.features || []) {
-            if (f.properties && f.properties.region && f.geometry) {
-              STATE_ANCHORS[f.properties.region] = f.geometry.coordinates;
-            }
-          }
-        })
-        .catch((e) => console.error("anchors.geojson load failed:", e));
-
       function centerOnSelection() {
         const st = stateEl.value;
         const yr = yearEl.value;
-        if (st && STATE_ANCHORS[st]) {
-          map.flyTo({ center: STATE_ANCHORS[st], zoom: CENTER_ZOOM, duration: 1200 });
-          return;
-        }
         let box = null;
         const merge = (b) => {
           if (!b) return;
@@ -5022,7 +5000,10 @@
           else Object.values(byYear).forEach(merge);
         }
         if (!box) return;
-        map.flyTo({ center: [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], zoom: CENTER_ZOOM, duration: 1200 });
+        map.fitBounds(
+          [[box[0], box[1]], [box[2], box[3]]],
+          { padding: { top: 72, right: 48, bottom: 72, left: 48 }, duration: 1200 }
+        );
       }
 
       function gsdLabel(meters) {

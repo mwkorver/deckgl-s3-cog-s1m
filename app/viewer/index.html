@@ -5870,23 +5870,7 @@
         return isValidLngLatBbox(collection?.bbox) ? collection.bbox : null;
       }
 
-      // Curated per-state anchors: a visually interesting, recognizable spot
-      // (urban texture, water, distinctive infrastructure) instead of the
-      // bbox centroid, which tends to land in empty farmland or desert.
-      // Data lives in anchors.geojson (same pattern as collections.geojson;
-      // GitHub renders it as a map). Missing/unloaded entries fall back to
-      // the extent centroid.
-      let STATE_ANCHORS = {};
-      fetch("./anchors.geojson", { cache: "no-store" })
-        .then((r) => r.json())
-        .then((fc) => {
-          for (const f of fc.features || []) {
-            if (f.properties && f.properties.region && f.geometry) {
-              STATE_ANCHORS[f.properties.region] = f.geometry.coordinates;
-            }
-          }
-        })
-        .catch((e) => console.error("anchors.geojson load failed:", e));
+
 
       function centerOnSelection() {
         const st = stateEl.value;
