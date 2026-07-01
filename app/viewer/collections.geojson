@@ -17,7 +17,7 @@
         ],
         "bucket": "naip-analytic",
         "bucket_region": "us-west-2",
-        "root_prefix": "",
+        "root_prefix": "<state>/<year>/",
         "access": "requester-pays",
         "cog_verified": true,
         "display": null,
@@ -125,7 +125,7 @@
         ],
         "bucket": "njogis-imagery",
         "bucket_region": "us-west-2",
-        "root_prefix": "",
+        "root_prefix": "<year>/cog/",
         "access": "public",
         "cog_verified": true,
         "display": {
