@@ -29,6 +29,8 @@ from PIL import Image
 # decompression-bomb guard (which warns/raises on large dimensions) is just
 # noise for full-size NAIP COGs. Disable it for this header-only path.
 Image.MAX_IMAGE_PIXELS = None
+from PIL import TiffImagePlugin
+TiffImagePlugin.COMPRESSION_INFO[34887] = "lerc"
 from pyproj import Transformer
 
 EARTHSEARCH_API = os.environ.get("S3_COG_EARTHSEARCH_API", "https://earth-search.aws.element84.com/v1/search")
