@@ -5,7 +5,7 @@ import re
 import io
 import threading
 
-_pyproj_lock = threading.Lock()
+_pyproj_lock = threading.RLock()
 
 # Clean up empty AWS environment variables to prevent boto3 ProfileNotFound errors
 for var in ["AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]:

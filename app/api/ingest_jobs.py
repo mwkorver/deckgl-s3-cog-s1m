@@ -71,26 +71,32 @@ def run_ingest_job(
         command.extend(["--source-secret-access-key", source_secret_access_key])
     try:
         append_ingest_log(job_id, f"$ {' '.join(command)}")
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=str(Path(__file__).parent),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,
             env=os.environ.copy(),
         )
-        for line in (result.stdout or "").splitlines():
-            append_ingest_log(job_id, line)
-        for line in (result.stderr or "").splitlines():
-            append_ingest_log(job_id, f"stderr: {line}")
-        if result.returncode == 0:
-            set_ingest_job(job_id, {"status": "completed", "returncode": result.returncode, "finished": monotonic()})
+        while True:
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+            if line:
+                append_ingest_log(job_id, line.strip())
+
+        returncode = process.wait()
+        if returncode == 0:
+            set_ingest_job(job_id, {"status": "completed", "returncode": returncode, "finished": monotonic()})
         else:
             set_ingest_job(
                 job_id,
                 {
                     "status": "failed",
-                    "returncode": result.returncode,
-                    "error": f"Ingest command exited with code {result.returncode}.",
+                    "returncode": returncode,
+                    "error": f"Ingest command exited with code {returncode}.",
                     "finished": monotonic(),
                 },
             )
