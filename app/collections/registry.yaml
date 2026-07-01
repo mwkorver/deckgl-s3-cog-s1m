@@ -49,7 +49,7 @@ collections:
       bucket: naip-analytic        # 4-band RGBIR COG
       bucket_region: us-west-2
       access: requester-pays
-      root_prefix: ""
+      root_prefix: "{state}/{year}/[resolution]/rgbir_cog/"
       region: key-parsed           # state from key path
       discovery: manifest-index    # pre-published manifest; s3-prefix also works
       cog_filter: "key.endswith('.tif') and '/rgbir_cog/' in key"
@@ -73,7 +73,7 @@ collections:
       bucket: kyfromabove
       bucket_region: us-west-2
       access: public               # --no-sign-request; no RequestPayer
-      root_prefix: imagery/orthos/
+      root_prefix: "imagery/orthos/[phase]/"
       region: const:ky
       discovery: s3-prefix         # 2-level: list product folders, match KY_KYAPED_<year>_*
       cog_filter: "key.endswith('_cog.tif') and no {Overviews,Metadata,TileGrid,County-Mosaics,FlightInformationData}"
@@ -93,7 +93,7 @@ collections:
       bucket: njogis-imagery
       bucket_region: us-west-2
       access: public
-      root_prefix: ""
+      root_prefix: "{year}/cog/"
       region: const:nj
       discovery: s3-prefix         # enumerate_prefixes -> ["<year>/cog/"]
       cog_filter: "key.endswith('.tif') and '/cog/' in key"
@@ -116,7 +116,7 @@ collections:
       bucket: gisimageryingov
       bucket_region: us-east-2
       access: public
-      root_prefix: imageryoptimized/statewide/   # the distributable COGs, NOT the ArcGIS cache/raw
+      root_prefix: "imageryoptimized/statewide/{year}/[zone]/[resolution]/"
       region: const:in
       discovery: s3-prefix         # statewide/<year>/<SPE|SPW>/<res>in/in<year>_<tile>_<res>.tif
       cog_filter: "key.endswith('.tif') and '/imageryoptimized/statewide/' in key"
@@ -149,7 +149,7 @@ collections:
       bucket: vtopendata-prd
       bucket_region: us-east-2
       access: public
-      root_prefix: Imagery/_Tiles/VTORTHO/   # the tiled product (clean single years)
+      root_prefix: "Imagery/_Tiles/VTORTHO/.../{year}/COGS/"
       region: const:vt
       discovery: s3-prefix         # .../<res>/<profile>/<year>/COGS/VT_<tile>_<yyyymmdd>.tif
       cog_filter: "key.endswith('.tif') and '/COGS/' in key"

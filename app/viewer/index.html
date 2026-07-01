@@ -6066,10 +6066,12 @@
         populateSearchYears();
         queueSearch("auto");
         updateNaipCoverageMvtLayer();
+        if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
       });
       yearEl.addEventListener("change", () => {
         queueSearch("auto");
         updateNaipCoverageMvtLayer();
+        if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
       });
       document.getElementById("center-data").addEventListener("click", centerOnSelection);
 
@@ -6462,9 +6464,17 @@
         const avail = collectionAvailability(p);
         const badgeCls = avail.cls === "status-ok" ? "ok" : avail.cls === "status-warn" ? "warn" : "neutral";
         const yrs = Array.isArray(p.years) && p.years.length === 2 ? `${p.years[0]}–${p.years[1]}` : "—";
+        let prefixPath = p.root_prefix || "—";
+        if (prefixPath.includes("{state}") || prefixPath.includes("{year}")) {
+          const st = stateEl.value || "[state]";
+          const yr = yearEl.value || "[year]";
+          const stCode = st ? st.split("-")[0] : "[state]";
+          prefixPath = prefixPath.replace(/{state}/g, stCode).replace(/{year}/g, yr);
+        }
+
         const rows = [
           ["bucket", `${p.bucket} <span class="muted">(${p.bucket_region}, ${p.access})</span>`],
-          ["prefix path", `${p.root_prefix || "(bucket root)"}`],
+          ["prefix path", `${prefixPath}`],
           ["region", `${p.region_code || p.region_kind || "—"}`],
           ["years", yrs],
           ["COG verified", p.cog_verified ? "yes" : "—"],
