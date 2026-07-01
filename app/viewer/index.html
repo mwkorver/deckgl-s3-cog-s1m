@@ -6457,9 +6457,11 @@
           });
         }
       }
-      function resolveTemplate(template, href) {
-        if (!href) return template;
-        const key = href.replace(/^s3:\/\/[^\/]+\//, "");
+      function resolveTemplate(template, feature) {
+        if (!feature || !feature.id) return template;
+        const idx = feature.id.indexOf("/");
+        if (idx === -1) return template;
+        const key = feature.id.substring(idx + 1);
         const templateParts = template.split("/");
         const keyParts = key.split("/");
         const resultParts = [];
@@ -6490,8 +6492,7 @@
         let prefixPath = p.root_prefix || "—";
         const firstFeature = Array.isArray(lastSearchFeatures) && lastSearchFeatures[0];
         if (firstFeature && prefixPath.includes("{")) {
-          const href = firstFeature.assets?.image?.href || "";
-          prefixPath = resolveTemplate(prefixPath, href);
+          prefixPath = resolveTemplate(prefixPath, firstFeature);
         } else if (prefixPath.includes("{")) {
           const st = stateEl.value || "[state]";
           const yr = yearEl.value || "[year]";
