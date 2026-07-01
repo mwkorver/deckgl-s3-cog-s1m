@@ -471,7 +471,7 @@
                   <select id="year" style="flex:1;">
                     <option value="">Latest available</option>
                   </select>
-                  <button id="center-data" type="button" title="Move the map to the selected Collection/Region/Year extent" style="white-space:nowrap;">Center</button>
+                  <button id="center-data" type="button" class="search-active" title="Move the map to the selected Collection/Region/Year extent" style="white-space:nowrap;">Center</button>
                 </div>
               </label>
               <div class="small" role="radiogroup" aria-label="Footprint overlay" style="display:flex; flex-direction:column; gap:8px; margin-top:2px;">
@@ -6585,18 +6585,11 @@
         el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`
           + `<span style="font-weight:600;">${p.title}</span>`
           + `<span class="cd-badge ${badgeCls}">${avail.label}</span>`
-          + (p.bbox ? `<button id="center-collection-btn" class="search-active" style="padding:1px 6px; font-size:10px; cursor:pointer; height:18px; border-radius:3px; line-height:1;">Center</button>` : "")
           + `</div>`
           + `<div class="cd-kv">`
           + rows.map(([k, v]) => `<span class="cd-key">${k}</span><span>${v}</span>`).join("")
           + `</div>`
           + hint;
-
-        if (p.bbox) {
-          document.getElementById("center-collection-btn")?.addEventListener("click", () => {
-            fitLngLatBbox(p.bbox);
-          });
-        }
       }
 
       map.on("moveend", () => {
