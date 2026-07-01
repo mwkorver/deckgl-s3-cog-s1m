@@ -721,11 +721,16 @@ def process_manifest_cog_headers(
     failed = []
 
     from botocore.config import Config
-    kwargs = {"config": Config(max_pool_connections=max_workers)}
+    config = Config(max_pool_connections=max_workers)
     if aws_access_key_id and aws_secret_access_key:
-        kwargs["aws_access_key_id"] = aws_access_key_id
-        kwargs["aws_secret_access_key"] = aws_secret_access_key
-    s3_client = boto3.client("s3", **kwargs)
+        session = boto3.Session(
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            aws_session_token=None,
+        )
+        s3_client = session.client("s3", config=config)
+    else:
+        s3_client = boto3.client("s3", config=config)
 
     total = len(manifest_rows)
     print(f"Began COG header parsing for {total:,} selected assets...", flush=True)
@@ -804,11 +809,16 @@ def process_cog_headers_generic(
     else:
         from botocore.config import Config
 
-        kwargs = {"config": Config(max_pool_connections=max_workers)}
+        config = Config(max_pool_connections=max_workers)
         if aws_access_key_id and aws_secret_access_key:
-            kwargs["aws_access_key_id"] = aws_access_key_id
-            kwargs["aws_secret_access_key"] = aws_secret_access_key
-        s3_client = boto3.client("s3", **kwargs)
+            session = boto3.Session(
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                aws_session_token=None,
+            )
+            s3_client = session.client("s3", config=config)
+        else:
+            s3_client = boto3.client("s3", config=config)
     total = len(rows)
     print(f"Began COG header parsing for {total:,} selected assets...", flush=True)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

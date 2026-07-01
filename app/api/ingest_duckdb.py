@@ -348,13 +348,16 @@ def _delete_partition_prefixes(
 
         bucket, _, base_key = out_path[len("s3://"):].partition("/")
         base_key = base_key.rstrip("/")
-        kwargs = {
-            "region_name": os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
-        }
+        region_name = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
         if aws_access_key_id and aws_secret_access_key:
-            kwargs["aws_access_key_id"] = aws_access_key_id
-            kwargs["aws_secret_access_key"] = aws_secret_access_key
-        s3 = boto3.client("s3", **kwargs)
+            session = boto3.Session(
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                aws_session_token=None,
+            )
+            s3 = session.client("s3", region_name=region_name)
+        else:
+            s3 = boto3.client("s3", region_name=region_name)
 
     for collection, region, year in parts:
         rel = f"collection={collection}/region={region}/year={year}"
