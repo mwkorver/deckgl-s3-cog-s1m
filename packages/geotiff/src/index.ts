@@ -5,6 +5,7 @@ export type {
   RasterArrayPixelInterleaved,
   RasterTypedArray,
 } from "./array.js";
+export { reorderBands, toBandSeparate, toPixelInterleaved } from "./array.js";
 export type { AssembleTilesOptions } from "./assemble.js";
 export { assembleTiles } from "./assemble.js";
 export type {

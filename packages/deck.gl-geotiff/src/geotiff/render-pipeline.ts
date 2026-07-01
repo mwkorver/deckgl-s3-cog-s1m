@@ -12,10 +12,10 @@ import {
   WhiteIsZero,
 } from "@s3-cog/deck.gl-raster/gpu-modules";
 import type { GeoTIFF, Overview } from "@s3-cog/geotiff";
-import { parseColormap } from "@s3-cog/geotiff";
+import { parseColormap, toPixelInterleaved } from "@s3-cog/geotiff";
 import type { Device, SamplerProps, Texture } from "@luma.gl/core";
 import type { GetTileDataOptions } from "../cog-layer.js";
-import { addAlphaChannel, interleaveBands } from "./geotiff.js";
+import { addAlphaChannel } from "./geotiff.js";
 import { inferTextureFormat } from "./texture.js";
 
 export type TextureDataT = {
@@ -168,7 +168,7 @@ function createUnormPipeline(
     }
 
     if (array.layout === "band-separate") {
-      array = interleaveBands(array);
+      array = toPixelInterleaved(array);
     }
 
     const textureFormat = inferTextureFormat(

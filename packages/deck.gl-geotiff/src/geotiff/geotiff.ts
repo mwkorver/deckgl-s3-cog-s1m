@@ -4,9 +4,8 @@ import type {
   ConcurrencyLimiter,
   Priority,
   RasterArray,
-  RasterArrayPixelInterleaved,
 } from "@s3-cog/geotiff";
-import { GeoTIFF } from "@s3-cog/geotiff";
+import { GeoTIFF, toPixelInterleaved } from "@s3-cog/geotiff";
 import type { Converter } from "proj4";
 
 /**
@@ -15,54 +14,11 @@ import type { Converter } from "proj4";
  * Only supports input arrays with 3 (RGB) or 4 (RGBA) channels. If the input is
  * already RGBA, it is returned unchanged.
  */
-/**
- * Interleave a band-separate image array into a contiguous pixel-interleaved array.
- */
-export function interleaveBands(image: RasterArray): RasterArrayPixelInterleaved {
-  if (image.layout !== "band-separate") {
-    return image as RasterArrayPixelInterleaved;
-  }
-  const { width, height, bands } = image;
-  if (!bands || bands.length === 0) {
-    throw new Error("Band-separate image has no bands.");
-  }
-  const numBands = bands.length;
-  const numPixels = width * height;
-  const firstBand = bands[0];
-
-  let interleavedData: any;
-  if (firstBand instanceof Uint16Array) {
-    interleavedData = new Uint16Array(numPixels * numBands);
-  } else if (firstBand instanceof Int16Array) {
-    interleavedData = new Int16Array(numPixels * numBands);
-  } else if (firstBand instanceof Float32Array) {
-    interleavedData = new Float32Array(numPixels * numBands);
-  } else if (firstBand instanceof Uint8ClampedArray) {
-    interleavedData = new Uint8ClampedArray(numPixels * numBands);
-  } else {
-    interleavedData = new Uint8Array(numPixels * numBands);
-  }
-
-  for (let i = 0; i < numPixels; ++i) {
-    for (let j = 0; j < numBands; ++j) {
-      interleavedData[i * numBands + j] = bands[j]![i];
-    }
-  }
-
-  return {
-    ...image,
-    layout: "pixel-interleaved" as any,
-    data: interleavedData,
-  } as RasterArrayPixelInterleaved;
-}
-
 export function addAlphaChannel(rgbImage: RasterArray): RasterArray {
-  let img: RasterArrayPixelInterleaved;
-  if (rgbImage.layout === "band-separate") {
-    img = interleaveBands(rgbImage);
-  } else {
-    img = rgbImage as RasterArrayPixelInterleaved;
-  }
+  // Normalize to pixel-interleaved first: a band-separate/planar COG becomes a
+  // contiguous array. toPixelInterleaved is a no-op when already interleaved and
+  // preserves the source typed-array type for every band dtype.
+  const img = toPixelInterleaved(rgbImage);
 
   const { height, width } = img;
 
