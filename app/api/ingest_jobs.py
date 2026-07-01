@@ -48,6 +48,7 @@ def run_ingest_job(
     source_bucket: str | None = None,
     source_prefix: str | None = None,
     source_access: str | None = None,
+    max_workers: int | None = None,
 ):
     command = [sys.executable, str(INGEST_SCRIPT_PATH), "--collection", collection, "--states", state, "--strategy", strategy]
     if year is not None:
@@ -60,6 +61,8 @@ def run_ingest_job(
         command.extend(["--source-prefix", source_prefix])
     if source_access:
         command.extend(["--source-access", source_access])
+    if max_workers:
+        command.extend(["--max-workers", str(max_workers)])
     try:
         append_ingest_log(job_id, f"$ {' '.join(command)}")
         result = subprocess.run(

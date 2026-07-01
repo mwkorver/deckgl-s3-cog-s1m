@@ -243,6 +243,19 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
 
     import descriptors
     collection_id = str(body.get("collection") or COLLECTION_ID)
+
+    if collection_id not in descriptors._REGISTRY and not bucket:
+        try:
+            descriptor = descriptors.get_descriptor(collection_id)
+            bucket = descriptor.bucket
+            access = descriptor.access
+            if hasattr(descriptor, "discovery") and hasattr(descriptor.discovery, "enumerate_prefixes"):
+                prefixes = descriptor.discovery.enumerate_prefixes(None, bucket, state, year)
+                if prefixes:
+                    prefix = prefixes[0]
+        except Exception:
+            pass
+
     if bucket:
         try:
             descriptor = descriptors.register_adhoc_collection(
@@ -271,6 +284,15 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
         raise HTTPException(status_code=400, detail="invalid limit_per_partition")
     if limit_per_partition is not None and limit_per_partition < 0:
         raise HTTPException(status_code=400, detail="limit_per_partition must be >= 0")
+
+    raw_workers = body.get("max_workers")
+    try:
+        max_workers = int(raw_workers) if raw_workers not in (None, "") else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid max_workers")
+    if max_workers is not None and (max_workers < 1 or max_workers > 128):
+        raise HTTPException(status_code=400, detail="max_workers must be between 1 and 128")
+
     job_id = uuid4().hex
     set_ingest_job(
         job_id,
@@ -282,6 +304,7 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
             "year": year,
             "strategy": strategy,
             "limit_per_partition": limit_per_partition,
+            "max_workers": max_workers,
             "logs": [],
         },
     )
@@ -292,6 +315,7 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
             "source_bucket": bucket,
             "source_prefix": prefix,
             "source_access": access,
+            "max_workers": max_workers,
         },
         daemon=True,
     )
@@ -370,6 +394,19 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
 
     import descriptors
     collection_id = str(body.get("collection") or COLLECTION_ID)
+
+    if collection_id not in descriptors._REGISTRY and not bucket:
+        try:
+            descriptor = descriptors.get_descriptor(collection_id)
+            bucket = descriptor.bucket
+            access = descriptor.access
+            if hasattr(descriptor, "discovery") and hasattr(descriptor.discovery, "enumerate_prefixes"):
+                prefixes = descriptor.discovery.enumerate_prefixes(None, bucket, state, year)
+                if prefixes:
+                    prefix = prefixes[0]
+        except Exception:
+            pass
+
     if bucket:
         try:
             descriptor = descriptors.register_adhoc_collection(
@@ -389,6 +426,14 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
             collection = descriptor.id
         except SystemExit as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    raw_workers = body.get("max_workers")
+    try:
+        max_workers = int(raw_workers) if raw_workers not in (None, "") else 16
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid max_workers")
+    if max_workers < 1 or max_workers > 128:
+        raise HTTPException(status_code=400, detail="max_workers must be between 1 and 128")
 
     # Lazy import: keep duckdb/ingest off the cold-start path for non-ingest
     # requests (the read API is the common case).
@@ -410,6 +455,7 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
         source_bucket=bucket,
         source_prefix=prefix,
         source_access=access,
+        max_workers=max_workers,
     )
 
     started = monotonic()

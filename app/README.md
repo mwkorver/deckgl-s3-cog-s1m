@@ -89,7 +89,7 @@ For a private demo viewer, keeping `S3_COG_INGEST_TOKEN` set while running
 `deploy-viewer.sh` also writes `window.S3_COG_INGEST_TOKEN` into `config.js` so
 the browser ingest panel sends the token. Do not do this for a public viewer.
 
-> The shared, author-published catalog (`s3://cog-stac-catalog/manifest-index`,
+> The shared, author-published catalog (`s3://naip-stac-catalog/manifest-index`,
 > read-only) is consumed cross-account; deployers never write to it.
 
 **Prerequisites** (one-time setup before first deploy):
@@ -143,7 +143,7 @@ a confirmation email — click the link to activate it.
 lambda/teardown.sh --keep-bucket
 
 # OR full teardown — both app stacks, foundation, and bucket data, behind a typed
-# confirmation (does not touch the shared cog-stac-catalog bucket):
+# confirmation (does not touch the shared naip-stac-catalog bucket):
 lambda/teardown.sh
 ```
 

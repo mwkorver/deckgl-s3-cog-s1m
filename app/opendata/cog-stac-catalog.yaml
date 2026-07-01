@@ -1,6 +1,6 @@
 ## Registry of Open Data on AWS record for the NAIP STAC catalog.
 ## Submit as a PR to https://github.com/awslabs/open-data-registry
-## (datasets/cog-stac-catalog.yaml). Fill in the TODO contact/URL fields first.
+## (datasets/naip-stac-catalog.yaml). Fill in the TODO contact/URL fields first.
 Name: NAIP STAC Catalog
 Description: >-
   A cloud-native, queryable catalog of the USDA National Agriculture Imagery
@@ -35,11 +35,11 @@ License: >-
   the U.S. Government (USDA-FPAC-BC-APFO) and is in the U.S. public domain.
 Resources:
   - Description: NAIP STAC catalog — GeoParquet manifest index (Hive-partitioned by state, naip_year)
-    ARN: arn:aws:s3:::cog-stac-catalog/manifest-index
+    ARN: arn:aws:s3:::naip-stac-catalog/manifest-index
     Region: us-west-2
     Type: S3 Bucket
     Explore:
-      - '[Browse the catalog prefixes](https://cog-stac-catalog.s3.us-west-2.amazonaws.com/?prefix=manifest-index/)'
+      - '[Browse the catalog prefixes](https://naip-stac-catalog.s3.us-west-2.amazonaws.com/?prefix=manifest-index/)'
   - Description: Source NAIP 4-band COG imagery this catalog indexes (requester-pays)
     ARN: arn:aws:s3:::naip-analytic
     Region: us-west-2

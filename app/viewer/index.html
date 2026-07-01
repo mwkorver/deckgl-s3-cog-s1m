@@ -445,13 +445,13 @@
         <div id="tab-viewer" class="tab-panel active">
           <div class="tier">
             <div class="tier-label">Data &amp; 2D</div>
-          <div class="section">
-            <h2>Collections in view</h2>
-            <div id="collections-here" class="small muted">
-              Move the map to see which imagery collections cover the view.
+            <div class="section">
+              <h2>Collections</h2>
+              <div id="collections-here" class="small muted">
+                Loading registered imagery collections...
+              </div>
+              <div id="collection-detail" class="small" style="margin-top:8px;"></div>
             </div>
-            <div id="collection-detail" class="small" style="margin-top:8px;"></div>
-          </div>
 
           <div class="section">
             <h2>Footprints</h2>
@@ -628,44 +628,85 @@
           <div class="section">
             <h2>Ingest source</h2>
             <div class="controls">
-              <label class="small">
-                S3 bucket
-                <input id="ingest-source-bucket" type="text" value="gisimageryingov" placeholder="gisimageryingov" />
-              </label>
-              <label class="small">
-                S3 prefix
-                <input id="ingest-source-prefix" type="text" value="imageryoptimized/statewide/2024/SPW/03in/" placeholder="imageryoptimized/statewide/2024/SPW/03in/" />
-              </label>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;">
-                <label class="small" style="display:block;">
-                  Region
-                  <input id="ingest-source-region" type="text" value="in" maxlength="16" placeholder="in" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+              <div class="tabs" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;">
+                <button id="ingest-mode-catalog" class="tab-button active" type="button" style="font-size: 11px; padding: 6px 8px;">Public Catalog</button>
+                <button id="ingest-mode-custom" class="tab-button" type="button" style="font-size: 11px; padding: 6px 8px;">Custom S3 Bucket</button>
+              </div>
+
+              <!-- Public Catalog Mode Fields -->
+              <div id="ingest-catalog-fields" class="controls">
+                <label class="small">
+                  Collection
+                  <select id="ingest-catalog-collection" style="width:100%; box-sizing:border-box; margin-top:2px;"></select>
                 </label>
-                <label class="small" style="display:block;">
-                  Year
-                  <input id="ingest-source-year" type="number" value="2024" min="1900" max="2100" style="width:100%; box-sizing:border-box; margin-top:2px;" />
-                </label>
-                <label class="small" style="display:block;">
-                  Access
-                  <select id="ingest-source-access" style="width:100%; box-sizing:border-box; margin-top:2px;">
-                    <option value="public" selected>Public</option>
-                    <option value="private">Private/signed</option>
-                    <option value="requester-pays">Requester pays</option>
-                  </select>
-                </label>
-                <label class="small" style="display:block;">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;">
+                  <label class="small" style="display:block;">
+                    State/Region
+                    <select id="ingest-catalog-region" style="width:100%; box-sizing:border-box; margin-top:2px;"></select>
+                  </label>
+                  <label class="small" style="display:block;">
+                    Year
+                    <select id="ingest-catalog-year" style="width:100%; box-sizing:border-box; margin-top:2px;"></select>
+                  </label>
+                </div>
+                <label class="small">
                   Strategy
-                  <select id="ingest-strategy" style="width:100%; box-sizing:border-box; margin-top:2px;">
-                    <option value="manifest-cog-headers" selected>COG headers</option>
-                  </select>
+                  <select id="ingest-catalog-strategy" style="width:100%; box-sizing:border-box; margin-top:2px;"></select>
                 </label>
               </div>
-              <label class="small">
-                Max per partition (0 = unlimited)
-                <input id="ingest-limit" type="number" value="500" min="0" max="20000" title="COGs per partition. 0 = unlimited (keeps going until finished). Large values run via the async/background job." />
-              </label>
+
+              <!-- Custom S3 Mode Fields -->
+              <div id="ingest-custom-fields" class="controls" style="display: none;">
+                <label class="small">
+                  S3 bucket
+                  <input id="ingest-custom-bucket" type="text" value="gisimageryingov" placeholder="gisimageryingov" />
+                </label>
+                <label class="small">
+                  S3 prefix
+                  <input id="ingest-custom-prefix" type="text" value="imageryoptimized/statewide/2024/SPW/03in/" placeholder="imageryoptimized/statewide/2024/SPW/03in/" />
+                </label>
+                <label class="small">
+                  Collection Name / ID
+                  <input id="ingest-custom-collection" type="text" value="in-imagery-2024" placeholder="in-imagery-2024" />
+                </label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;">
+                  <label class="small" style="display:block;">
+                    Region Code
+                    <input id="ingest-custom-region" type="text" value="in" maxlength="16" placeholder="in" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  </label>
+                  <label class="small" style="display:block;">
+                    Year
+                    <input id="ingest-custom-year" type="number" value="2024" min="1900" max="2100" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  </label>
+                  <label class="small" style="display:block;">
+                    Access Mode
+                    <select id="ingest-custom-access" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                      <option value="public" selected>Public</option>
+                      <option value="private">Private/signed</option>
+                      <option value="requester-pays">Requester pays</option>
+                    </select>
+                  </label>
+                  <label class="small" style="display:block;">
+                    Strategy
+                    <select id="ingest-custom-strategy" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                      <option value="manifest-cog-headers" selected>COG headers</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:8px; margin-top:8px;">
+                <label class="small" style="flex:1; display:block;">
+                  Max per partition (0 = unlimited)
+                  <input id="ingest-limit" type="number" value="500" min="0" max="20000" style="width:100%; box-sizing:border-box; margin-top:2px;" title="COGs per partition. 0 = unlimited (keeps going until finished). Large values run via the async/background job." />
+                </label>
+                <label class="small" style="flex:1; display:block;">
+                  Max workers
+                  <input id="ingest-workers" type="number" value="16" min="1" max="128" style="width:100%; box-sizing:border-box; margin-top:2px;" title="Number of parallel worker threads to run (default 16)." />
+                </label>
+              </div>
               <button id="run-ingest" class="search-active" style="width:100%;">Run ingest</button>
-              <div class="small muted">
+              <div class="small muted" style="margin-top: 8px;">
                 Running locally: the ingest runs as a background job with no time
                 limit, so large partitions (or 0 = unlimited) are fine and progress
                 shows below. On the deployed Lambda it runs synchronously within the
@@ -935,13 +976,27 @@
       const refreshEnvironmentBtn = document.getElementById("refresh-environment");
       const environmentChecksEl = document.getElementById("environment-checks");
       const environmentConfigEl = document.getElementById("environment-config");
-      const ingestSourceBucketEl = document.getElementById("ingest-source-bucket");
-      const ingestSourcePrefixEl = document.getElementById("ingest-source-prefix");
-      const ingestSourceRegionEl = document.getElementById("ingest-source-region");
-      const ingestSourceYearEl = document.getElementById("ingest-source-year");
-      const ingestSourceAccessEl = document.getElementById("ingest-source-access");
-      const ingestStrategyEl = document.getElementById("ingest-strategy");
+      // Dual-mode Ingest controls
+      const ingestModeCatalogBtn = document.getElementById("ingest-mode-catalog");
+      const ingestModeCustomBtn = document.getElementById("ingest-mode-custom");
+      const ingestCatalogFieldsWrap = document.getElementById("ingest-catalog-fields");
+      const ingestCustomFieldsWrap = document.getElementById("ingest-custom-fields");
+
+      const ingestCatalogCollectionEl = document.getElementById("ingest-catalog-collection");
+      const ingestCatalogRegionEl = document.getElementById("ingest-catalog-region");
+      const ingestCatalogYearEl = document.getElementById("ingest-catalog-year");
+      const ingestCatalogStrategyEl = document.getElementById("ingest-catalog-strategy");
+
+      const ingestCustomBucketEl = document.getElementById("ingest-custom-bucket");
+      const ingestCustomPrefixEl = document.getElementById("ingest-custom-prefix");
+      const ingestCustomCollectionEl = document.getElementById("ingest-custom-collection");
+      const ingestCustomRegionEl = document.getElementById("ingest-custom-region");
+      const ingestCustomYearEl = document.getElementById("ingest-custom-year");
+      const ingestCustomAccessEl = document.getElementById("ingest-custom-access");
+      const ingestCustomStrategyEl = document.getElementById("ingest-custom-strategy");
+
       const ingestLimitEl = document.getElementById("ingest-limit");
+      const ingestWorkersEl = document.getElementById("ingest-workers");
       // Server-side sync ingest hard cap (S3_COG_SYNC_INGEST_MAX_LIMIT). Sending a
       // larger value is rejected; clamp here so the panel can't ask for more.
       const INGEST_SYNC_MAX_LIMIT = 500;   // empty-field default
@@ -1156,6 +1211,8 @@
         drapeBuildMs: 0, drapeBuildN: 0, // summed per-subtile drape durations
         terrainFetchMs: 0, terrainFetchN: 0, // /s1m/terrain fetch + json
         meshMs: 0, meshN: 0,             // elevation decode + CPU mesh build
+        tiffSignMs: 0, tiffSignN: 0,     // TIFF S3 URL presigning
+        tiffResolveMs: 0, tiffResolveN: 0, // TIFF header reading (fromUrl)
       };
       function s1mBenchReset() { for (const k in s1mBench) s1mBench[k] = 0; }
       function s1mBenchReport() {
@@ -1172,6 +1229,8 @@
           drapeBuild: { subtiles: s1mBench.drapeBuildN, totalSubtileMs: +s1mBench.drapeBuildMs.toFixed(0), avgSubtileMs: avg(s1mBench.drapeBuildMs, s1mBench.drapeBuildN) },
           terrainFetch: { tiles: s1mBench.terrainFetchN, totalMs: +s1mBench.terrainFetchMs.toFixed(0), avgMs: avg(s1mBench.terrainFetchMs, s1mBench.terrainFetchN) },
           mesh: { tiles: s1mBench.meshN, totalMs: +s1mBench.meshMs.toFixed(0), avgMs: avg(s1mBench.meshMs, s1mBench.meshN) },
+          tiffSign: { calls: s1mBench.tiffSignN, totalMs: +s1mBench.tiffSignMs.toFixed(0), avgMs: avg(s1mBench.tiffSignMs, s1mBench.tiffSignN) },
+          tiffResolve: { sources: s1mBench.tiffResolveN, totalMs: +s1mBench.tiffResolveMs.toFixed(0), avgMs: avg(s1mBench.tiffResolveMs, s1mBench.tiffResolveN) },
           sourceSearchMs: s1mDrapeMetrics.sourceSearchMs,
           cacheSizes: {
             drapeImages: s1mDrapeCache.size,
@@ -1992,6 +2051,19 @@
           ` · COG ${s1mCogTileCache.size}/${S1M_COG_TILE_CACHE_MAX} (${fmtPct(s1mCogTileCache.size, S1M_COG_TILE_CACHE_MAX)})` +
           ` · TIFF ${geotiffSourceCache.size}/${GEOTIFF_SOURCE_CACHE_MAX} (${fmtPct(geotiffSourceCache.size, GEOTIFF_SOURCE_CACHE_MAX)})` +
           ` · evict d/c/t ${s1mBench.drapeEvict}/${s1mBench.cogEvict}/${s1mBench.tiffEvict}`;
+        const avgSignMs = s1mBench.tiffSignN ? s1mBench.tiffSignMs / s1mBench.tiffSignN : null;
+        const avgResolveMs = s1mBench.tiffResolveN ? s1mBench.tiffResolveMs / s1mBench.tiffResolveN : null;
+        const avgCogFetchMs = s1mBench.cogFetchN ? s1mBench.cogFetchMs / s1mBench.cogFetchN : null;
+        const avgDecodeMs = s1mBench.decodeN ? s1mBench.decodeMs / s1mBench.decodeN : null;
+        const avgRasterMs = s1mBench.rasterN ? s1mBench.rasterMs / s1mBench.rasterN : null;
+
+        const breakdownText =
+          ` · avg sign ${fmtMs(avgSignMs)} (${s1mBench.tiffSignN} calls)` +
+          ` · avg hdr ${fmtMs(avgResolveMs)} (${s1mBench.tiffResolveN} sources)` +
+          ` · avg tile-get ${fmtMs(avgCogFetchMs)} (${s1mBench.cogFetchN} tiles)` +
+          ` · avg decode ${fmtMs(avgDecodeMs)}` +
+          ` · avg raster ${fmtMs(avgRasterMs)}`;
+
         const hrefText = s1mDrapeMetrics.lastHref ? ` · last ${s1mDrapeMetrics.lastHref}` : "";
         el.textContent =
           `Drape ${s1mDrapeMetrics.mode} · source search ${fmtMs(s1mDrapeMetrics.sourceSearchMs)}` +
@@ -2000,6 +2072,7 @@
           ` (${s1mDrapeMetrics.tilesFailed} failed)` +
           ` · avg tile ${fmtMs(avgTileMs)}` +
           ` · last tile ${fmtMs(s1mDrapeMetrics.lastTileMs)}` +
+          breakdownText +
           ` · avg sources/tile ${Number.isFinite(avgRefs) ? avgRefs.toFixed(1) : "-"}` +
           ` · max sources/tile ${s1mDrapeMetrics.maxSourceRefs}` +
           ` · no-data fallback ${s1mDrapeMetrics.noDataSourceFallbacks}` +
@@ -2231,14 +2304,22 @@
         let pending = geotiffSourceCache.get(s3href);
         if (!pending) {
           pending = (async () => {
+            const t0 = performance.now();
             const signedUrl = await signHref(s3href);
-            // Forward the limiter + priority so this COG's range reads join the
-            // shared per-origin queue and get ordered center-out by getPriority.
-            return window.GeoTIFFCoreClass.fromUrl(signedUrl, {
+            const t1 = performance.now();
+            s1mBench.tiffSignMs += t1 - t0;
+            s1mBench.tiffSignN += 1;
+
+            const geotiff = await window.GeoTIFFCoreClass.fromUrl(signedUrl, {
               concurrencyLimiter,
               getPriority,
               chunkCache: chunkCacheForHref(s3href),
             });
+            const t2 = performance.now();
+            s1mBench.tiffResolveMs += t2 - t1;
+            s1mBench.tiffResolveN += 1;
+
+            return geotiff;
           })().then((geotiff) => {
             if (geotiffSourceCache.get(s3href) === pending) {
               geotiffSourceResolved.set(s3href, geotiff);
@@ -4955,6 +5036,9 @@
         tabPanels.forEach((panel) => {
           panel.classList.toggle("active", panel.id === `tab-${tabName}`);
         });
+        if (tabName === "ingest") {
+          switchIngestMode(ingestMode);
+        }
       }
 
       function renderKeyValue(target, values) {
@@ -5041,32 +5125,58 @@
       }
 
       function ingestSourcePayload() {
-        const bucket = ingestSourceBucketEl.value.trim();
-        const prefix = ingestSourcePrefixEl.value.trim().replace(/^\/+/, "");
-        const region = ingestSourceRegionEl.value.trim().toLowerCase();
-        const yearRaw = ingestSourceYearEl.value.trim();
-        const year = yearRaw ? Number(yearRaw) : NaN;
-        if (!bucket) throw new Error("Enter an S3 bucket.");
-        if (!region) throw new Error("Enter a region partition, for example in.");
-        if (!Number.isInteger(year)) throw new Error("Enter a numeric year.");
-        // Prefer the registry collection id for a known source bucket (e.g.
-        // gisimageryingov -> in-imagery, njogis-imagery -> nj-imagery) so the
-        // ingested lake partition lines up with the registered collection and
-        // shows as searchable; fall back to a sanitized bucket name otherwise.
-        const bareBucket = bucket.startsWith("s3://") ? bucket.slice(5).split("/")[0] : bucket;
-        const registered = collectionFeatures.find((p) => p.bucket === bareBucket);
-        return {
-          collection: registered ? registered.id : sanitizeCollectionId(bareBucket),
-          source_bucket: bucket,
-          source_prefix: prefix,
-          source_region: region,
-          source_year: year,
-          source_access: ingestSourceAccessEl.value || "public",
-          state: region,
-          year,
-          strategy: ingestStrategyEl.value || "manifest-cog-headers",
-          limit_per_partition: ingestLimitPerPartition(),
-        };
+        const maxWorkers = Number(ingestWorkersEl.value || 16);
+        if (ingestMode === "catalog") {
+          const collection = ingestCatalogCollectionEl.value;
+          const region = ingestCatalogRegionEl.value;
+          const yearRaw = ingestCatalogYearEl.value;
+          const year = yearRaw ? Number(yearRaw) : NaN;
+          const strategy = ingestCatalogStrategyEl.value;
+
+          if (!collection) throw new Error("Select a collection.");
+          if (!region) throw new Error("Select a state/region.");
+          if (!Number.isInteger(year)) throw new Error("Select a year.");
+
+          return {
+            collection,
+            state: region,
+            year,
+            strategy,
+            limit_per_partition: ingestLimitPerPartition(),
+            max_workers: maxWorkers,
+          };
+        } else {
+          const bucket = ingestCustomBucketEl.value.trim();
+          const prefix = ingestCustomPrefixEl.value.trim().replace(/^\/+/, "");
+          const region = ingestCustomRegionEl.value.trim().toLowerCase();
+          const yearRaw = ingestCustomYearEl.value.trim();
+          const year = yearRaw ? Number(yearRaw) : NaN;
+          const access = ingestCustomAccessEl.value || "public";
+          const strategy = ingestCustomStrategyEl.value || "manifest-cog-headers";
+          const customCol = ingestCustomCollectionEl.value.trim();
+
+          if (!bucket) throw new Error("Enter an S3 bucket.");
+          if (!region) throw new Error("Enter a region code.");
+          if (!Number.isInteger(year)) throw new Error("Enter a numeric year.");
+
+          const bareBucket = bucket.startsWith("s3://") ? bucket.slice(5).split("/")[0] : bucket;
+          const registered = collectionFeatures.find((p) => p.bucket === bareBucket);
+          const colId = customCol || (registered ? registered.id : sanitizeCollectionId(bareBucket));
+
+          return {
+            collection: colId,
+            source_bucket: bucket,
+            source_prefix: prefix,
+            source_region: region,
+            source_year: year,
+            source_access: access,
+            state: region,
+            year,
+            strategy,
+            limit_per_partition: ingestLimitPerPartition(),
+            max_workers: maxWorkers,
+          };
+        }
       }
 
       async function pollIngestStatus(jobId) {
@@ -5731,10 +5841,6 @@
           return;
         }
         const yr = yearEl.value;
-        if (st && STATE_ANCHORS[st]) {
-          map.flyTo({ center: STATE_ANCHORS[st], zoom: CENTER_ZOOM, duration: 1200 });
-          return;
-        }
         let box = null;
         const merge = (b) => {
           if (!b) return;
@@ -5747,8 +5853,14 @@
           if (yr) merge(byYear[yr]);
           else Object.values(byYear).forEach(merge);
         }
-        if (!box) return;
-        map.flyTo({ center: [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], zoom: CENTER_ZOOM, duration: 1200 });
+        if (box) {
+          fitLngLatBbox(box);
+        } else {
+          // If no state extent is ingested yet, fall back to the active collection's bbox
+          if (!fitLngLatBbox(activeCollectionBbox())) {
+            fitLngLatBbox(CONUS_BBOX, { maxZoom: CONUS_CENTER_MAX_ZOOM });
+          }
+        }
       }
 
       function gsdLabel(meters) {
@@ -5927,6 +6039,119 @@
       refreshEnvironmentBtn.addEventListener("click", refreshEnvironment);
       runIngestBtn.addEventListener("click", runIngest);
 
+      let ingestMode = "catalog"; // or "custom"
+      let ingestCatalogMetadata = null;
+
+      function switchIngestMode(mode) {
+        ingestMode = mode;
+        if (mode === "catalog") {
+          ingestModeCatalogBtn.classList.add("active");
+          ingestModeCustomBtn.classList.remove("active");
+          ingestCatalogFieldsWrap.style.display = "block";
+          ingestCustomFieldsWrap.style.display = "none";
+          loadIngestCatalogOptions();
+        } else {
+          ingestModeCatalogBtn.classList.remove("active");
+          ingestModeCustomBtn.classList.add("active");
+          ingestCatalogFieldsWrap.style.display = "none";
+          ingestCustomFieldsWrap.style.display = "block";
+        }
+      }
+
+      async function loadIngestCatalogOptions() {
+        try {
+          const selectedCol = ingestCatalogCollectionEl.value || "";
+          const response = await apiFetch("/ingest/options", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              collection: selectedCol,
+            }),
+          });
+          if (!response.ok) {
+            console.error("Failed to load ingest options", response.status);
+            return;
+          }
+          const data = await response.json();
+          ingestCatalogMetadata = data;
+
+          // Populate Collections dropdown if not already set or updated
+          const currentCollectionVal = ingestCatalogCollectionEl.value;
+          ingestCatalogCollectionEl.innerHTML = "";
+          data.collections.forEach((colId) => {
+            const opt = document.createElement("option");
+            opt.value = colId;
+            opt.textContent = colId.toUpperCase();
+            if (colId === currentCollectionVal || (!currentCollectionVal && colId === "naip")) {
+              opt.selected = true;
+            }
+            ingestCatalogCollectionEl.appendChild(opt);
+          });
+
+          // Refresh states/regions and years dropdown lists
+          updateCatalogRegionAndYearDropdowns();
+
+          // Populate Strategies
+          ingestCatalogStrategyEl.innerHTML = "";
+          data.strategies.forEach((strat) => {
+            const opt = document.createElement("option");
+            opt.value = strat.id;
+            opt.textContent = strat.label;
+            ingestCatalogStrategyEl.appendChild(opt);
+          });
+        } catch (err) {
+          console.error("Error loading ingest options:", err);
+        }
+      }
+
+      function updateCatalogRegionAndYearDropdowns() {
+        if (!ingestCatalogMetadata) return;
+        const currentRegionVal = ingestCatalogRegionEl.value;
+        ingestCatalogRegionEl.innerHTML = "";
+
+        ingestCatalogMetadata.states.forEach((st) => {
+          const opt = document.createElement("option");
+          opt.value = st.state;
+          const ingested = searchAvailability[st.state] || [];
+          const suffix = ingested.length ? ` (${ingested.join(", ")})` : "";
+          opt.textContent = `${st.state.toUpperCase()}${suffix}`;
+          if (st.state === currentRegionVal) {
+            opt.selected = true;
+          }
+          ingestCatalogRegionEl.appendChild(opt);
+        });
+
+        updateCatalogYearDropdown();
+      }
+
+      function updateCatalogYearDropdown() {
+        if (!ingestCatalogMetadata) return;
+        const selectedRegion = ingestCatalogRegionEl.value;
+        const stateObj = ingestCatalogMetadata.states.find((st) => st.state === selectedRegion);
+
+        const currentYearVal = ingestCatalogYearEl.value;
+        ingestCatalogYearEl.innerHTML = "";
+
+        if (stateObj && stateObj.years) {
+          stateObj.years.forEach((yr) => {
+            const opt = document.createElement("option");
+            opt.value = yr;
+            const ingested = searchAvailability[selectedRegion] || [];
+            const isIngested = ingested.includes(yr);
+            opt.textContent = isIngested ? `${yr} (already ingested)` : String(yr);
+            if (String(yr) === String(currentYearVal)) {
+              opt.selected = true;
+            }
+            ingestCatalogYearEl.appendChild(opt);
+          });
+        }
+      }
+
+      ingestModeCatalogBtn.addEventListener("click", () => switchIngestMode("catalog"));
+      ingestModeCustomBtn.addEventListener("click", () => switchIngestMode("custom"));
+      ingestCatalogCollectionEl.addEventListener("change", loadIngestCatalogOptions);
+      ingestCatalogRegionEl.addEventListener("change", updateCatalogYearDropdown);
+
       function emptyFC() { return { type: "FeatureCollection", features: [] }; }
 
       // --- Terrain (S1M DEM -> 3D mesh, viewport-tiled) ---
@@ -6083,16 +6308,8 @@
           el.className = "small muted";
           return;
         }
-        const b = map.getBounds();
-        const hits = collectionFeatures
-          .filter((p) => bboxIntersectsViewport(p.bbox, b))
+        const hits = [...collectionFeatures]
           .sort((a, x) => (a.active === x.active ? 0 : a.active ? -1 : 1));
-        if (!hits.length) {
-          el.textContent = "No registered imagery collections cover this view.";
-          el.className = "small muted";
-          renderCollectionDetail(null);
-          return;
-        }
         el.className = "small";
         el.innerHTML = hits.map((p) => {
           const yrs = Array.isArray(p.years) && p.years.length === 2
@@ -6172,11 +6389,19 @@
               : `<div class="small muted" style="margin-top:6px;">Outside the current us-west-2 scope.</div>`);
         el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`
           + `<span style="font-weight:600;">${p.title}</span>`
-          + `<span class="cd-badge ${badgeCls}">${avail.label}</span></div>`
+          + `<span class="cd-badge ${badgeCls}">${avail.label}</span>`
+          + (p.bbox ? `<button id="center-collection-btn" class="search-active" style="padding:1px 6px; font-size:10px; cursor:pointer; height:18px; border-radius:3px; line-height:1;">Center</button>` : "")
+          + `</div>`
           + `<div class="cd-kv">`
           + rows.map(([k, v]) => `<span class="cd-key">${k}</span><span>${v}</span>`).join("")
           + `</div>`
           + hint;
+
+        if (p.bbox) {
+          document.getElementById("center-collection-btn")?.addEventListener("click", () => {
+            fitLngLatBbox(p.bbox);
+          });
+        }
       }
 
       map.on("moveend", () => {

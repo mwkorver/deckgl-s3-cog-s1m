@@ -25,10 +25,6 @@ def cached_available_years(collection_id: str, region: str) -> tuple[int, ...]:
 
 
 def build_ingest_options(body: dict[str, Any]):
-    bbox = body.get("bbox")
-    if not bbox or len(bbox) != 4:
-        raise HTTPException(status_code=400, detail="bbox is required and must be [minx, miny, maxx, maxy]")
-
     import descriptors
 
     collection = "".join(ch for ch in str(body.get("collection", COLLECTION_ID)).lower() if ch.isalnum() or ch in "-_")
@@ -47,10 +43,14 @@ def build_ingest_options(body: dict[str, Any]):
 
     states = []
     for r in (getattr(disc, "regions", ()) or ()):
-        sb = STATE_BBOXES.get(r)
-        if sb and not bboxes_intersect(bbox, sb):
-            continue
         states.append({"state": r, "years": list(cached_available_years(collection, r))})
-    strategies = [{"id": "manifest-cog-headers", "label": "COG headers", "available": True}]
+
+    if collection == "naip":
+        strategies = [
+            {"id": "manifest-cog-headers", "label": "COG headers", "available": True},
+            {"id": "manifest-earthsearch", "label": "EarthSearch STAC", "available": True},
+        ]
+    else:
+        strategies = [{"id": "manifest-cog-headers", "label": "COG headers", "available": True}]
 
     return {"collection": collection, "collections": ingestable, "states": states, "strategies": strategies}

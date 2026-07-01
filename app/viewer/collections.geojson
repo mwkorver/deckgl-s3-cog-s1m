@@ -231,7 +231,7 @@
       "properties": {
         "id": "vt-opendata",
         "title": "Vermont Open Geospatial (VTORTHO)",
-        "active": false,
+        "active": true,
         "status": "ready",
         "region_kind": "us-state",
         "region_code": "VT",
@@ -274,56 +274,6 @@
             [
               -73.44,
               42.73
-            ]
-          ]
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "id": "nz-imagery",
-        "title": "New Zealand Imagery",
-        "active": false,
-        "status": "needs-investigation",
-        "region_kind": "country",
-        "region_code": "NZ",
-        "years": null,
-        "bucket": "nz-imagery",
-        "bucket_region": "ap-southeast-2",
-        "access": "public",
-        "cog_verified": false,
-        "display": null,
-        "bbox": [
-          166.0,
-          -47.4,
-          178.6,
-          -34.0
-        ]
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              166.0,
-              -47.4
-            ],
-            [
-              178.6,
-              -47.4
-            ],
-            [
-              178.6,
-              -34.0
-            ],
-            [
-              166.0,
-              -34.0
-            ],
-            [
-              166.0,
-              -47.4
             ]
           ]
         ]

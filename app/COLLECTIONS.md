@@ -117,7 +117,7 @@ NAIP = CollectionDescriptor(
     bucket="naip-analytic",
     root_prefix="",                       # state/ is the top level
     access="requester-pays",
-    discovery=ManifestIndex(root="s3://cog-stac-catalog/manifest-index"),
+    discovery=ManifestIndex(root="s3://naip-stac-catalog/manifest-index"),
     cog_filter=lambda k: k.endswith(".tif") and "/rgbir_cog/" in k,
     key_parser=parse_naip_key,   # state/year/res/.../quad/...  ->  KeyFields
 )
@@ -583,7 +583,7 @@ lake, or a backfill that writes the new layout alongside and flips the read root
 - The viewer's ingest panel grows a **collection** dropdown above State/Year;
   selecting a collection repopulates the region/year options from that
   collection's partitions.
-- The imagery STAC catalog (`cog-stac-catalog/manifest-index`) is, by its name,
+- The imagery STAC catalog (`naip-stac-catalog/manifest-index`) is, by its name,
   NAIP's. A multi‑collection world wants either a catalog‑per‑collection or a
   shared `imagery-catalog` partitioned `collection/region/year` — decide when the
   second collection actually lands.

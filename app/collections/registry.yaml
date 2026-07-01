@@ -138,7 +138,7 @@ collections:
 
   - id: vt-opendata
     title: Vermont Open Geospatial (VTORTHO)
-    active: false                  # parked: bucket is us-east-2
+    active: true                  # active
     status: ready
     extent:
       region_kind: us-state
@@ -158,28 +158,8 @@ collections:
       mosaics (which include year-range vintages like 2016-2019). LeafOFF/ON;
       PAN(1-band)/CLRIR(4-band); GSD to 13cm.
 
-  - id: nz-imagery
-    title: New Zealand Imagery
-    active: false                  # parked: bucket is ap-southeast-2 (cross-continent egress)
-    status: needs-investigation
-    extent:
-      region_kind: country
-      region_code: NZ
-      bbox: [166.0, -47.4, 178.6, -34.0]
-      years: null                  # TODO (varies by regional council)
-    source:
-      bucket: nz-imagery
-      bucket_region: ap-southeast-2
-      access: public
-      root_prefix: ""              # <regional-council>/... at top level
-      region: key-parsed           # NZ regional councils (auckland, canterbury, ...)
-      discovery: s3-prefix
-      cog_filter: TODO             # confirm COG suffix + tile path
-    notes: >
-      region is key-parsed (16 regional councils + a national mosaic), like NAIP's
-      states rather than a constant. Far from us-west-2 (egress).
 
-  # ---------------------------------------------------------------------------
+  # -----------------------------------------------------------------------------------------------------------
   # EXCLUDED  (in us-west-2, but no COG-conforming product — fails the scope rule)
   # ---------------------------------------------------------------------------
 

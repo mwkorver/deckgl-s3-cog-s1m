@@ -43,6 +43,58 @@ class DiscoveryAdapter(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class ManifestIndexAdapter:
+    """NAIP's discovery: read the pre-published, partitioned manifest index.
+
+    A thin, transparent wrapper over the existing
+    `ingest_manifest.build_manifest_inventory_from_index`, so the output is
+    byte-for-byte what the direct call produced (verified by an equivalence test).
+    """
+
+    index_root: str | None = None  # None -> ingest_manifest.MANIFEST_INDEX_PATH
+
+    @property
+    def regions(self) -> tuple[str, ...]:
+        from config import STATE_BBOXES
+        return tuple(sorted(STATE_BBOXES.keys()))
+
+    def available_years(self, region: str) -> list[int]:
+        """Fetch available years for a state by listing the naip_year= partitions."""
+        from aws_s3 import get_s3_direct_client
+        from config import MANIFEST_INDEX
+        years = set()
+        root = self.index_root or str(MANIFEST_INDEX)
+        if root.startswith("s3://"):
+            bucket, _, prefix = root[len("s3://") :].partition("/")
+            base = (prefix.rstrip("/") + "/") if prefix else ""
+            s3 = get_s3_direct_client()
+            prefix_scope = f"{base}state={region}/"
+            paginator = s3.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix_scope, Delimiter="/", RequestPayer="requester"):
+                for cp in page.get("CommonPrefixes", []):
+                    seg = cp["Prefix"].rstrip("/").rsplit("/", 1)[-1]
+                    if seg.startswith("naip_year="):
+                        try:
+                            years.add(int(seg.split("=", 1)[1]))
+                        except ValueError:
+                            pass
+        return sorted(years, reverse=True)
+
+    def enumerate(self, *, regions, years, latest_year_only, limit_per_partition):
+        import ingest_manifest as im
+
+        root = self.index_root or im.MANIFEST_INDEX_PATH
+        return im.build_manifest_inventory_from_index(
+            regions,
+            years=years,
+            latest_year_only=latest_year_only,
+            limit_per_partition=limit_per_partition,
+            index_root=root,
+        )
+
+
+
 # --------------------------------------------------------------------------- #
 # key_parser contract + S3-prefix-listing adapter (Phase 2)                    #
 # --------------------------------------------------------------------------- #
@@ -59,7 +111,7 @@ class KeyFields:
 # Well-known public buckets that have S3 Requester Pays enabled, so reads/lists
 # must be signed and carry RequestPayer=requester. Used to coerce the access mode
 # for ad-hoc/panel ingests targeting them, so a "public" selection doesn't 403.
-REQUESTER_PAYS_BUCKETS = {"naip-analytic", "naip-visualization"}
+REQUESTER_PAYS_BUCKETS = {"naip-analytic", "naip-visualization", "naip-stac-catalog"}
 
 # Buckets known to hold NO cloud-optimized imagery (metadata, FGDC sidecars, and
 # tile-index shapefiles only), so an ingest would find nothing usable. Reject
@@ -372,18 +424,134 @@ NJ = CollectionDescriptor(
     key_filter=nj_cog_filter,
 )
 
+
+# --------------------------------------------------------------------------- #
+# Vermont Open Geospatial (vtopendata-prd, public). Layout:
+#   Imagery/_Tiles/VTORTHO/<res>/<profile>/<year>/COGS/VT_<tile>_<yyyymmdd>.tif
+# --------------------------------------------------------------------------- #
+def vt_cog_filter(key: str) -> bool:
+    return key.endswith(".tif") and "/COGS/" in key
+
+
+def vt_key_parser(key: str) -> KeyFields | None:
+    parts = key.split("/")
+    if len(parts) < 8:
+        return None
+    try:
+        year = int(parts[5])
+    except ValueError:
+        return None
+    tile = parts[-1].removesuffix(".tif")
+    return KeyFields(
+        region="vt",
+        year=year,
+        properties={"vt:tile": tile, "vt:resolution": parts[3], "vt:profile": parts[4]},
+    )
+
+
+def vt_enumerate_prefixes(s3, bucket: str, region: str, year: int | None) -> list[str]:
+    out = []
+    base = "Imagery/_Tiles/VTORTHO/"
+    for res_dir in _common_prefixes(s3, bucket, base):
+        for prof_dir in _common_prefixes(s3, bucket, res_dir):
+            if year is not None:
+                pre = f"{prof_dir}{year}/COGS/"
+                resp = s3.list_objects_v2(Bucket=bucket, Prefix=pre, MaxKeys=1)
+                if "Contents" in resp or "CommonPrefixes" in resp:
+                    out.append(pre)
+            else:
+                for yr_dir in _common_prefixes(s3, bucket, prof_dir):
+                    name = yr_dir.rstrip("/").rsplit("/", 1)[-1]
+                    if name.isdigit():
+                        out.append(f"{yr_dir}COGS/")
+    return out
+
+
+VT_OPENDATA = CollectionDescriptor(
+    id="vt-opendata",
+    bucket="vtopendata-prd",
+    access="public",
+    discovery=S3PrefixListing(
+        bucket="vtopendata-prd",
+        access="public",
+        cog_filter=vt_cog_filter,
+        key_parser=vt_key_parser,
+        enumerate_prefixes=vt_enumerate_prefixes,
+        regions=("vt",),
+    ),
+    key_filter=vt_cog_filter,
+)
+
+# --------------------------------------------------------------------------- #
+# Indiana Statewide (gisimageryingov, public). Layout:
+#   imageryoptimized/statewide/<year>/<SPE|SPW>/<res>in/in<year>_<tile>_<res>.tif
+# --------------------------------------------------------------------------- #
+def in_cog_filter(key: str) -> bool:
+    return key.endswith(".tif") and "imageryoptimized/statewide/" in key
+
+
+def in_key_parser(key: str) -> KeyFields | None:
+    parts = key.split("/")
+    if len(parts) < 6:
+        return None
+    try:
+        year = int(parts[2])
+    except ValueError:
+        return None
+    tile = parts[-1].removesuffix(".tif")
+    return KeyFields(
+        region="in",
+        year=year,
+        properties={"in:tile": tile, "in:zone": parts[3], "in:resolution": parts[4]},
+    )
+
+
+def in_enumerate_prefixes(s3, bucket: str, region: str, year: int | None) -> list[str]:
+    out = []
+    base = "imageryoptimized/statewide/"
+    if year is not None:
+        year_dirs = [f"{base}{year}/"]
+    else:
+        year_dirs = []
+        for pre in _common_prefixes(s3, bucket, base):
+            name = pre.rstrip("/").rsplit("/", 1)[-1]
+            if name.isdigit():
+                year_dirs.append(pre)
+
+    for ydir in year_dirs:
+        for zone_dir in _common_prefixes(s3, bucket, ydir):
+            for res_dir in _common_prefixes(s3, bucket, zone_dir):
+                out.append(res_dir)
+    return out
+
+
+IN_IMAGERY = CollectionDescriptor(
+    id="in-imagery",
+    bucket="gisimageryingov",
+    access="public",
+    discovery=S3PrefixListing(
+        bucket="gisimageryingov",
+        access="public",
+        cog_filter=in_cog_filter,
+        key_parser=in_key_parser,
+        enumerate_prefixes=in_enumerate_prefixes,
+        regions=("in",),
+    ),
+    key_filter=in_cog_filter,
+)
+
 NAIP = CollectionDescriptor(
     id="naip",
     bucket="naip-analytic",
     access="requester-pays",
-    discovery=None,
+    discovery=ManifestIndexAdapter(),
     key_filter=lambda key: key.endswith(".tif") and "/rgbir_cog/" in key,
 )
 
 # Assemble the live registry now that all descriptors are defined. The public
-# S3-prefix collections (KyFromAbove, New Jersey) are ingestable via the generic
-# path. Keep in sync with collections/registry.yaml (active collections).
-_REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ)})
+# S3-prefix collections (KyFromAbove, New Jersey, Vermont, Indiana) are ingestable via
+# the generic path. Keep in sync with collections/registry.yaml (active collections).
+_REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ, VT_OPENDATA, IN_IMAGERY)})
 
 
 def register_adhoc_collection(

@@ -1,4 +1,4 @@
-# NAIP STAC Catalog — public dataset (`s3://cog-stac-catalog`)
+# NAIP STAC Catalog — public dataset (`s3://naip-stac-catalog`)
 
 A cloud-native, queryable catalog of the USDA **NAIP** 4-band COG tiles in the
 public `naip-analytic` bucket. One row per quarter-quad COG, as a Hive-partitioned
@@ -9,14 +9,14 @@ This directory holds the artifacts to publish it on the
 
 | File | What it is |
 |------|------------|
-| `cog-stac-catalog.yaml` | the RODA registry record (PR it to `awslabs/open-data-registry`) |
+| `naip-stac-catalog.yaml` | the RODA registry record (PR it to `awslabs/open-data-registry`) |
 | `bucket-policy.json` | anonymous `GetObject` (manifest-index) + `ListBucket` + `GetBucketLocation` |
 | `cors.json` | browser/DuckDB-wasm access (GET/HEAD from any origin) |
 
 ## Data layout
 
 ```
-s3://cog-stac-catalog/
+s3://naip-stac-catalog/
   manifest-index/
     state=<st>/naip_year=<yyyy>/data_0.parquet      # Hive partitions
 ```
@@ -43,14 +43,14 @@ To read the actual pixels, prefix `source_key` with `s3://naip-analytic/`
 -- DuckDB: which WA 2023 tiles exist, and where?
 INSTALL httpfs; LOAD httpfs; SET s3_region='us-west-2';
 SELECT source_key, acq_date, quad
-FROM read_parquet('s3://cog-stac-catalog/manifest-index/**/*.parquet',
+FROM read_parquet('s3://naip-stac-catalog/manifest-index/**/*.parquet',
                   hive_partitioning=true)
 WHERE state='wa' AND naip_year=2023
 LIMIT 10;
 
 -- tile counts per state-year (coverage at a glance)
 SELECT state, naip_year, count(*) tiles
-FROM read_parquet('s3://cog-stac-catalog/manifest-index/**/*.parquet',
+FROM read_parquet('s3://naip-stac-catalog/manifest-index/**/*.parquet',
                   hive_partitioning=true)
 GROUP BY state, naip_year ORDER BY state, naip_year;
 ```
@@ -58,8 +58,8 @@ GROUP BY state, naip_year ORDER BY state, naip_year;
 Browse anonymously (region auto-discovered via `GetBucketLocation`):
 
 ```bash
-aws s3 ls s3://cog-stac-catalog/ --no-sign-request
-aws s3 ls s3://cog-stac-catalog/manifest-index/ --no-sign-request | head
+aws s3 ls s3://naip-stac-catalog/ --no-sign-request
+aws s3 ls s3://naip-stac-catalog/manifest-index/ --no-sign-request | head
 ```
 
 ## Publishing / maintenance (author, admin creds)
@@ -68,7 +68,7 @@ These are bucket-admin actions (`s3:CreateBucket`, `PutBucketPolicy`,
 `PutBucketCors`) — run with admin/root, not the scoped deploy user.
 
 ```bash
-REGION=us-west-2; B=cog-stac-catalog
+REGION=us-west-2; B=naip-stac-catalog
 
 # 1. create (out-of-band; this is the shared cross-account bucket, NOT stack-managed)
 aws s3api create-bucket --bucket $B --region $REGION \
@@ -87,7 +87,7 @@ Refresh the catalog as new NAIP is published (see `../api/refresh_manifest_index
 
 ```bash
 python ../api/refresh_manifest_index.py --years-from 2022 \
-    --index s3://cog-stac-catalog/manifest-index
+    --index s3://naip-stac-catalog/manifest-index
 ```
 
 ## TODO: STAC compliance

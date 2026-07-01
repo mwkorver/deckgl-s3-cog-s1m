@@ -110,6 +110,12 @@ def parse_args():
     parser.add_argument("--source-bucket", help="S3 bucket for ad-hoc collections")
     parser.add_argument("--source-prefix", help="S3 prefix for ad-hoc collections")
     parser.add_argument("--source-access", default="public", help="Access mode (public, private, requester-pays)")
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=16,
+        help="Number of concurrent worker threads to run (default 16)",
+    )
     return parser.parse_args()
  
  
@@ -158,7 +164,7 @@ def acquire_payloads(args):
     # NAIP filename parse, no strategy choice (header read is the only path).
     if isinstance(descriptor.discovery, descriptors.S3PrefixListing):
         payloads, failed = im.process_cog_headers_generic(
-            manifest_rows, max_workers=16,
+            manifest_rows, max_workers=args.max_workers,
             request_payer=descriptor.request_payer, access=descriptor.access,
         )
         print(f"COG header extraction: matched={len(payloads):,} failed={len(failed):,}", flush=True)
@@ -168,7 +174,7 @@ def acquire_payloads(args):
 
     if args.strategy == "manifest-cog-headers":
         payloads, failed = im.process_manifest_cog_headers(
-            manifest_rows, max_workers=16, request_payer=descriptor.request_payer
+            manifest_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer
         )
         print(f"COG header extraction: matched={len(payloads):,} failed={len(failed):,}", flush=True)
     else:
@@ -195,7 +201,7 @@ def acquire_payloads(args):
         if missing_rows:
             print(f"Warning: {len(missing_rows):,} assets missing from EarthSearch STAC. Falling back to S3 COG header parsing for these assets...", flush=True)
             fallback_payloads, failed = im.process_manifest_cog_headers(
-                missing_rows, max_workers=16, request_payer=descriptor.request_payer
+                missing_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer
             )
             payloads.extend(fallback_payloads)
             print(f"Fallback COG header extraction: matched={len(fallback_payloads):,} failed={len(failed):,}", flush=True)

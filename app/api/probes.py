@@ -146,7 +146,7 @@ def probe_manifest_freshness() -> dict[str, Any]:
         idx_bucket, idx_prefix = _parse_s3_uri(MANIFEST_INDEX.rstrip("/"))
         newest = None
         paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=idx_bucket, Prefix=idx_prefix + "/"):
+        for page in paginator.paginate(Bucket=idx_bucket, Prefix=idx_prefix + "/", RequestPayer="requester"):
             for obj in page.get("Contents", []):
                 lm = obj["LastModified"]
                 if newest is None or lm > newest:

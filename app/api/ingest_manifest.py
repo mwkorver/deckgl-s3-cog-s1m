@@ -3,6 +3,9 @@ import json
 import os
 import re
 import io
+import threading
+
+_pyproj_lock = threading.Lock()
 
 # Clean up empty AWS environment variables to prevent boto3 ProfileNotFound errors
 for var in ["AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]:
@@ -359,18 +362,20 @@ def build_stac_index(states: set[str], years_by_state: dict[str, int | None], pa
 def transformer_to_wgs84(crs):
     # crs may be an EPSG int or a CRS name string (e.g. a GeoTIFF citation for a
     # user-defined CRS). pyproj.Transformer.from_crs resolves both.
-    return Transformer.from_crs(crs, 4326, always_xy=True)
+    with _pyproj_lock:
+        return Transformer.from_crs(crs, 4326, always_xy=True)
 
 
 def geometry_from_proj_bbox(proj_bbox: list[float], crs):
     minx, miny, maxx, maxy = [float(value) for value in proj_bbox]
-    transformer = transformer_to_wgs84(crs)
-    corners = [
-        transformer.transform(minx, miny),
-        transformer.transform(maxx, miny),
-        transformer.transform(maxx, maxy),
-        transformer.transform(minx, maxy),
-    ]
+    with _pyproj_lock:
+        transformer = transformer_to_wgs84(crs)
+        corners = [
+            transformer.transform(minx, miny),
+            transformer.transform(maxx, miny),
+            transformer.transform(maxx, maxy),
+            transformer.transform(minx, maxy),
+        ]
     return {
         "type": "Polygon",
         "coordinates": [[
@@ -589,10 +594,11 @@ def _extract_cog_geo(s3_client, bucket, key, request_payer="requester"):
             citation = str(ascii_params).split("|")[0].strip() if ascii_params else ""
             if not citation:
                 raise ValueError(f"user-defined CRS (32767) with no citation: s3://{bucket}/{key}")
-            from pyproj import CRS
-            crs_obj = CRS.from_user_input(citation)
-            proj_epsg = crs_obj.to_epsg() or 0       # resolved EPSG when known
-            crs = proj_epsg or citation              # transformer accepts int or name
+            with _pyproj_lock:
+                from pyproj import CRS
+                crs_obj = CRS.from_user_input(citation)
+                proj_epsg = crs_obj.to_epsg() or 0       # resolved EPSG when known
+                crs = proj_epsg or citation              # transformer accepts int or name
 
         scale_x, scale_y = float(pixel_scale[0]), float(pixel_scale[1])
         tie_x, tie_y = float(tiepoints[3]), float(tiepoints[4])

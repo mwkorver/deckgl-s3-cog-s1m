@@ -36,7 +36,7 @@ Conditions:
   CreateBudget: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
 
 # Hard data-residency lock: all NAIP data (naip-analytic source, the
-# cog-stac-catalog lake/index) lives in us-west-2. Reject any
+# naip-stac-catalog lake/index) lives in us-west-2. Reject any
 # attempt to create/update this stack in another region -- a --region override
 # or a misconfigured profile fails at change-set time instead of deploying a
 # cross-region function that pays inter-region transfer and can't reach buckets.
@@ -75,9 +75,9 @@ Resources:
           # not a separate lake bucket. The viewer bucket policy denies public
           # read on lake/, so app output stays private while the
           # same bucket serves the public viewer. S3_COG_MANIFEST_INDEX stays on the
-          # shared, author-published cog-stac-catalog bucket (read-only, below).
+          # shared, author-published naip-stac-catalog bucket (read-only, below).
           S3_COG_LAKE_ROOT: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake"
-          S3_COG_MANIFEST_INDEX: s3://cog-stac-catalog/manifest-index
+          S3_COG_MANIFEST_INDEX: s3://naip-stac-catalog/manifest-index
           S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
           S1M_INDEX_URL: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake/s1m/S1M_Products.parquet"
           S3_COG_REQUEST_PAYER: requester
@@ -108,7 +108,7 @@ Resources:
               Resource:
                 - !Sub "arn:aws:s3:::deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake/*"
         # Read-only on the SHARED, author-published bucket holding the prebuilt
-        # manifest index (S3_COG_MANIFEST_INDEX = s3://cog-stac-catalog/manifest-index).
+        # manifest index (S3_COG_MANIFEST_INDEX = s3://naip-stac-catalog/manifest-index).
         # Deployers read this to skip the 404MB manifest download + index build;
         # they never write here. (Author's bucket policy must allow cross-account
         # GetObject/ListBucket on manifest-index/* for this to resolve.)
@@ -118,8 +118,8 @@ Resources:
                 - s3:GetObject
                 - s3:ListBucket
               Resource:
-                - arn:aws:s3:::cog-stac-catalog
-                - arn:aws:s3:::cog-stac-catalog/*
+                - arn:aws:s3:::naip-stac-catalog
+                - arn:aws:s3:::naip-stac-catalog/*
         # Read the public, requester-pays NAIP source imagery + manifest. The
         # requester-pays charge lands on this account; S3CrudPolicy is too broad
         # (no writes needed), so grant read-only on the bucket + its objects.

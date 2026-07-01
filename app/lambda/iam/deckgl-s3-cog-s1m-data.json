@@ -24,8 +24,8 @@
         "s3:GetObject"
       ],
       "Resource": [
-        "arn:aws:s3:::cog-stac-catalog",
-        "arn:aws:s3:::cog-stac-catalog/*"
+        "arn:aws:s3:::naip-stac-catalog",
+        "arn:aws:s3:::naip-stac-catalog/*"
       ]
     },
     {

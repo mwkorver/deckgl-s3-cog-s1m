@@ -1243,6 +1243,8 @@
         drapeBuildMs: 0, drapeBuildN: 0, // summed per-subtile drape durations
         terrainFetchMs: 0, terrainFetchN: 0, // /s1m/terrain fetch + json
         meshMs: 0, meshN: 0,             // elevation decode + CPU mesh build
+        tiffSignMs: 0, tiffSignN: 0,     // TIFF S3 URL presigning
+        tiffResolveMs: 0, tiffResolveN: 0, // TIFF header reading (fromUrl)
       };
       function s1mBenchReset() { for (const k in s1mBench) s1mBench[k] = 0; }
       function s1mBenchReport() {
@@ -1259,6 +1261,8 @@
           drapeBuild: { subtiles: s1mBench.drapeBuildN, totalSubtileMs: +s1mBench.drapeBuildMs.toFixed(0), avgSubtileMs: avg(s1mBench.drapeBuildMs, s1mBench.drapeBuildN) },
           terrainFetch: { tiles: s1mBench.terrainFetchN, totalMs: +s1mBench.terrainFetchMs.toFixed(0), avgMs: avg(s1mBench.terrainFetchMs, s1mBench.terrainFetchN) },
           mesh: { tiles: s1mBench.meshN, totalMs: +s1mBench.meshMs.toFixed(0), avgMs: avg(s1mBench.meshMs, s1mBench.meshN) },
+          tiffSign: { calls: s1mBench.tiffSignN, totalMs: +s1mBench.tiffSignMs.toFixed(0), avgMs: avg(s1mBench.tiffSignMs, s1mBench.tiffSignN) },
+          tiffResolve: { sources: s1mBench.tiffResolveN, totalMs: +s1mBench.tiffResolveMs.toFixed(0), avgMs: avg(s1mBench.tiffResolveMs, s1mBench.tiffResolveN) },
           sourceSearchMs: s1mDrapeMetrics.sourceSearchMs,
           cacheSizes: {
             drapeImages: s1mDrapeCache.size,
@@ -1632,6 +1636,19 @@
           ` · COG ${s1mCogTileCache.size}/${S1M_COG_TILE_CACHE_MAX} (${fmtPct(s1mCogTileCache.size, S1M_COG_TILE_CACHE_MAX)})` +
           ` · TIFF ${geotiffSourceCache.size}/${GEOTIFF_SOURCE_CACHE_MAX} (${fmtPct(geotiffSourceCache.size, GEOTIFF_SOURCE_CACHE_MAX)})` +
           ` · evict d/c/t ${s1mBench.drapeEvict}/${s1mBench.cogEvict}/${s1mBench.tiffEvict}`;
+        const avgSignMs = s1mBench.tiffSignN ? s1mBench.tiffSignMs / s1mBench.tiffSignN : null;
+        const avgResolveMs = s1mBench.tiffResolveN ? s1mBench.tiffResolveMs / s1mBench.tiffResolveN : null;
+        const avgCogFetchMs = s1mBench.cogFetchN ? s1mBench.cogFetchMs / s1mBench.cogFetchN : null;
+        const avgDecodeMs = s1mBench.decodeN ? s1mBench.decodeMs / s1mBench.decodeN : null;
+        const avgRasterMs = s1mBench.rasterN ? s1mBench.rasterMs / s1mBench.rasterN : null;
+
+        const breakdownText =
+          ` · avg sign ${fmtMs(avgSignMs)} (${s1mBench.tiffSignN} calls)` +
+          ` · avg hdr ${fmtMs(avgResolveMs)} (${s1mBench.tiffResolveN} sources)` +
+          ` · avg tile-get ${fmtMs(avgCogFetchMs)} (${s1mBench.cogFetchN} tiles)` +
+          ` · avg decode ${fmtMs(avgDecodeMs)}` +
+          ` · avg raster ${fmtMs(avgRasterMs)}`;
+
         const hrefText = s1mDrapeMetrics.lastHref ? ` · last ${s1mDrapeMetrics.lastHref}` : "";
         el.textContent =
           `Drape ${s1mDrapeMetrics.mode} · source search ${fmtMs(s1mDrapeMetrics.sourceSearchMs)}` +
@@ -1640,6 +1657,7 @@
           ` (${s1mDrapeMetrics.tilesFailed} failed)` +
           ` · avg tile ${fmtMs(avgTileMs)}` +
           ` · last tile ${fmtMs(s1mDrapeMetrics.lastTileMs)}` +
+          breakdownText +
           ` · avg sources/tile ${Number.isFinite(avgRefs) ? avgRefs.toFixed(1) : "-"}` +
           ` · max sources/tile ${s1mDrapeMetrics.maxSourceRefs}` +
           ` · no-data fallback ${s1mDrapeMetrics.noDataSourceFallbacks}` +
@@ -1871,14 +1889,22 @@
         let pending = geotiffSourceCache.get(s3href);
         if (!pending) {
           pending = (async () => {
+            const t0 = performance.now();
             const signedUrl = await signHref(s3href);
-            // Forward the limiter + priority so this COG's range reads join the
-            // shared per-origin queue and get ordered center-out by getPriority.
-            return window.GeoTIFFCoreClass.fromUrl(signedUrl, {
+            const t1 = performance.now();
+            s1mBench.tiffSignMs += t1 - t0;
+            s1mBench.tiffSignN += 1;
+
+            const geotiff = await window.GeoTIFFCoreClass.fromUrl(signedUrl, {
               concurrencyLimiter,
               getPriority,
               chunkCache: chunkCacheForHref(s3href),
             });
+            const t2 = performance.now();
+            s1mBench.tiffResolveMs += t2 - t1;
+            s1mBench.tiffResolveN += 1;
+
+            return geotiff;
           })().catch((error) => {
             geotiffSourceCache.delete(s3href);   // never cache a failed resolve
             // A 403/expired signed URL: drop the cached signature so the next

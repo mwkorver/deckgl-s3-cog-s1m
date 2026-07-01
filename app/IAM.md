@@ -14,7 +14,7 @@ All app-owned AWS resources use the `deckgl-s3-cog-s1m-*` prefix:
 - `deckgl-s3-cog-s1m-read-*` / `deckgl-s3-cog-s1m-ingest-*` SAM runtime roles
 - `deckgl-s3-cog-s1m-*` ECR repositories
 
-The shared `cog-stac-catalog` bucket is not app-owned and keeps its existing
+The shared `naip-stac-catalog` bucket is not app-owned and keeps its existing
 name.
 
 ## One deploy role

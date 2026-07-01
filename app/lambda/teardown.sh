@@ -5,7 +5,7 @@
 # The application has independent read and ingest stacks. The per-account bucket
 # is owned by the separate foundation stack and Retained on deletion.
 #
-# It does NOT touch the shared, author-published `cog-stac-catalog` bucket.
+# It does NOT touch the shared, author-published `naip-stac-catalog` bucket.
 #
 # Usage:
 #   ./teardown.sh                # delete app stacks + foundation + retained bucket
@@ -39,7 +39,7 @@ echo "Account : $ACCOUNT"
 echo "Region  : $REGION"
 echo "Stacks  : $READ_STACK, $INGEST_STACK"
 echo "Bucket  : s3://$BUCKET  ($([ "$KEEP_BUCKET" = true ] && echo "KEEP" || echo "DELETE + all data"))"
-echo "Shared catalog bucket (cog-stac-catalog) is NOT touched."
+echo "Shared catalog bucket (naip-stac-catalog) is NOT touched."
 echo
 
 if [ "$KEEP_BUCKET" != true ]; then
