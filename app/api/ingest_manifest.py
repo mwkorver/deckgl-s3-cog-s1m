@@ -710,11 +710,22 @@ def fetch_cog_metadata(s3_client, manifest_row, request_payer="requester"):
     }
 
 
-def process_manifest_cog_headers(manifest_rows, max_workers=8, request_payer="requester"):
+def process_manifest_cog_headers(
+    manifest_rows,
+    max_workers=8,
+    request_payer="requester",
+    aws_access_key_id=None,
+    aws_secret_access_key=None,
+):
     results = []
     failed = []
 
-    s3_client = boto3.client("s3")
+    from botocore.config import Config
+    kwargs = {"config": Config(max_pool_connections=max_workers)}
+    if aws_access_key_id and aws_secret_access_key:
+        kwargs["aws_access_key_id"] = aws_access_key_id
+        kwargs["aws_secret_access_key"] = aws_secret_access_key
+    s3_client = boto3.client("s3", **kwargs)
 
     total = len(manifest_rows)
     print(f"Began COG header parsing for {total:,} selected assets...", flush=True)
@@ -766,7 +777,14 @@ def fetch_cog_geo_generic(s3_client, row, request_payer=None):
     }
 
 
-def process_cog_headers_generic(rows, max_workers=8, request_payer=None, access="public"):
+def process_cog_headers_generic(
+    rows,
+    max_workers=8,
+    request_payer=None,
+    access="public",
+    aws_access_key_id=None,
+    aws_secret_access_key=None,
+):
     """Generic counterpart to process_manifest_cog_headers: read COG headers for an
     S3PrefixListing collection's rows.
 
@@ -786,7 +804,11 @@ def process_cog_headers_generic(rows, max_workers=8, request_payer=None, access=
     else:
         from botocore.config import Config
 
-        s3_client = boto3.client("s3", config=Config(max_pool_connections=max_workers))
+        kwargs = {"config": Config(max_pool_connections=max_workers)}
+        if aws_access_key_id and aws_secret_access_key:
+            kwargs["aws_access_key_id"] = aws_access_key_id
+            kwargs["aws_secret_access_key"] = aws_secret_access_key
+        s3_client = boto3.client("s3", **kwargs)
     total = len(rows)
     print(f"Began COG header parsing for {total:,} selected assets...", flush=True)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

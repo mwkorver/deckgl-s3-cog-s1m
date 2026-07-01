@@ -705,6 +705,39 @@
                   <input id="ingest-workers" type="number" value="16" min="1" max="128" style="width:100%; box-sizing:border-box; margin-top:2px;" title="Number of parallel worker threads to run (default 16)." />
                 </label>
               </div>
+
+              <!-- Credentials & Policy Helper (IAM User keys) -->
+              <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px; margin-bottom: 12px;">
+                <label class="small" style="font-weight: bold; color: #fbbf24; cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="toggleCredentialsSection()">
+                  <span>🔑 Custom IAM User Credentials (Optional)</span>
+                  <span id="creds-toggle-icon">▼</span>
+                </label>
+                
+                <div id="ingest-creds-container" style="display: none; margin-top: 8px;">
+                  <label class="small" style="display:block; margin-top:6px;">
+                    AWS Access Key ID
+                    <input id="ingest-access-key" type="text" placeholder="AKIA..." style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  </label>
+                  <label class="small" style="display:block; margin-top:6px;">
+                    AWS Secret Access Key
+                    <input id="ingest-secret-key" type="password" placeholder="wJalrXUtn..." style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  </label>
+                  
+                  <div style="margin-top: 10px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div class="small" style="font-weight: bold; color: #3b82f6; display: flex; align-items: center; justify-content: space-between; cursor: pointer;" onclick="togglePolicySection()">
+                      <span>📋 Generated Narrow IAM Policy Helper</span>
+                      <span id="policy-toggle-icon">▶</span>
+                    </div>
+                    <div id="ingest-policy-helper" style="display: none; margin-top: 6px;">
+                      <div class="small muted" style="margin-bottom: 4px; font-size: 10px; line-height: 1.3;">
+                        Use this policy to create a scoped IAM User in your AWS console that allows local ingestion to write to your private lake:
+                      </div>
+                      <pre id="policy-pre" style="margin: 0; font-family: monospace; font-size: 10px; background: #111827; padding: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); overflow-x: auto; max-height: 150px; color: #34d399;"></pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <button id="run-ingest" class="search-active" style="width:100%;">Run ingest</button>
               <div class="small muted" style="margin-top: 8px;">
                 Running locally: the ingest runs as a background job with no time
@@ -997,6 +1030,8 @@
 
       const ingestLimitEl = document.getElementById("ingest-limit");
       const ingestWorkersEl = document.getElementById("ingest-workers");
+      const ingestAccessKeyEl = document.getElementById("ingest-access-key");
+      const ingestSecretKeyEl = document.getElementById("ingest-secret-key");
       // Server-side sync ingest hard cap (S3_COG_SYNC_INGEST_MAX_LIMIT). Sending a
       // larger value is rejected; clamp here so the panel can't ask for more.
       const INGEST_SYNC_MAX_LIMIT = 500;   // empty-field default
@@ -5126,6 +5161,9 @@
 
       function ingestSourcePayload() {
         const maxWorkers = Number(ingestWorkersEl.value || 16);
+        const accessKey = ingestAccessKeyEl.value.trim();
+        const secretKey = ingestSecretKeyEl.value.trim();
+
         if (ingestMode === "catalog") {
           const collection = ingestCatalogCollectionEl.value;
           const region = ingestCatalogRegionEl.value;
@@ -5137,7 +5175,7 @@
           if (!region) throw new Error("Select a state/region.");
           if (!Number.isInteger(year)) throw new Error("Select a year.");
 
-          return {
+          const payload = {
             collection,
             state: region,
             year,
@@ -5145,6 +5183,9 @@
             limit_per_partition: ingestLimitPerPartition(),
             max_workers: maxWorkers,
           };
+          if (accessKey) payload["source_access_key_id"] = accessKey;
+          if (secretKey) payload["source_secret_access_key"] = secretKey;
+          return payload;
         } else {
           const bucket = ingestCustomBucketEl.value.trim();
           const prefix = ingestCustomPrefixEl.value.trim().replace(/^\/+/, "");
@@ -5163,7 +5204,7 @@
           const registered = collectionFeatures.find((p) => p.bucket === bareBucket);
           const colId = customCol || (registered ? registered.id : sanitizeCollectionId(bareBucket));
 
-          return {
+          const payload = {
             collection: colId,
             source_bucket: bucket,
             source_prefix: prefix,
@@ -5176,6 +5217,9 @@
             limit_per_partition: ingestLimitPerPartition(),
             max_workers: maxWorkers,
           };
+          if (accessKey) payload["source_access_key_id"] = accessKey;
+          if (secretKey) payload["source_secret_access_key"] = secretKey;
+          return payload;
         }
       }
 
@@ -6041,6 +6085,56 @@
 
       let ingestMode = "catalog"; // or "custom"
       let ingestCatalogMetadata = null;
+      let currentAccountId = "";
+      let currentBucketName = "";
+
+      window.toggleCredentialsSection = function() {
+        const el = document.getElementById("ingest-creds-container");
+        const icon = document.getElementById("creds-toggle-icon");
+        if (el.style.display === "none") {
+          el.style.display = "block";
+          icon.textContent = "▲";
+        } else {
+          el.style.display = "none";
+          icon.textContent = "▼";
+        }
+      };
+
+      window.togglePolicySection = function() {
+        const el = document.getElementById("ingest-policy-helper");
+        const icon = document.getElementById("policy-toggle-icon");
+        if (el.style.display === "none") {
+          el.style.display = "block";
+          icon.textContent = "▼";
+        } else {
+          el.style.display = "none";
+          icon.textContent = "▶";
+        }
+      };
+
+      function updateIamPolicyHelper() {
+        const acc = currentAccountId || "<your-aws-account-id>";
+        const buck = currentBucketName || "deckgl-s3-cog-s1m-<account>-us-west2";
+        const policy = {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                `arn:aws:s3:::${buck}`,
+                `arn:aws:s3:::${buck}/*`
+              ]
+            }
+          ]
+        };
+        document.getElementById("policy-pre").textContent = JSON.stringify(policy, null, 2);
+      }
 
       function switchIngestMode(mode) {
         ingestMode = mode;
@@ -6074,6 +6168,9 @@
           }
           const data = await response.json();
           ingestCatalogMetadata = data;
+          currentAccountId = data.account_id || "";
+          currentBucketName = data.bucket_name || "";
+          updateIamPolicyHelper();
 
           // Populate Collections dropdown if not already set or updated
           const currentCollectionVal = ingestCatalogCollectionEl.value;

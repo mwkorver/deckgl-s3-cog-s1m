@@ -116,6 +116,8 @@ def parse_args():
         default=16,
         help="Number of concurrent worker threads to run (default 16)",
     )
+    parser.add_argument("--source-access-key-id", help="AWS Access Key ID for S3 client authentication")
+    parser.add_argument("--source-secret-access-key", help="AWS Secret Access Key for S3 client authentication")
     return parser.parse_args()
  
  
@@ -166,6 +168,8 @@ def acquire_payloads(args):
         payloads, failed = im.process_cog_headers_generic(
             manifest_rows, max_workers=args.max_workers,
             request_payer=descriptor.request_payer, access=descriptor.access,
+            aws_access_key_id=args.source_access_key_id,
+            aws_secret_access_key=args.source_secret_access_key,
         )
         print(f"COG header extraction: matched={len(payloads):,} failed={len(failed):,}", flush=True)
         reconcile_completeness(manifest_rows, payloads, collection=args.collection,
@@ -174,7 +178,9 @@ def acquire_payloads(args):
 
     if args.strategy == "manifest-cog-headers":
         payloads, failed = im.process_manifest_cog_headers(
-            manifest_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer
+            manifest_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer,
+            aws_access_key_id=args.source_access_key_id,
+            aws_secret_access_key=args.source_secret_access_key,
         )
         print(f"COG header extraction: matched={len(payloads):,} failed={len(failed):,}", flush=True)
     else:
@@ -201,7 +207,9 @@ def acquire_payloads(args):
         if missing_rows:
             print(f"Warning: {len(missing_rows):,} assets missing from EarthSearch STAC. Falling back to S3 COG header parsing for these assets...", flush=True)
             fallback_payloads, failed = im.process_manifest_cog_headers(
-                missing_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer
+                missing_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer,
+                aws_access_key_id=args.source_access_key_id,
+                aws_secret_access_key=args.source_secret_access_key,
             )
             payloads.extend(fallback_payloads)
             print(f"Fallback COG header extraction: matched={len(fallback_payloads):,} failed={len(failed):,}", flush=True)

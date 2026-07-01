@@ -53,4 +53,20 @@ def build_ingest_options(body: dict[str, Any]):
     else:
         strategies = [{"id": "manifest-cog-headers", "label": "COG headers", "available": True}]
 
-    return {"collection": collection, "collections": ingestable, "states": states, "strategies": strategies}
+    from config import LAKE_ROOT
+    bucket_name = ""
+    account_id = ""
+    if LAKE_ROOT.startswith("s3://"):
+        bucket_name = LAKE_ROOT[5:].split("/")[0]
+        parts = bucket_name.split("-")
+        if len(parts) >= 5:
+            account_id = parts[4]
+
+    return {
+        "collection": collection,
+        "collections": ingestable,
+        "states": states,
+        "strategies": strategies,
+        "account_id": account_id,
+        "bucket_name": bucket_name,
+    }

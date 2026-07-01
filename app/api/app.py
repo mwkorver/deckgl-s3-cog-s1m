@@ -293,6 +293,9 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
     if max_workers is not None and (max_workers < 1 or max_workers > 128):
         raise HTTPException(status_code=400, detail="max_workers must be between 1 and 128")
 
+    access_key_id = body.get("source_access_key_id")
+    secret_access_key = body.get("source_secret_access_key")
+
     job_id = uuid4().hex
     set_ingest_job(
         job_id,
@@ -316,6 +319,8 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
             "source_prefix": prefix,
             "source_access": access,
             "max_workers": max_workers,
+            "source_access_key_id": access_key_id,
+            "source_secret_access_key": secret_access_key,
         },
         daemon=True,
     )
@@ -435,6 +440,9 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
     if max_workers < 1 or max_workers > 128:
         raise HTTPException(status_code=400, detail="max_workers must be between 1 and 128")
 
+    access_key_id = body.get("source_access_key_id")
+    secret_access_key = body.get("source_secret_access_key")
+
     # Lazy import: keep duckdb/ingest off the cold-start path for non-ingest
     # requests (the read API is the common case).
     import ingest_duckdb as ig
@@ -456,6 +464,8 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
         source_prefix=prefix,
         source_access=access,
         max_workers=max_workers,
+        source_access_key_id=access_key_id,
+        source_secret_access_key=secret_access_key,
     )
 
     started = monotonic()
