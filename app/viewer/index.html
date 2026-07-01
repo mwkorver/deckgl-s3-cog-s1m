@@ -6464,7 +6464,7 @@
         const yrs = Array.isArray(p.years) && p.years.length === 2 ? `${p.years[0]}–${p.years[1]}` : "—";
         const rows = [
           ["bucket", `${p.bucket} <span class="muted">(${p.bucket_region}, ${p.access})</span>`],
-          ["prefix path", `${p.root_prefix || "—"}`],
+          ["prefix path", `${p.root_prefix || "(bucket root)"}`],
           ["region", `${p.region_code || p.region_kind || "—"}`],
           ["years", yrs],
           ["COG verified", p.cog_verified ? "yes" : "—"],

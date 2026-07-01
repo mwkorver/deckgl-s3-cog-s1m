@@ -49,7 +49,7 @@ collections:
       bucket: naip-analytic        # 4-band RGBIR COG
       bucket_region: us-west-2
       access: requester-pays
-      root_prefix: "[state]/[year]/"
+      root_prefix: ""
       region: key-parsed           # state from key path
       discovery: manifest-index    # pre-published manifest; s3-prefix also works
       cog_filter: "key.endswith('.tif') and '/rgbir_cog/' in key"
@@ -93,7 +93,7 @@ collections:
       bucket: njogis-imagery
       bucket_region: us-west-2
       access: public
-      root_prefix: "[year]/cog/"
+      root_prefix: ""
       region: const:nj
       discovery: s3-prefix         # enumerate_prefixes -> ["<year>/cog/"]
       cog_filter: "key.endswith('.tif') and '/cog/' in key"
