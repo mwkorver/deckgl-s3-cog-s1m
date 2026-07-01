@@ -6470,6 +6470,16 @@
       }
       function resolveTemplate(template, feature) {
         if (!feature || !feature.id) return template;
+        
+        const isIngestTab = document.getElementById("tab-ingest")?.classList.contains("active");
+        let activeState = stateEl.value;
+        let activeYear = yearEl.value;
+        if (isIngestTab) {
+          activeState = document.getElementById("ingest-catalog-region")?.value || "";
+          activeYear = document.getElementById("ingest-catalog-year")?.value || "";
+        }
+        const stateCode = activeState ? activeState.split("-")[0] : "";
+
         const idx = feature.id.indexOf("/");
         if (idx === -1) return template;
         const key = feature.id.substring(idx + 1);
@@ -6479,7 +6489,14 @@
         for (let i = 0; i < templateParts.length; i++) {
           const tPart = templateParts[i];
           if (tPart.startsWith("{") && tPart.endsWith("}")) {
-            if (i < keyParts.length) {
+            const varName = tPart.slice(1, -1);
+            if (varName === "state" && !stateCode) {
+              resultParts.push("[state]");
+            } else if (varName === "year" && !activeYear) {
+              resultParts.push("[year]");
+            } else if (varName === "resolution" && !activeYear) {
+              resultParts.push("[resolution]");
+            } else if (i < keyParts.length) {
               resultParts.push(keyParts[i]);
             } else {
               resultParts.push(tPart);
