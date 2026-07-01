@@ -109,15 +109,10 @@
         border-color: #3a3a3a;
       }
       .cd-kv {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        margin-top: 6px;
-      }
-      .cd-kv .cd-row {
         display: grid;
-        grid-template-columns: 110px 1fr;
-        gap: 10px;
+        grid-template-columns: auto 1fr;
+        gap: 3px 10px;
+        margin-top: 6px;
       }
       .cd-kv .cd-key {
         color: #8a8a8a;
@@ -6535,7 +6530,7 @@
           + (p.bbox ? `<button id="center-collection-btn" class="search-active" style="padding:1px 6px; font-size:10px; cursor:pointer; height:18px; border-radius:3px; line-height:1;">Center</button>` : "")
           + `</div>`
           + `<div class="cd-kv">`
-          + rows.map(([k, v]) => `<div class="cd-row"><span class="cd-key">${k}</span><span>${v}</span></div>`).join("")
+          + rows.map(([k, v]) => `<span class="cd-key">${k}</span><span>${v}</span>`).join("")
           + `</div>`
           + hint;
 
