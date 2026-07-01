@@ -153,11 +153,14 @@ collections:
       root_prefix: "Imagery/_Tiles/VTORTHO/"
       region: const:vt
       discovery: s3-prefix         # .../<res>/<profile>/<year>/COGS/VT_<tile>_<yyyymmdd>.tif
-      cog_filter: "key.endswith('.tif') and '/COGS/' in key"
+      cog_filter: "key.endswith('.tif') and '/CLRIR/' in key"   # CLRIR (4-band) only; NOT PAN (1-band)
     notes: >
       One bucket, several products. Tiled VTORTHO chosen over the flat statewide
       mosaics (which include year-range vintages like 2016-2019). LeafOFF/ON;
-      PAN(1-band)/CLRIR(4-band); GSD to 13cm.
+      GSD to 13cm. Scope to the CLRIR (4-band color-infrared) product only -- the
+      sibling PAN product is single-band panchromatic and is NOT displayable
+      imagery here (it broke the RGBA render path). Both share a `/COGS/` path
+      segment, so filter on `/CLRIR/`, not `/COGS/`.
 
 
   # -----------------------------------------------------------------------------------------------------------
