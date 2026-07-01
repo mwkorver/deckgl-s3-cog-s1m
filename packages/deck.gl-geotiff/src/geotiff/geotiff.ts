@@ -4,7 +4,6 @@ import type {
   ConcurrencyLimiter,
   Priority,
   RasterArray,
-  RasterArrayBandSeparate,
   RasterArrayPixelInterleaved,
 } from "@s3-cog/geotiff";
 import { GeoTIFF } from "@s3-cog/geotiff";
