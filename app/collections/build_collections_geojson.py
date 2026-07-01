@@ -55,6 +55,7 @@ def main():
                 "years": ext.get("years"),
                 "bucket": src.get("bucket"),
                 "bucket_region": src.get("bucket_region"),
+                "root_prefix": src.get("root_prefix", ""),
                 "access": src.get("access"),
                 "cog_verified": bool(c.get("cog_verified")),
                 "display": c.get("display"),
