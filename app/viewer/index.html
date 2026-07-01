@@ -5086,6 +5086,7 @@
         if (tabName === "ingest") {
           switchIngestMode(ingestMode);
         }
+        if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
       }
 
       function renderKeyValue(target, values) {
@@ -6149,6 +6150,7 @@
           ingestCatalogFieldsWrap.style.display = "none";
           ingestCustomFieldsWrap.style.display = "block";
         }
+        if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
       }
 
       async function loadIngestCatalogOptions() {
@@ -6245,8 +6247,17 @@
 
       ingestModeCatalogBtn.addEventListener("click", () => switchIngestMode("catalog"));
       ingestModeCustomBtn.addEventListener("click", () => switchIngestMode("custom"));
-      ingestCatalogCollectionEl.addEventListener("change", loadIngestCatalogOptions);
-      ingestCatalogRegionEl.addEventListener("change", updateCatalogYearDropdown);
+      ingestCatalogCollectionEl.addEventListener("change", () => {
+        loadIngestCatalogOptions();
+        if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+      });
+      ingestCatalogRegionEl.addEventListener("change", () => {
+        updateCatalogYearDropdown();
+        if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+      });
+      ingestCatalogYearEl.addEventListener("change", () => {
+        if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+      });
 
       function emptyFC() { return { type: "FeatureCollection", features: [] }; }
 
@@ -6494,13 +6505,43 @@
         if (firstFeature && prefixPath.includes("{")) {
           prefixPath = resolveTemplate(prefixPath, firstFeature);
         } else if (prefixPath.includes("{")) {
-          const st = stateEl.value || "[state]";
-          const yr = yearEl.value || "[year]";
+          const isIngestTab = document.getElementById("tab-ingest")?.classList.contains("active");
+          let st = stateEl.value || "[state]";
+          let yr = yearEl.value || "[year]";
+          let optText = yearEl.options[yearEl.selectedIndex]?.textContent || "";
+
+          if (isIngestTab) {
+            const ingReg = document.getElementById("ingest-catalog-region")?.value;
+            const ingYr = document.getElementById("ingest-catalog-year")?.value;
+            if (ingReg) st = ingReg;
+            if (ingYr) {
+              yr = ingYr;
+              const ingYrEl = document.getElementById("ingest-catalog-year");
+              optText = ingYrEl?.options[ingYrEl.selectedIndex]?.textContent || "";
+            }
+          }
+
           const stCode = st ? st.split("-")[0] : "[state]";
+          
+          let res = "[resolution]";
+          if (stCode && yr && searchAvailabilityGsd[stCode]) {
+            const gsd = searchAvailabilityGsd[stCode][String(yr)];
+            if (gsd) {
+              const label = gsdLabel(Number(gsd));
+              if (label) res = label.replace(/\s+/g, ""); // e.g. "60cm"
+            }
+          }
+          if (res === "[resolution]" && optText) {
+            const match = optText.match(/(\d+)\s*(cm|m)/i);
+            if (match) {
+              res = match[1] + match[2].toLowerCase();
+            }
+          }
+
           prefixPath = prefixPath
             .replace(/{state}/g, stCode)
             .replace(/{year}/g, yr)
-            .replace(/{resolution}/g, "[resolution]")
+            .replace(/{resolution}/g, res)
             .replace(/{zone}/g, "[zone]")
             .replace(/{phase}/g, "[phase]");
         }
