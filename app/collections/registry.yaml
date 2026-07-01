@@ -39,17 +39,18 @@ collections:
 
   - id: naip
     title: NAIP (USDA National Agriculture Imagery Program)
-    active: true
+    active: true                   # us-west-2 bucket, read cross-region (requester-pays)
     status: ready
     extent:
-      region_kind: us-conus        # covers all CONUS states; region is key-parsed
-      bbox: [-125.0, 24.0, -66.5, 49.5]
-      years: [2010, 2023]          # varies by state; refine from footprint lake
+      region_kind: us-state
+      region_code: CONUS
+      bbox: [-124.8, 24.4, -66.9, 49.38]
+      years: [2010, 2024]
     source:
       bucket: naip-analytic        # 4-band RGBIR COG
       bucket_region: us-west-2
       access: requester-pays
-      root_prefix: "{state}/{year}/[resolution]/rgbir_cog/"
+      root_prefix: "{state}/{year}/{resolution}/rgbir_cog/{zone}/"
       region: key-parsed           # state from key path
       discovery: manifest-index    # pre-published manifest; s3-prefix also works
       cog_filter: "key.endswith('.tif') and '/rgbir_cog/' in key"
@@ -73,7 +74,7 @@ collections:
       bucket: kyfromabove
       bucket_region: us-west-2
       access: public               # --no-sign-request; no RequestPayer
-      root_prefix: "imagery/orthos/[phase]/"
+      root_prefix: "imagery/orthos/{phase}/"
       region: const:ky
       discovery: s3-prefix         # 2-level: list product folders, match KY_KYAPED_<year>_*
       cog_filter: "key.endswith('_cog.tif') and no {Overviews,Metadata,TileGrid,County-Mosaics,FlightInformationData}"
@@ -116,7 +117,7 @@ collections:
       bucket: gisimageryingov
       bucket_region: us-east-2
       access: public
-      root_prefix: "imageryoptimized/statewide/{year}/[zone]/[resolution]/"
+      root_prefix: "imageryoptimized/statewide/{year}/{zone}/{resolution}/"
       region: const:in
       discovery: s3-prefix         # statewide/<year>/<SPE|SPW>/<res>in/in<year>_<tile>_<res>.tif
       cog_filter: "key.endswith('.tif') and '/imageryoptimized/statewide/' in key"

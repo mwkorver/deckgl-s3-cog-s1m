@@ -5739,6 +5739,7 @@
 
            const features = data.features || [];
           lastSearchFeatures = features;
+          if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
           lastSearchBbox = body.bbox;
           const isLake = true;
           const engineName = "GeoParquet lake (DuckDB direct)";
@@ -6456,6 +6457,27 @@
           });
         }
       }
+      function resolveTemplate(template, href) {
+        if (!href) return template;
+        const key = href.replace(/^s3:\/\/[^\/]+\//, "");
+        const templateParts = template.split("/");
+        const keyParts = key.split("/");
+        const resultParts = [];
+        for (let i = 0; i < templateParts.length; i++) {
+          const tPart = templateParts[i];
+          if (tPart.startsWith("{") && tPart.endsWith("}")) {
+            if (i < keyParts.length) {
+              resultParts.push(keyParts[i]);
+            } else {
+              resultParts.push(tPart);
+            }
+          } else {
+            resultParts.push(tPart);
+          }
+        }
+        return resultParts.join("/");
+      }
+
       function renderCollectionDetail(id) {
         const el = document.getElementById("collection-detail");
         if (!el) return;
@@ -6464,12 +6486,22 @@
         const avail = collectionAvailability(p);
         const badgeCls = avail.cls === "status-ok" ? "ok" : avail.cls === "status-warn" ? "warn" : "neutral";
         const yrs = Array.isArray(p.years) && p.years.length === 2 ? `${p.years[0]}–${p.years[1]}` : "—";
+        
         let prefixPath = p.root_prefix || "—";
-        if (prefixPath.includes("{state}") || prefixPath.includes("{year}")) {
+        const firstFeature = Array.isArray(lastSearchFeatures) && lastSearchFeatures[0];
+        if (firstFeature && prefixPath.includes("{")) {
+          const href = firstFeature.assets?.image?.href || "";
+          prefixPath = resolveTemplate(prefixPath, href);
+        } else if (prefixPath.includes("{")) {
           const st = stateEl.value || "[state]";
           const yr = yearEl.value || "[year]";
           const stCode = st ? st.split("-")[0] : "[state]";
-          prefixPath = prefixPath.replace(/{state}/g, stCode).replace(/{year}/g, yr);
+          prefixPath = prefixPath
+            .replace(/{state}/g, stCode)
+            .replace(/{year}/g, yr)
+            .replace(/{resolution}/g, "[resolution]")
+            .replace(/{zone}/g, "[zone]")
+            .replace(/{phase}/g, "[phase]");
         }
 
         const rows = [

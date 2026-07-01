@@ -9,23 +9,23 @@
         "title": "NAIP (USDA National Agriculture Imagery Program)",
         "active": true,
         "status": "ready",
-        "region_kind": "us-conus",
-        "region_code": null,
+        "region_kind": "us-state",
+        "region_code": "CONUS",
         "years": [
           2010,
-          2023
+          2024
         ],
         "bucket": "naip-analytic",
         "bucket_region": "us-west-2",
-        "root_prefix": "{state}/{year}/[resolution]/rgbir_cog/",
+        "root_prefix": "{state}/{year}/{resolution}/rgbir_cog/{zone}/",
         "access": "requester-pays",
         "cog_verified": true,
         "display": null,
         "bbox": [
-          -125.0,
-          24.0,
-          -66.5,
-          49.5
+          -124.8,
+          24.4,
+          -66.9,
+          49.38
         ]
       },
       "geometry": {
@@ -33,24 +33,24 @@
         "coordinates": [
           [
             [
-              -125.0,
-              24.0
+              -124.8,
+              24.4
             ],
             [
-              -66.5,
-              24.0
+              -66.9,
+              24.4
             ],
             [
-              -66.5,
-              49.5
+              -66.9,
+              49.38
             ],
             [
-              -125.0,
-              49.5
+              -124.8,
+              49.38
             ],
             [
-              -125.0,
-              24.0
+              -124.8,
+              24.4
             ]
           ]
         ]
@@ -71,7 +71,7 @@
         ],
         "bucket": "kyfromabove",
         "bucket_region": "us-west-2",
-        "root_prefix": "imagery/orthos/[phase]/",
+        "root_prefix": "imagery/orthos/{phase}/",
         "access": "public",
         "cog_verified": true,
         "display": null,
@@ -185,7 +185,7 @@
         ],
         "bucket": "gisimageryingov",
         "bucket_region": "us-east-2",
-        "root_prefix": "imageryoptimized/statewide/{year}/[zone]/[resolution]/",
+        "root_prefix": "imageryoptimized/statewide/{year}/{zone}/{resolution}/",
         "access": "public",
         "cog_verified": true,
         "display": {
