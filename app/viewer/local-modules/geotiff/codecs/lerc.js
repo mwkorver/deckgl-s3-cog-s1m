@@ -10,9 +10,12 @@ var LercCompression;
 let wasmInitialized = false;
 async function getLerc() {
     // This import is cached by the module loader
-    const lerc = await import("lerc");
+    const lercModule = await import("lerc");
+    const lerc = lercModule.default || lercModule;
     if (!wasmInitialized) {
-        await lerc.load();
+        if (typeof lerc.load === "function") {
+            await lerc.load();
+        }
         wasmInitialized = true;
     }
     return lerc;
