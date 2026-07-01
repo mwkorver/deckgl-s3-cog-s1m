@@ -210,9 +210,8 @@ class S3PrefixListing:
         rows: dict[str, dict[str, Any]] = {}
         for region in sorted(target_regions, key=str):
             for year in target_years:
+                kept = 0  # COGs kept for this region/year partition
                 for prefix in self.enumerate_prefixes(s3, self.bucket, region, year):
-                    kept = 0  # COGs kept for this prefix; the cap counts these,
-                              # not raw keys (so .tfw sidecars don't eat the limit)
                     for key in _iter_keys(s3, self.bucket, prefix, request_payer=request_payer):
                         if not self.cog_filter(key):
                             continue
@@ -232,6 +231,8 @@ class S3PrefixListing:
                         kept += 1
                         if cap and kept >= cap:
                             break
+                    if cap and kept >= cap:
+                        break
 
         latest: dict[str, int] = {}
         for r in rows.values():
