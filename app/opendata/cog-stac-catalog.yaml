@@ -13,7 +13,7 @@ Description: >-
   It is kept current against the live bucket (NAIP's published manifest.txt is
   frozen at 2023-03-09; this catalog includes post-2023 acquisitions).
 Documentation: https://github.com/mwkorver/deck.gl-naip-conus  # TODO: docs page
-Contact: mwkorver@gmail.com  # TODO: confirm public contact
+Contact: https://github.com/mwkorver/deck.gl-naip-conus/issues
 ManagedBy: "[Mike Korver](https://github.com/mwkorver)"
 UpdateFrequency: >-
   Refreshed as USDA publishes new NAIP to naip-analytic (a few states per year);

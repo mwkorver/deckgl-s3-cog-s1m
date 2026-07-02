@@ -119,7 +119,7 @@ point the repo at it (`app/.env` already sets `AWS_PROFILE=deckgl-s3-cog-s1m-dep
 
 ```ini
 [profile deckgl-s3-cog-s1m-deploy]
-role_arn       = arn:aws:iam::495811053987:role/deckgl-s3-cog-s1m-deploy
+role_arn       = arn:aws:iam::<ACCOUNT_ID>:role/deckgl-s3-cog-s1m-deploy
 source_profile = deploy-admin        ; or: sso_session = <your-sso-session>
 region         = us-west-2
 ```
