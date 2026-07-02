@@ -3,6 +3,12 @@ node_modules/
 /packages/*/dist/
 /packages/*/node_modules/
 
+# Built package copies served at /local-modules/. The API serves these from
+# packages/*/dist locally (see config.py LOCAL_MODULE_DIRS) and deploy-viewer.sh
+# regenerates them from dist at deploy -- so this dir is neither served nor
+# deployed. Don't commit stale build output.
+/app/viewer/local-modules/
+
 # TypeScript cache
 *.tsbuildinfo
 
