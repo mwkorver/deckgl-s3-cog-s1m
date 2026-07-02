@@ -3294,8 +3294,14 @@
         if (stateEl.value) {
           body["region"] = stateEl.value;
         } else {
+          // Scope to the collection's region ONLY when that region_code names a
+          // single lake partition. NAIP's region_code is the multi-state sentinel
+          // "CONUS" -- the lake partitions by state (region=ks, mn, ...), so the
+          // server lowercases "CONUS"->"conus" and globs region=conus/** which
+          // matches nothing (0 sources -> no drape). For CONUS, send no region and
+          // let the bbox select across state partitions, mirroring the main search.
           const col = collectionById[activeCollection()];
-          if (col && col.region_code) {
+          if (col && col.region_code && col.region_code.toUpperCase() !== "CONUS") {
             body["region"] = col.region_code;
           }
         }
