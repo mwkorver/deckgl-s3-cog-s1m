@@ -1,30 +1,5 @@
 import { SampleFormat } from "@cogeotiff/core";
-import type { GeoTIFF } from "@s3-cog/geotiff";
-import type { TextureFormat, TextureProps, TypedArray } from "@luma.gl/core";
-
-/**
- * Infers texture properties from a GeoTIFF image and its associated data.
- */
-export function createTextureProps(
-  geotiff: GeoTIFF,
-  data: TypedArray,
-  options: { width: number; height: number },
-): TextureProps {
-  const { samplesPerPixel, bitsPerSample, sampleFormat } = geotiff.cachedTags;
-
-  const textureFormat = inferTextureFormat(
-    samplesPerPixel,
-    bitsPerSample,
-    sampleFormat,
-  );
-
-  return {
-    data,
-    format: textureFormat,
-    width: options.width,
-    height: options.height,
-  };
-}
+import type { TextureFormat } from "@luma.gl/core";
 
 /**
  * Infer the TextureFormat given values from GeoTIFF tags.

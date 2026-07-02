@@ -905,28 +905,6 @@
       addDebugLog("Live Debug Console Initialized successfully.");
 
       let layerNumberControlEl = null;
-      const WEB_MERCATOR_HALF_WORLD = 20037508.342789244;
-      const WEB_MERCATOR_TILE_SIZE = 512;
-      const WEB_MERCATOR_TMS = {
-        id: "WebMercatorQuad",
-        title: "WebMercatorQuad",
-        crs: "http://www.opengis.net/def/crs/EPSG/0/3857",
-        tileMatrices: Array.from({ length: 30 }, (_, z) => {
-          const matrixWidth = 2 ** z;
-          const cellSize = (WEB_MERCATOR_HALF_WORLD * 2) / (matrixWidth * WEB_MERCATOR_TILE_SIZE);
-          return {
-            id: String(z),
-            scaleDenominator: 0,
-            cellSize,
-            cornerOfOrigin: "topLeft",
-            pointOfOrigin: [-WEB_MERCATOR_HALF_WORLD, WEB_MERCATOR_HALF_WORLD],
-            tileWidth: WEB_MERCATOR_TILE_SIZE,
-            tileHeight: WEB_MERCATOR_TILE_SIZE,
-            matrixWidth,
-            matrixHeight: matrixWidth,
-          };
-        }),
-      };
 
       const map = new maplibregl.Map({
         container: "map",
@@ -2205,64 +2183,12 @@
         );
       }
 
-      function clampLatitude(lat) {
-        return Math.max(-85.05112878, Math.min(85.05112878, lat));
-      }
-
-      function lngLatToMercator(lng, lat) {
-        const clampedLat = clampLatitude(lat);
-        const x = (lng * WEB_MERCATOR_HALF_WORLD) / 180;
-        return [
-          x,
-          (WEB_MERCATOR_HALF_WORLD * Math.log(Math.tan((Math.PI / 4) + ((clampedLat * Math.PI) / 360)))) / Math.PI,
-        ];
-      }
-
-      function mercatorToLngLat(x, y) {
-        const lng = (x / WEB_MERCATOR_HALF_WORLD) * 180;
-        const lat =
-          (180 / Math.PI) *
-          (2 * Math.atan(Math.exp((y / WEB_MERCATOR_HALF_WORLD) * Math.PI)) - Math.PI / 2);
-        return [lng, lat];
-      }
-
-      function mercatorXToTileCol(x, zoom) {
-        const matrix = WEB_MERCATOR_TMS.tileMatrices[zoom];
-        const tileSpanX = matrix.cellSize * matrix.tileWidth;
-        return Math.floor((x - matrix.pointOfOrigin[0]) / tileSpanX);
-      }
-
-      function mercatorYToTileRow(y, zoom) {
-        const matrix = WEB_MERCATOR_TMS.tileMatrices[zoom];
-        const tileSpanY = matrix.cellSize * matrix.tileHeight;
-        return Math.floor((matrix.pointOfOrigin[1] - y) / tileSpanY);
-      }
-
-      function tileXToLon(x, z) {
-        return (x / Math.pow(2, z)) * 360 - 180;
-      }
-
-      function tileYToLat(y, z) {
-        const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
-        return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
-      }
-
       function currentViewerTileLayerNumber() {
         const zoom = map.getZoom();
         if (typeof zoom !== "number" || Number.isNaN(zoom)) {
           return 14;
         }
         return Math.max(0, Math.min(29, Math.round(zoom)));
-      }
-
-      // WebMercatorQuad (256-px tile) zoom: one level deeper than the 512-px
-      // viewer zoom, capped at 19. Derived purely from the viewer zoom so the
-      // tile grid is stable regardless of which reference layers are on. The
-      // cap (19) is inlined to avoid a temporal-dead-zone error: this runs
-      // during early map-control setup, before a module-level const would be
-      // initialized.
-      function currentRasterTmsLayerNumber() {
-        return Math.max(0, Math.min(19, currentViewerTileLayerNumber() + 1));
       }
 
       function currentDominantCartoCanonicalZ() {
@@ -3509,75 +3435,6 @@
         }
       }
 
-      async function ensureS1MDrapeSources(bbox, seq, schedulePaint) {
-        if (!drapeImageryActive()) return getTerrainDrapeSources();
-        const body = s1mDrapeSearchBody(bbox);
-        const key = s1mDrapeSearchKey(body);
-        if (s1mDrapeSourceKey === key) {
-          if (s1mDrapeSourcePending) {
-            s1mDrapeSourcePending.then(() => {
-              if (seq === s1mRefreshSeq) schedulePaint?.();
-            });
-          }
-          return s1mDrapeSourcePending || s1mDrapeSources;
-        }
-
-        const fallbackSources = mostRecentImagerySources(getImagerySources());
-        s1mDrapeSourceKey = key;
-        s1mDrapeSources = [];
-        s1mDrapeSourceError = null;
-        resetS1MDrapeMetrics();
-        const sourceSearchStartedAt = performance.now();
-        s1mDrapeSourcePending = apiFetch("/search", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }).then(async (response) => {
-          if (!response.ok) {
-            let detail = "";
-            try {
-              detail = await response.text();
-            } catch (_) {
-              detail = "";
-            }
-            throw new Error(`terrain drape search failed: ${response.status}${detail ? ` ${detail.slice(0, 180)}` : ""}`);
-          }
-          const data = await response.json();
-          const rawSources = (data.features || []).filter(
-            (feature) => feature?.assets?.image?.href && Array.isArray(feature?.bbox),
-          );
-          const sources = mostRecentImagerySources(rawSources);
-          if (s1mDrapeSourceKey === key) {
-            s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
-            s1mDrapeMetrics.sourceRawCount = rawSources.length;
-            s1mDrapeMetrics.sourceCount = sources.length;
-            s1mDrapeMetrics.sourceError = null;
-            s1mDrapeSources = sources;
-            renderS1MDrapeMetrics();
-            if (seq === s1mRefreshSeq) schedulePaint?.();
-          }
-          return sources;
-        }).catch((error) => {
-          if (s1mDrapeSourceKey === key) {
-            s1mDrapeSources = fallbackSources;
-            s1mDrapeSourceError = fallbackSources.length ? null : (error?.message || String(error));
-            s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
-            s1mDrapeMetrics.sourceError = s1mDrapeSourceError;
-            s1mDrapeMetrics.sourceRawCount = fallbackSources.length;
-            s1mDrapeMetrics.sourceCount = fallbackSources.length;
-            renderS1MDrapeMetrics();
-            if (seq === s1mRefreshSeq) schedulePaint?.();
-          }
-          return fallbackSources;
-        }).finally(() => {
-          if (s1mDrapeSourceKey === key) {
-            s1mDrapeSourcePending = null;
-          }
-        });
-        schedulePaint?.();
-        return s1mDrapeSourcePending;
-      }
-
       function pruneS1MDrapeSourceCache() {
         while (s1mDrapeSourceCache.size > S1M_DRAPE_SOURCE_CACHE_MAX) {
           let deleteKey = null;
@@ -4605,15 +4462,6 @@
         return `${base}/naip-coverage/{z}/{x}/{y}.mvt?${params.toString()}`;
       }
 
-      function naipCoverageMvtSourceKey() {
-        return JSON.stringify({
-          collection: activeCollection(),
-          region: stateEl.value || "",
-          year: yearEl.value || "",
-          version: NAIP_COVERAGE_MVT_VERSION,
-        });
-      }
-
       function removeNaipCoverageMvtLayer() {
         if (map.getLayer(NAIP_COVERAGE_MVT_LINE_LAYER_ID)) {
           map.removeLayer(NAIP_COVERAGE_MVT_LINE_LAYER_ID);
@@ -5130,11 +4978,6 @@
           return (180 / Math.PI) * Math.atan(Math.sinh(n));
         };
         return [lng(westX), lat(southY), lng(eastX), lat(northY)];
-      }
-
-      function colorForIndex(index, total) {
-        const hue = total <= 1 ? 210 : (210 - (index / Math.max(total - 1, 1)) * 180);
-        return `hsl(${hue}, 85%, 55%)`;
       }
 
       function switchTab(tabName) {
@@ -6320,8 +6163,6 @@
         if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
       });
 
-      function emptyFC() { return { type: "FeatureCollection", features: [] }; }
-
       // --- Terrain (S1M DEM -> 3D mesh, viewport-tiled) ---
       const terExagEl = document.getElementById("ter-exag");
       const terExagValEl = document.getElementById("ter-exag-val");
@@ -6457,11 +6298,6 @@
           collectionFeatures = [];
           collectionById = {};
         }
-      }
-      function bboxIntersectsViewport(bbox, b) {
-        // bbox = [minLon, minLat, maxLon, maxLat]
-        return !(b.getEast() < bbox[0] || b.getWest() > bbox[2] ||
-                 b.getNorth() < bbox[1] || b.getSouth() > bbox[3]);
       }
       function collectionAvailability(p) {
         if (!p.active) return { label: `available · ${p.bucket_region} · region-deferred`, cls: "muted" };

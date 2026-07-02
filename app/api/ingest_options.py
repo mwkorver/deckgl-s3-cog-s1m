@@ -3,15 +3,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from config import COLLECTION_ID, STATE_BBOXES
-
-
-def bboxes_intersect(box1: list[float], box2: list[float]) -> bool:
-    minx1, miny1, maxx1, maxy1 = box1
-    minx2, miny2, maxx2, maxy2 = box2
-    if (maxx1 - minx1) >= 360 or minx1 > maxx1:
-        return not (maxy1 < miny2 or miny1 > maxy2)
-    return not (maxx1 < minx2 or minx1 > maxx2 or maxy1 < miny2 or miny1 > maxy2)
+from config import COLLECTION_ID
 
 
 @lru_cache(maxsize=64)

@@ -1,18 +1,5 @@
 import { SampleFormat } from "@cogeotiff/core";
 /**
- * Infers texture properties from a GeoTIFF image and its associated data.
- */
-export function createTextureProps(geotiff, data, options) {
-    const { samplesPerPixel, bitsPerSample, sampleFormat } = geotiff.cachedTags;
-    const textureFormat = inferTextureFormat(samplesPerPixel, bitsPerSample, sampleFormat);
-    return {
-        data,
-        format: textureFormat,
-        width: options.width,
-        height: options.height,
-    };
-}
-/**
  * Infer the TextureFormat given values from GeoTIFF tags.
  */
 export function inferTextureFormat(samplesPerPixel, bitsPerSample, sampleFormat) {
