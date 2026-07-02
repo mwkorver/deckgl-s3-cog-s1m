@@ -987,13 +987,16 @@
       const contrastValueEl = document.getElementById("contrast-value");
       const resetDisplayEl = document.getElementById("reset-display");
 
-      // Default view: focus on the S1M terrain drape only. The flat background
-      // imagery (NAIP COG tiles, USGS WMS) and the vector overlays (S1M coverage
-      // footprints, NAIP coverage MVT, tile borders) start OFF so the map opens on
-      // just the draped 3D terrain; each can be re-enabled from its control. The
-      // terrain mesh+drape is driven by s1mActive, independent of these toggles.
-      if (footprintLayerOffEl) footprintLayerOffEl.checked = true;
-      toggleCogEl.checked = false;           // background NAIP raster (COG tiles) off
+      // Default view: open with the 2D search-results footprints and the NAIP
+      // imagery (COG tiles) already on, so the map lands on the flat imagery +
+      // returned-COG outlines from the initial auto-search. USGS WMS and the
+      // coverage MVT / S1M coverage footprints stay OFF; each can be toggled from
+      // its control. The terrain mesh+drape is driven by s1mActive, independent
+      // of these toggles.
+      const footprintLayerSearchEl = document.getElementById("footprint-layer-search");
+      if (footprintLayerSearchEl) footprintLayerSearchEl.checked = true; // 2D search-results footprints on
+      toggleNaipSearchFootprintsLayerEl.checked = true; // hidden checkbox the radio drives
+      toggleCogEl.checked = true;            // background NAIP raster (COG tiles) on
       toggleUsgsNaipWmsLayerEl.checked = false;
       toggleS1MFootprintsLayerEl.checked = false;   // coverage-footprint vector off
       toggleNaipCoverageMvtLayerEl.checked = false; // NAIP coverage MVT vector off
