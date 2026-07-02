@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js:
+    name: build · typecheck · test (JS/TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # packages/morecantile/spec and fixtures/geotiff-test-data are git
+          # submodules that typecheck + some tests read from.
+          submodules: recursive
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  python:
+    name: ruff · pytest (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt -r app/api/requirements.txt
+      - name: ruff check
+        run: ruff check .
+      - name: pytest
+        run: python -m pytest
+        working-directory: app/api
+
+  # NOTE: Biome (JS/TS lint + format) is configured (biome.json, `pnpm check`)
+  # but not yet enforced here -- the tree has accumulated style drift from
+  # running without CI. Add the job below once `pnpm check:fix` has been run
+  # and reviewed:
+  #
+  #   lint-js:
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #       - uses: pnpm/action-setup@v4
+  #       - uses: actions/setup-node@v4
+  #         with: { node-version: 20, cache: pnpm }
+  #       - run: pnpm install --frozen-lockfile
+  #       - run: pnpm exec biome ci .

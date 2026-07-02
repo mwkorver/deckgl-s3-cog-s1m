@@ -1,2 +1,6 @@
 # Development-only Python tooling. Runtime dependencies stay in app/api/requirements*.txt.
 ruff>=0.8,<1
+
+# Test runner + FastAPI TestClient transport (used by app/api/test_*.py)
+pytest>=8,<9
+httpx>=0.27

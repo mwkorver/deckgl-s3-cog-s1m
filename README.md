@@ -1,5 +1,10 @@
 # deckgl-s3-cog-s1m
 
+[![CI](https://github.com/mwkorver/deckgl-s3-cog-s1m/actions/workflows/ci.yml/badge.svg)](https://github.com/mwkorver/deckgl-s3-cog-s1m/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![linting: ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
+[![formatted with: biome](https://img.shields.io/badge/formatted%20with-biome-60a5fa.svg)](https://biomejs.dev)
+
 A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG) rendering** and **serverless spatial data lake indexing**.
 
 ![NAIP imagery draped over USGS 3DEP S1M 1-meter terrain in the browser viewer](docs/naip-terrain-drape.png)
