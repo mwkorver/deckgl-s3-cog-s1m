@@ -5060,12 +5060,13 @@
             // Drape build tuning: COG range reads dominate the summed subtile
             // durations. S3 multiplexes over HTTP/2 and the presigned URL is
             // cached, so a higher ceiling parallelises visible sub-tile reads.
-            // 20 (up from 12) trimmed time-to-fully-draped in local benchmarks
-            // (last-tile ~3.4s -> ~2.0-2.5s) with no regression; the average
-            // build is network-warmth-noisy either way. Tradeoff: these requests
-            // can compete with other same-origin imagery reads while the cold
-            // drape fills.
-            s1mDrapeConcurrencyLimiter = new geotiffCoreModule.PerOriginSemaphore({ maxRequests: 20 });
+            // Raising the old ceiling of 12 improved time-to-fully-draped in
+            // local benchmarks, but 16 vs 20 was indistinguishable (run-to-run
+            // network + persistent chunk-cache warmth swamps the difference), so
+            // use the lower of the two: these requests compete with other
+            // same-origin imagery reads (the flat-map COG tiles share the S3
+            // origin) while a cold drape fills.
+            s1mDrapeConcurrencyLimiter = new geotiffCoreModule.PerOriginSemaphore({ maxRequests: 16 });
           }
           deckOverlay = new MapboxOverlay({ interleaved: true, layers: [] });
           map.addControl(deckOverlay);
