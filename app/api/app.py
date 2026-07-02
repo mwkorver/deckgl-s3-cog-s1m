@@ -1,8 +1,6 @@
 import os
 import json
 import subprocess
-import urllib.error
-import urllib.request
 
 import s1m
 
@@ -41,7 +39,6 @@ from config import (
     OVERTURE_BUILDINGS_INDEX,
     OVERTURE_BUILDINGS_PARQUET,
     OVERTURE_SOURCE_REGION,
-    PRESIGN_EXPIRES,
     SAM3_PYTHON,
     SAM3_SCRIPT,
     SAM3_TIMEOUT_SECONDS,
