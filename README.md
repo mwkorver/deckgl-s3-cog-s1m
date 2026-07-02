@@ -2,6 +2,10 @@
 
 A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG) rendering** and **serverless spatial data lake indexing**.
 
+![NAIP imagery draped over USGS 3DEP S1M 1-meter terrain in the browser viewer](docs/naip-terrain-drape.png)
+
+*NAIP aerial imagery draped over the USGS 3DEP Seamless 1-meter DEM, rendered client-side in the browser directly from Cloud-Optimized GeoTIFFs.*
+
 The core motivation for this project is to make the numerous open Cloud-Optimized GeoTIFF (COG) datasets hosted on Amazon S3 as part of the Registry of Open Data on AWS—including the USDA National Agriculture Imagery Program (NAIP) imagery and the USGS 3DEP Seamless 1-meter (S1M) elevation DEMs—more visible, accessible, and easily explorable for users directly in the browser.
 
 ## Intended audience and purpose
