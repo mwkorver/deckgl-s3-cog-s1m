@@ -229,60 +229,6 @@
           ]
         ]
       }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "id": "vt-opendata",
-        "title": "Vermont Open Geospatial (VTORTHO)",
-        "active": true,
-        "status": "ready",
-        "region_kind": "us-state",
-        "region_code": "VT",
-        "years": [
-          1994,
-          2021
-        ],
-        "bucket": "vtopendata-prd",
-        "bucket_region": "us-east-2",
-        "root_prefix": "Imagery/_Tiles/VTORTHO/",
-        "access": "public",
-        "cog_verified": false,
-        "display": null,
-        "bbox": [
-          -73.44,
-          42.73,
-          -71.46,
-          45.02
-        ]
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -73.44,
-              42.73
-            ],
-            [
-              -71.46,
-              42.73
-            ],
-            [
-              -71.46,
-              45.02
-            ],
-            [
-              -73.44,
-              45.02
-            ],
-            [
-              -73.44,
-              42.73
-            ]
-          ]
-        ]
-      }
     }
   ]
 }
