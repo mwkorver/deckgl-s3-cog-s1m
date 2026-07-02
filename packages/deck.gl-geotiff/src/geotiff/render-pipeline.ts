@@ -11,7 +11,7 @@ import {
   MaskTexture,
   WhiteIsZero,
 } from "@s3-cog/deck.gl-raster/gpu-modules";
-import type { GeoTIFF, Overview } from "@s3-cog/geotiff";
+import type { GeoTIFF, Overview, RasterArrayPixelInterleaved } from "@s3-cog/geotiff";
 import { parseColormap, toPixelInterleaved } from "@s3-cog/geotiff";
 import type { Device, SamplerProps, Texture } from "@luma.gl/core";
 import type { GetTileDataOptions } from "../cog-layer.js";
@@ -157,19 +157,21 @@ function createUnormPipeline(
       signal,
     });
     let { array } = tile;
-    const { width, height, mask } = array;
+    if (array.layout === "band-separate") {
+      array = toPixelInterleaved(array);
+    }
+    const interleaved = array as RasterArrayPixelInterleaved;
+    const { width, height, mask } = interleaved;
 
     let numSamples = samplesPerPixel;
 
     if (samplesPerPixel === 3) {
       // WebGL2 doesn't have an RGB-only texture format; it requires RGBA.
-      array = addAlphaChannel(array);
+      array = addAlphaChannel(interleaved);
       numSamples = 4;
     }
 
-    if (array.layout === "band-separate") {
-      array = toPixelInterleaved(array);
-    }
+    const finalArray = array as RasterArrayPixelInterleaved;
 
     const textureFormat = inferTextureFormat(
       // Add one sample for added alpha channel
@@ -177,9 +179,9 @@ function createUnormPipeline(
       bitsPerSample,
       sampleFormat,
     );
-    let byteLength = array.data.byteLength;
+    let byteLength = finalArray.data.byteLength;
     const texture = device.createTexture({
-      data: array.data,
+      data: finalArray.data,
       format: textureFormat,
       width,
       height,
