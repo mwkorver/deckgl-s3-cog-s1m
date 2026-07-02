@@ -1286,7 +1286,7 @@
             drapeImages: s1mDrapeCache.size,
             drapeImageMax: S1M_DRAPE_CACHE_MAX,
             decodedCogTiles: s1mCogTileCache.size,
-            decodedCogTileMax: S1M_COG_TILE_CACHE_MAX,
+            decodedCogTileMax: S1M_COG_TILE_CACHE_MAX_COUNT,
             geotiffSources: geotiffSourceCache.size,
             geotiffSourceMax: GEOTIFF_SOURCE_CACHE_MAX,
             drapeSourceQueries: s1mDrapeSourceCache.size,
@@ -1944,7 +1944,7 @@
       function s1mDecodedCogTileCacheMemoryReport() {
         return {
           entries: s1mCogTileCache.size,
-          maxEntries: S1M_COG_TILE_CACHE_MAX,
+          maxEntries: S1M_COG_TILE_CACHE_MAX_COUNT,
           resolvedEntries: s1mCogTileCacheBytes.size,
           resolvedBytes: byteReport(sumNumberValues(s1mCogTileCacheBytes)),
           note: "Resolved bytes are exact decoded RGBA typed-array payloads for COG tiles used while building drapes.",
@@ -2098,7 +2098,7 @@
         const textureText = ` · ${S1M_SUBTILE_DRAPE_SIZE}px sub-tiles (≤${s1mSubdivMax()}×) · sources ${s1mInitialDrapeSourcesPerTile()}/${s1mMaxDrapeSourcesPerTile()}`;
         const cacheText =
           ` · cache drape ${s1mDrapeCache.size}/${S1M_DRAPE_CACHE_MAX} (${fmtPct(s1mDrapeCache.size, S1M_DRAPE_CACHE_MAX)})` +
-          ` · COG ${s1mCogTileCache.size}/${S1M_COG_TILE_CACHE_MAX} (${fmtPct(s1mCogTileCache.size, S1M_COG_TILE_CACHE_MAX)})` +
+          ` · COG ${s1mCogTileCache.size} tiles (${(s1mCogTileCacheByteTotal / (1024 * 1024)).toFixed(0)}/${S1M_COG_TILE_CACHE_MAX_BYTES / (1024 * 1024)} MB)` +
           ` · TIFF ${geotiffSourceCache.size}/${GEOTIFF_SOURCE_CACHE_MAX} (${fmtPct(geotiffSourceCache.size, GEOTIFF_SOURCE_CACHE_MAX)})` +
           ` · evict d/c/t ${s1mBench.drapeEvict}/${s1mBench.cogEvict}/${s1mBench.tiffEvict}`;
         const avgSignMs = s1mBench.tiffSignN ? s1mBench.tiffSignMs / s1mBench.tiffSignN : null;
@@ -3745,19 +3745,57 @@
       // sub-tile. Keyed on imageryRevision, which is bumped (and this cache
       // cleared) on every imagery/display change, so entries never go stale. The
       // decoded tiles are read-only, so sharing one array across sub-tiles is safe.
-      const S1M_COG_TILE_CACHE_MAX = 24;
+      // Byte-budgeted LRU. A fixed count cap starved the cross-sub-tile sharing
+      // this cache exists for: a single cold drape touches 100-200 unique COG
+      // tiles (77 sub-tiles x ~2 sources x ~3 tiles, minus edge sharing), so a
+      // 24-slot cap evicted tiles before neighbours reused them (200+ evictions
+      // per fill), turning would-be hits back into ~2s range reads. Cap on bytes
+      // instead so the whole visible working set fits; a high count acts only as
+      // a backstop. Tile byte-size is known only after decode, so in-flight
+      // (pending) entries count as 0 until they resolve -- the cache can hold the
+      // full in-flight burst, then evicts oldest resolved tiles once over budget.
+      const S1M_COG_TILE_CACHE_MAX_BYTES = 64 * 1024 * 1024; // ~64 MB decoded RGBA
+      const S1M_COG_TILE_CACHE_MAX_COUNT = 256;              // backstop on entry count
       const s1mCogTileCache = new Map();   // key -> Promise<decoded rgba tile>
       const s1mCogTileCacheBytes = new Map(); // key -> resolved rgba.data.byteLength
+      let s1mCogTileCacheByteTotal = 0;    // running sum of resolved bytes
+
+      function setS1MCogTileCacheBytes(key, bytes) {
+        const prev = s1mCogTileCacheBytes.get(key);
+        if (prev !== undefined) s1mCogTileCacheByteTotal -= prev;
+        s1mCogTileCacheBytes.set(key, bytes);
+        s1mCogTileCacheByteTotal += bytes;
+      }
 
       function deleteS1MCogTileCacheEntry(key) {
         if (!key) return;
         s1mCogTileCache.delete(key);
-        s1mCogTileCacheBytes.delete(key);
+        const prev = s1mCogTileCacheBytes.get(key);
+        if (prev !== undefined) {
+          s1mCogTileCacheByteTotal -= prev;
+          s1mCogTileCacheBytes.delete(key);
+        }
       }
 
       function clearS1MCogTileCacheEntries() {
         s1mCogTileCache.clear();
         s1mCogTileCacheBytes.clear();
+        s1mCogTileCacheByteTotal = 0;
+      }
+
+      function evictS1MCogTileCache() {
+        // Oldest-first (Map preserves insertion order); MRU entries are re-set on
+        // hit so they move to the end and survive.
+        while (
+          s1mCogTileCache.size > 1 &&
+          (s1mCogTileCacheByteTotal > S1M_COG_TILE_CACHE_MAX_BYTES ||
+            s1mCogTileCache.size > S1M_COG_TILE_CACHE_MAX_COUNT)
+        ) {
+          const oldest = s1mCogTileCache.keys().next().value;
+          if (oldest === undefined) break;
+          deleteS1MCogTileCacheEntry(oldest);
+          s1mBench.cogEvict += 1;
+        }
       }
 
       function getDrapeCogTile(source, image, level, tx, ty) {
@@ -3765,13 +3803,8 @@
         let pending = s1mCogTileCache.get(key);
         if (pending) {
           s1mBench.cogHit += 1;
-          const cachedBytes = s1mCogTileCacheBytes.get(key);
           s1mCogTileCache.delete(key);     // LRU: move to most-recently-used
           s1mCogTileCache.set(key, pending);
-          if (cachedBytes !== undefined) {
-            s1mCogTileCacheBytes.delete(key);
-            s1mCogTileCacheBytes.set(key, cachedBytes);
-          }
           return pending;
         }
         s1mBench.cogMiss += 1;
@@ -3784,15 +3817,13 @@
           s1mBench.cogFetchMs += t1 - t0; s1mBench.cogFetchN += 1;
           s1mBench.decodeMs += t2 - t1; s1mBench.decodeN += 1;
           if (s1mCogTileCache.get(key) === pending) {
-            s1mCogTileCacheBytes.set(key, rgba?.data?.byteLength || 0);
+            setS1MCogTileCacheBytes(key, rgba?.data?.byteLength || 0);
+            evictS1MCogTileCache();   // budget now knows this tile's real size
           }
           return rgba;
         })().catch((error) => { deleteS1MCogTileCacheEntry(key); throw error; });
         s1mCogTileCache.set(key, pending);
-        while (s1mCogTileCache.size > S1M_COG_TILE_CACHE_MAX) {
-          deleteS1MCogTileCacheEntry(s1mCogTileCache.keys().next().value);  // evict oldest
-          s1mBench.cogEvict += 1;
-        }
+        evictS1MCogTileCache();
         return pending;
       }
 
@@ -3910,18 +3941,26 @@
         const c1 = Math.min(level.tileCount.x - 1, Math.floor(Math.max(...cols) / tw));
         const r0 = Math.max(0, Math.floor(Math.min(...rows) / th));
         const r1 = Math.min(level.tileCount.y - 1, Math.floor(Math.max(...rows) / th));
-        if (c0 > c1 || r0 > r1) return;
+        if (c0 > c1 || r0 > r1) return 0;
+        // Collect the covering COG tiles into a flat grid addressed by numeric
+        // index (tileGridW * (ty-r0) + (tx-c0)) so the per-pixel raster loop below
+        // needs no template-string key or Map lookup -- at 384^2 px x many source
+        // paints those string allocations were pure GC pressure.
+        const tileGridW = c1 - c0 + 1;
+        const tileGridH = r1 - r0 + 1;
+        const tiles = new Array(tileGridW * tileGridH);
         const tilePromises = [];
         for (let ty = r0; ty <= r1; ty++) {
           for (let tx = c0; tx <= c1; tx++) {
-            tilePromises.push(getDrapeCogTile(source, image, level, tx, ty).then((rgba) => {
-              return [`${tx},${ty}`, rgba];
-            }));
+            const gi = (ty - r0) * tileGridW + (tx - c0);
+            tilePromises.push(
+              getDrapeCogTile(source, image, level, tx, ty).then((rgba) => { tiles[gi] = rgba; }),
+            );
           }
         }
-        const fetched = await Promise.all(tilePromises);
-        const tileMap = new Map(fetched);
+        await Promise.all(tilePromises);
         const rasterStartedAt = performance.now();
+        let filled = 0;
         for (let y = 0; y < drapeSize; y++) {
           const v = drapeSize > 1 ? y / (drapeSize - 1) : 0;
           for (let x = 0; x < drapeSize; x++) {
@@ -3943,7 +3982,7 @@
             }
             const tx = Math.floor(col / tw);
             const ty = Math.floor(row / th);
-            const src = tileMap.get(`${tx},${ty}`);
+            const src = tiles[(ty - r0) * tileGridW + (tx - c0)];
             if (!src) {
               continue;
             }
@@ -3955,17 +3994,12 @@
             out[dst + 1] = src.data[srcIdx + 1];
             out[dst + 2] = src.data[srcIdx + 2];
             out[dst + 3] = src.data[srcIdx + 3];
+            filled += 1;
           }
         }
         s1mBench.rasterMs += performance.now() - rasterStartedAt;
         s1mBench.rasterN += 1;
-      }
-
-      function drapeIsFullyOpaque(out) {
-        for (let i = 3; i < out.length; i += 4) {
-          if (out[i] <= 0) return false;
-        }
-        return true;
+        return filled;   // count of newly-opaque pixels this source contributed
       }
 
       function activeDrapeCacheKeys() {
@@ -4030,11 +4064,17 @@
 
       async function buildDrapeImage(data, region, sources, drapeSize) {
         const out = new Uint8ClampedArray(drapeSize * drapeSize * 4);
+        const totalPixels = drapeSize * drapeSize;
         const cappedSources = sources.slice(0, s1mMaxDrapeSourcesPerTile());
+        // paintDrapeSource only writes previously-transparent pixels and returns
+        // how many it newly filled, so a running sum tells us when the sub-tile is
+        // fully opaque in O(1) -- no need to rescan the whole 384^2 buffer per
+        // source (drapeIsFullyOpaque) just to decide whether to stop early.
+        let filled = 0;
         for (let i = 0; i < cappedSources.length; i++) {
           const source = cappedSources[i];
-          await paintDrapeSource(data, region, source, out, drapeSize);
-          if (drapeIsFullyOpaque(out)) break;
+          filled += await paintDrapeSource(data, region, source, out, drapeSize) || 0;
+          if (filled >= totalPixels) break;
           if (i + 1 === s1mInitialDrapeSourcesPerTile() && cappedSources.length > i + 1) {
             s1mDrapeMetrics.noDataSourceFallbacks += 1;
           }
