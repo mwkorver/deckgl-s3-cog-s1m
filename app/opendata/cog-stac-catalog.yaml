@@ -14,7 +14,7 @@ Description: >-
   frozen at 2023-03-09; this catalog includes post-2023 acquisitions).
 Documentation: https://github.com/mwkorver/deck.gl-naip-conus  # TODO: docs page
 Contact: https://github.com/mwkorver/deck.gl-naip-conus/issues
-ManagedBy: "[Mike Korver](https://github.com/mwkorver)"
+ManagedBy: "[Mark Korver](https://github.com/mwkorver)"
 UpdateFrequency: >-
   Refreshed as USDA publishes new NAIP to naip-analytic (a few states per year);
   historical partitions are immutable.
@@ -49,9 +49,9 @@ DataAtWork:
   Tutorials:
     - Title: Query NAIP coverage with DuckDB
       URL: https://github.com/mwkorver/deck.gl-naip-conus  # TODO: tutorial link
-      AuthorName: Mike Korver
+      AuthorName: Mark Korver
   Tools & Applications:
     - Title: deck.gl-raster NAIP viewer (browser COG rendering over the catalog)
       URL: https://github.com/mwkorver/deck.gl-naip-conus
-      AuthorName: Mike Korver
+      AuthorName: Mark Korver
   Publications: []
