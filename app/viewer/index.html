@@ -3754,7 +3754,15 @@
       // a backstop. Tile byte-size is known only after decode, so in-flight
       // (pending) entries count as 0 until they resolve -- the cache can hold the
       // full in-flight burst, then evicts oldest resolved tiles once over budget.
-      const S1M_COG_TILE_CACHE_MAX_BYTES = 64 * 1024 * 1024; // ~64 MB decoded RGBA
+      // 96 MB picked from a controlled size sweep (2D imagery off, chunk cache
+      // cold per trial, medians). The cold working set for a typical pitched view
+      // (~6 S1M tiles -> ~77 sub-tiles) is ~171 unique COG tiles; redundant
+      // network re-fetches from cross-sub-tile eviction fall off as 16 MB 25% ->
+      // 32 MB 17% -> 64 MB 9% -> 128 MB 0%. Wall time is flat across sizes (fetch
+      // concurrency hides the redundant reads), so this trades S3 GETs (requester
+      // -pays) + larger-viewport / warm-revisit headroom against memory: 96 MB
+      // absorbs ~all of the working set with more allocation headroom than 128 MB.
+      const S1M_COG_TILE_CACHE_MAX_BYTES = 96 * 1024 * 1024; // ~96 MB decoded RGBA
       const S1M_COG_TILE_CACHE_MAX_COUNT = 256;              // backstop on entry count
       const s1mCogTileCache = new Map();   // key -> Promise<decoded rgba tile>
       const s1mCogTileCacheBytes = new Map(); // key -> resolved rgba.data.byteLength
