@@ -1,1 +1,0 @@
-{"version":3,"file":"lzw.d.ts","sourceRoot":"","sources":["../../src/codecs/lzw.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,cAAc,CAAC;AAEpD,wBAAsB,MAAM,CAC1B,KAAK,EAAE,WAAW,EAClB,QAAQ,EAAE,eAAe,GACxB,OAAO,CAAC,WAAW,CAAC,CAMtB"}
