@@ -11,6 +11,38 @@ A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG
 
 *NAIP aerial imagery draped over the USGS 3DEP Seamless 1-meter DEM, rendered client-side in the browser directly from Cloud-Optimized GeoTIFFs.*
 
+## Why this repository exists
+
+I was browsing the excellent **deck.gl-raster** examples:
+
+https://developmentseed.org/deck.gl-raster/examples/
+
+One of the demos renders a NAIP mosaic using the Microsoft Planetary Computer. Which made me wonder: **why is it always Microsoft's copy of NAIP?**
+
+The original cloud-hosted NAIP archive landed on Amazon S3 years ago as part of the AWS Open Data Program. It was one of the first really big geospatial datasets to prove you could stop shipping hard drives around and start treating imagery like any other cloud-native data source. I spent a good chunk of my time at AWS helping customers do exactly that, so seeing the S3 version mostly absent from demos felt... odd.
+
+So this repository started as a simple exercise: take the demo and point it at **`s3://naip-analytic`** instead.
+
+Then scope creep happened.
+
+Around the same time, USGS released the **Seamless 1 Meter Digital Elevation Model (S1M)** as part of the 3D Elevation Program (3DEP).
+
+https://www.usgs.gov/3d-elevation-program/new-product-3d-elevation-program-seamless-1-meter-digital-elevation-model-s1m
+
+The word *seamless* caught my eye. Years ago, while building a browser-based 3D visualization system with a small team in Tokyo, stitching DEMs together without ugly seams consumed far more engineering effort than it should have. Seeing someone solve that problem at continental scale naturally raises the question:
+
+*What can you build with it?*
+
+The answer, at least for this repository, is a browser that streams imagery and terrain directly from object storage. No tile server. No terrain server. No rendering backend. Just Cloud Optimized GeoTIFFs, HTTP range requests, WebGL, and a little JavaScript.
+
+Well... almost.
+
+There are a couple of AWS Lambda functions. One answers the question, "Which COGs cover the current view?" Another ingests newly published COGs into the catalog. Everything interesting happens in the browser.
+
+Since we already have terrain, it seemed a shame not to add buildings. Flip on the **Show Buildings** checkbox and the application pulls footprints from the Overture Maps Foundation dataset, samples each footprint against the S1M terrain so it sits on the ground instead of floating in space, and extrudes it into a 3D model.
+
+The broader goal is to explore what modern cloud-native geospatial applications look like when the cloud stores the data, the browser does the work, and servers mostly get out of the way.
+
 The core motivation for this project is to make the numerous open Cloud-Optimized GeoTIFF (COG) datasets hosted on Amazon S3 as part of the Registry of Open Data on AWS—including the USDA National Agriculture Imagery Program (NAIP) imagery and the USGS 3DEP Seamless 1-meter (S1M) elevation DEMs—more visible, accessible, and easily explorable for users directly in the browser.
 
 ## Intended audience and purpose
