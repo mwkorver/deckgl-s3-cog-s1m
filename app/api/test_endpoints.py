@@ -1,9 +1,8 @@
 import os
 import sys
 
-# Override S3 lake paths to be local/empty for tests to prevent S3 credential validation
+# Override the S3 lake path to be local/empty for tests to prevent S3 credential validation
 os.environ["S3_COG_LAKE_ROOT"] = ""
-os.environ["S3_COG_EMBED_LAKE_ROOT"] = ""
 
 import datetime
 from unittest.mock import MagicMock, patch
@@ -164,20 +163,6 @@ def test_search_validation():
     assert response.status_code == 400
 
 
-def test_detect_requires_configured_runner():
-    """Detection should fail before COG access when the SAM runner is not configured."""
-    with patch("app.SAM3_PYTHON", ""), patch("app.SAM3_SCRIPT", ""):
-        response = client.post(
-            "/detect",
-            json={
-                "bbox": [-75.0, 39.0, -74.0, 40.0],
-                "concept": "swimming pool",
-            },
-        )
-    assert response.status_code == 503
-    assert "SAM3_PYTHON and SAM3_SCRIPT" in response.json()["detail"]
-
-
 def test_search_success():
     """Verify search executes and maps DuckDB rows to a STAC FeatureCollection."""
     with patch("app.get_lake_duckdb") as mock_get_duckdb:
@@ -212,103 +197,3 @@ def test_search_success():
         assert feat["collection"] == "naip"
         assert feat["properties"]["proj:epsg"] == 3857
         assert feat["assets"]["image"]["href"] == "s3://naip-analytic/state/year/tile.tif"
-
-
-def test_similar_validation():
-    """Verify /similar input validation on missing point and bad k/year."""
-    response = client.post("/similar", json={})
-    assert response.status_code == 400
-    assert "lon and lat" in response.json()["detail"]
-
-    response = client.post("/similar", json={"lon": -71.4, "lat": "not-a-number"})
-    assert response.status_code == 400
-
-    response = client.post("/similar", json={"lon": -71.4, "lat": 41.8, "year": "soon"})
-    assert response.status_code == 400
-    assert "year" in response.json()["detail"]
-
-
-def test_similar_success():
-    """Verify /similar resolves the query chip, ranks rows, and maps them to features."""
-    with patch("app.get_lake_duckdb") as mock_get_duckdb:
-        mock_con = MagicMock()
-        mock_cursor = MagicMock()
-        mock_con.cursor.return_value = mock_cursor
-        mock_get_duckdb.return_value = mock_con
-
-        chip_row = (
-            "m_4107113_ne_19_060_20210826", "41071",
-            -71.4133, 41.8229, -71.4114, 41.8243,
-            datetime.date(2021, 8, 26), 0.6, "ri", 2021,
-        )
-        dummy_geom = '{"type":"Polygon","coordinates":[[[-71.41,41.82],[-71.40,41.82],[-71.40,41.83],[-71.41,41.83],[-71.41,41.82]]]}'
-        knn_rows = [
-            (
-                "m_4107113_ne_19_060_20210826", "41071", dummy_geom,
-                -71.4114, 41.8229, -71.4095, 41.8243,
-                datetime.date(2021, 8, 26), 0.6,
-                "s3://naip-analytic/ri/2021/60cm/rgbir_cog/41071/m_4107113_ne_19_060_20210826.tif",
-                "ri", 2021, 0.9881,
-            )
-        ]
-        mock_cursor.execute.return_value.fetchone.return_value = chip_row
-        mock_cursor.execute.return_value.fetchall.return_value = knn_rows
-
-        response = client.post(
-            "/similar",
-            json={"lon": -71.412, "lat": 41.824, "region": "ri", "year": 2021, "k": 10},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["type"] == "FeatureCollection"
-        assert data["query"]["chip"]["naip_item"] == "m_4107113_ne_19_060_20210826"
-        assert data["query"]["chip"]["region"] == "ri"
-        assert len(data["features"]) == 1
-        feat = data["features"][0]
-        assert feat["properties"]["sim"] == 0.9881
-        assert feat["properties"]["block"] == "41071"
-        assert feat["assets"]["source_image"]["href"].startswith("s3://naip-analytic/")
-
-
-def test_similar_no_chip_at_point():
-    """A point no chip covers returns 404, not an empty collection."""
-    with patch("app.get_lake_duckdb") as mock_get_duckdb:
-        mock_con = MagicMock()
-        mock_cursor = MagicMock()
-        mock_con.cursor.return_value = mock_cursor
-        mock_get_duckdb.return_value = mock_con
-        mock_cursor.execute.return_value.fetchone.return_value = None
-
-        response = client.post("/similar", json={"lon": -70.0, "lat": 40.5, "region": "ri"})
-        assert response.status_code == 404
-        assert "no embedding chip" in response.json()["detail"]
-
-
-if __name__ == "__main__":
-    tests = [
-        test_health,
-        test_collections,
-        test_collection_by_id,
-        test_availability,
-        test_sign,
-        test_sign_rejects_private_and_unknown_buckets,
-        test_sign_rejects_malformed_s3_urls,
-        test_s3_proxy_is_not_exposed,
-        test_search_validation,
-        test_search_success,
-        test_similar_validation,
-        test_similar_success,
-        test_similar_no_chip_at_point
-    ]
-    failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"PASS {t.__name__}")
-        except Exception as e:
-            failed += 1
-            print(f"FAIL {t.__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-    print(f"\n{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)

@@ -3,7 +3,7 @@ from pathlib import Path
 from threading import Lock
 
 from aws_s3 import get_aws_credentials, get_aws_credentials_expiry, get_s3_client, reset_aws_credentials_cache
-from config import COLLECTION_ID, EMBED_LAKE_ROOT, LAKE_ROOT
+from config import COLLECTION_ID, LAKE_ROOT
 
 
 # Standalone in-process DuckDB connection -- the only query engine. It reads the
@@ -36,7 +36,7 @@ def get_lake_duckdb():
                 import duckdb_s3
 
                 con = duckdb.connect()
-                duckdb_s3.configure(con, LAKE_ROOT, EMBED_LAKE_ROOT, spatial=True)
+                duckdb_s3.configure(con, LAKE_ROOT, spatial=True)
 
                 _lake_duckdb_con = con
                 _lake_duckdb_access_key = access_key

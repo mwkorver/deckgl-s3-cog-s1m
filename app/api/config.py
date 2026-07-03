@@ -31,16 +31,6 @@ OVERTURE_SOURCE_REGION = os.environ.get("S3_COG_OVERTURE_SOURCE_REGION", "us-wes
 # build_overture_buildings.py). Used only when the index above is unreachable,
 # so fully-offline runs still draw buildings. Empty/unset disables the fallback.
 OVERTURE_BUILDINGS_PARQUET = os.environ.get("S3_COG_OVERTURE_BUILDINGS_PARQUET", "")
-# Root of the embedding lake (written by the embedding-harvester repo). Same
-# hive layout as the imagery lake (collection=/region=/year=), one file per
-# 1-degree block, schema per that repo's LAKE_SCHEMA.md. /similar queries it
-# with the same in-process DuckDB connection.
-EMBED_LAKE_ROOT = os.environ.get("S3_COG_EMBED_LAKE_ROOT", "s3://naip-stac-catalog/embeddings")
-EMBED_COLLECTION_ID = os.environ.get("S3_COG_EMBED_COLLECTION_ID", "clay-naip-v15")
-# Embedding dimension of the default collection (Clay v1.5 = 1024). Parquet
-# stores the vector as a list; queries cast to FLOAT[EMBED_DIM] for
-# array_cosine_similarity.
-EMBED_DIM = int(os.environ.get("S3_COG_EMBED_DIM", "1024"))
 # On Lambda (AWS_LAMBDA_FUNCTION_NAME is set by the runtime) the only viable
 # ingest is the synchronous in-process path; locally/Docker the async
 # thread+subprocess path with polling is fine. S3_COG_INGEST_MODE overrides this:
@@ -99,23 +89,6 @@ MANIFEST_SOURCE = os.environ.get("S3_COG_MANIFEST_SOURCE", "s3://naip-analytic/m
 # The single ingest path: reads the manifest index and writes GeoParquet to
 # LAKE_ROOT (no Postgres, no staging table).
 INGEST_SCRIPT_PATH = Path(__file__).parent / "ingest_duckdb.py"
-# Local synchronous SAM 3 adapter. The raster-reading API and SAM 3 intentionally
-# use separate Python environments because their NumPy requirements conflict.
-SAM3_PYTHON = os.environ.get("SAM3_PYTHON", "")
-SAM3_SCRIPT = os.environ.get("SAM3_SCRIPT", "")
-SAM3_TIMEOUT_SECONDS = max(1, int(os.environ.get("SAM3_TIMEOUT_SECONDS", "300")))
-# Optional warm-worker URL (dev/serve_sam3.py in sam-concept-worker). When set,
-# /detect POSTs chips to the already-loaded model instead of spawning a cold
-# subprocess per call -- the model load is paid once, not on every request. When
-# unset, /detect falls back to the SAM3_PYTHON/SAM3_SCRIPT subprocess path.
-SAM3_WORKER_URL = os.environ.get("SAM3_WORKER_URL", "").rstrip("/")
-# Tiling (warm-worker only). A large chip_m is covered by a grid of native
-# 1008px tiles instead of one decimated read. DEFAULT_TILE_OVERLAP_PX (~12.5%)
-# lets seam-straddling objects land whole in a neighbor; MAX_TILES caps the
-# grid so a runaway area can't fan out into hundreds of inferences.
-TILE_PX = 1008
-DEFAULT_TILE_OVERLAP_PX = max(0, int(os.environ.get("DEFAULT_TILE_OVERLAP_PX", "126")))
-MAX_TILES = max(1, int(os.environ.get("MAX_TILES", "36")))
 
 # Default + ceiling on COGs per (region, year) partition for the synchronous
 # path. DEFAULT keeps an empty/absent request light; MAX is the largest finite
