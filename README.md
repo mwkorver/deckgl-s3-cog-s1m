@@ -60,7 +60,7 @@ That purpose drives the viewer flow. The `Collection / Region / Year` controls l
 > 
 > I am deeply indebted to their respective maintainers, specification groups, and communities for making high-performance, serverless geospatial maps viable.
 
-By replacing an always-on spatial database with in-process DuckDB queries over GeoParquet on S3 and using deck.gl-raster's custom GPU shaders, this project performs multi-band compositing, linear rescaling, nodata filtering, color mapping, and raster rendering on the **client-side GPU**. COG range reads and TIFF decoding remain browser-side CPU and network work. A lightweight spatial search API queries the metadata index on S3 and returns STAC-like Item Collections without requiring a persistent GIS database such as PostGIS or Elasticsearch.
+By replacing an always-on spatial database with in-process DuckDB queries over GeoParquet on S3 and using deck.gl-raster's custom GPU shaders, this project performs multi-band compositing, linear rescaling, nodata filtering, color mapping, and raster rendering on the **client-side GPU**. COG range reads and TIFF decoding remain browser-side CPU and network work. A lightweight spatial search API queries the metadata index on S3 and returns STAC-like Item Collections without requiring a persistent GIS database such as PostGIS or Elasticsearch. Additionally, to support requester-pays buckets (like `naip-analytic`) securely and cost-effectively, the architecture decouples footprint search from pixel fetching, allowing the browser to sign and read S3 ranges lazily only when individual tiles enter the visible viewport.
 
 ## Architecture
 
