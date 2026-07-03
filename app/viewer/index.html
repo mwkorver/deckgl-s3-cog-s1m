@@ -478,15 +478,16 @@
                 <label class="field" style="flex-wrap:wrap; cursor:pointer; user-select:none;">
                   <input id="footprint-layer-search" name="footprint-layer-mode" value="search" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                   <strong>Search results</strong>
-                  <span class="muted">— COGs returned by search</span>
                   <span class="field" style="gap:6px; margin-left:8px;">
                     Max
                     <input id="limit" type="number" value="18000" min="1" max="18000" style="width:84px;" />
                   </span>
+                  <span class="muted" style="flex-basis:100%; margin-left:20px;">The exact COGs your search returned (up to Max) — the same set that renders as imagery.</span>
                 </label>
                 <label class="field" style="flex-wrap:wrap; cursor:pointer; user-select:none;">
                   <input id="footprint-layer-coverage" name="footprint-layer-mode" value="coverage" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
-                  <strong id="naip-coverage-label">NAIP coverage — MVT outlines, z3-15</strong>
+                  <strong id="naip-coverage-label">Coverage map</strong>
+                  <span class="muted" style="flex-basis:100%; margin-left:20px;">Where imagery exists — streams as you pan and scales to a whole state or CONUS. Shows the latest year per region unless you pick one. <span style="opacity:0.65;">(vector tiles · z3&#8211;15)</span></span>
                 </label>
                 <label class="field" style="cursor:pointer; user-select:none;">
                   <input id="footprint-layer-off" name="footprint-layer-mode" value="" type="radio" checked autocomplete="off" style="width:auto; padding:0; margin:0;" />
@@ -931,9 +932,6 @@
         
         const el = document.getElementById("cog-layer-label");
         if (el) el.textContent = `${title} Imagery (COG Tiles)`;
-        
-        const elCov = document.getElementById("naip-coverage-label");
-        if (elCov) elCov.textContent = `${title} Coverage Footprints — MVT outlines, z3-15`;
       }
       function renderActiveCollectionSummary() {
         if (!activeCollectionSummaryEl) return;
