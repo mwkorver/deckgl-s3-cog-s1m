@@ -65,32 +65,46 @@ By replacing an always-on spatial database with in-process DuckDB queries over G
 
 ```mermaid
 graph TD
-    subgraph Browser ["Browser (Client GPU)"]
+    subgraph Browser ["Browser (Client WebGL/GPU)"]
         Viewer[MapLibre + deck.gl Viewer]
-        MosaicLayer[MosaicLayer / COGLayer]
-        GLSL[GPU Shaders: rescale/composite]
         GeotiffJS[geotiff.js range reader]
+        MosaicLayer[MosaicLayer / COGLayer / TerrainMeshLayer]
+        GLSL[GPU Shaders: rescale/composite/hillshade]
     end
 
-    subgraph AWS ["AWS Cloud (Serverless)"]
+    subgraph AWS ["AWS Cloud (Serverless Stack)"]
         APIGateway[FastAPI on Lambda]
         DuckDB[DuckDB Query Engine]
-        Parquet[GeoParquet Lake on S3]
-        COGBucket[COG Imagery on S3]
+        Parquet[GeoParquet Lake Indexes on S3]
     end
 
-    Viewer -->|1. Search BBOX| APIGateway
-    APIGateway -->|2. Query Index| DuckDB
-    DuckDB -->|3. Read Footprints| Parquet
-    APIGateway -->|4. Return STAC-like Items| Viewer
-    Viewer -->|5. HTTP Range Requests| COGBucket
-    GeotiffJS -->|6. Decode raw bytes| MosaicLayer
-    MosaicLayer -->|7. Render pixels| GLSL
+    subgraph External ["External Public Data Sources"]
+        COGBucket[COG Imagery Buckets on S3]
+        USGSBucket[USGS 3DEP S1M Bucket on S3]
+        OvertureS3[Overture GeoParquet on S3]
+    end
+
+    %% API Queries
+    Viewer -->|1. Search BBOX / Tiles / Buildings| APIGateway
+    APIGateway -->|2. In-Process Query| DuckDB
+    DuckDB -->|3. Prune & Scan Metadata| Parquet
+    DuckDB -->|3. Query footprints directly| OvertureS3
+    APIGateway -->|4. Return STAC Items, S1M Paths, & Buildings| Viewer
+
+    %% Client data reads
+    Viewer -->|5. Coordinate Mapping & BBOX Check| GeotiffJS
+    GeotiffJS -->|6. HTTP Range Requests| COGBucket
+    GeotiffJS -->|6. HTTP Range Requests| USGSBucket
+    
+    %% Decoding & Rendering
+    GeotiffJS -->|7. Decode raw pixels/elevation grid| MosaicLayer
+    MosaicLayer -->|8. Seat Overture footprints on S1M mesh| Viewer
+    MosaicLayer -->|9. Upload textures & render| GLSL
 ```
 
-1. **Client-Side Rendering:** The frontend viewer reads COG headers and pixel byte-ranges directly from S3 using HTTP Range Requests, decoding them in-browser via `geotiff.js`.
-2. **GPU Processing:** Band compositing, linear rescaling, nodata masking, and display adjustments (brightness/contrast) are run in GLSL shaders directly on the client's GPU.
-3. **Serverless Indexing:** An AWS Lambda function uses DuckDB to query a Hive-partitioned GeoParquet index directly on S3 and returns STAC-like Item Collections, eliminating the need for an always-on database server.
+1. **Client-Side Rendering & Terrain Drape:** The frontend viewer reads COG imagery and USGS S1M elevation data directly from public S3 buckets using HTTP Range Requests, decoding them in-browser via `geotiff.js` to build 3D terrain meshes.
+2. **GPU Processing:** Band compositing, linear rescaling, nodata masking, and terrain hillshading are run in GLSL shaders directly on the client's GPU.
+3. **Serverless Indexing:** An AWS Lambda function uses DuckDB to query Hive-partitioned GeoParquet indexes (imagery metadata, USGS S1M tile layouts, and Overture building footprints) directly on S3 and returns results without requiring a persistent database server.
 
 ---
 
