@@ -513,43 +513,29 @@ ways: to `collections.geojson` for the viewer's map lookup, and to
 `CollectionDescriptor`s for the ingest. Adding a collection = adding one YAML
 entry, never editing pipeline code.
 
-## Region & latency (decision)
+## Region & latency
 
-**Decision (2026‑06): single region — us‑west‑2 only, for now.** Making the AWS
-region a user/config choice is a deliberate *later* feature, not built now.
+**The deployment is single-region: `us-west-2`.** The GeoParquet lake, the read +
+ingest compute, and the primary, highest-volume collection — NAIP
+(`naip-analytic`) — all live there, along with Kentucky and New Jersey, so the
+bulk of activity stays in-region. Making the AWS region a user/config choice is a
+deliberate *later* feature, not built now.
 
-Why us‑west‑2 anchors everything:
+Two active collections do source cross-region: **Indiana** (`gisimageryingov`) and
+**Vermont** (`vtopendata-prd`) are in **us-east-2**. Their imagery is read
+client-side by the browser, so the cross-region cost lands on the viewer's range
+requests rather than on the us-west-2 compute; the metadata they are indexed into
+still lives in the us-west-2 lake.
 
-- **NAIP** (the primary, highest‑volume collection) lives in us‑west‑2, and the
-  other three active collections (KyFromAbove, NJ, Colorado) happen to as well —
-  so the entire active set is single‑region with **zero cross‑region exposure**.
-- Cross‑region adds **latency** and **egress cost** for no current benefit.
+The latency reasoning, kept here so it isn't re-derived later:
 
-The latency reasoning, kept here so it isn't re‑derived later:
-
-- Cross‑region cost is a **per‑request RTT penalty** (~50 ms Oregon↔Ohio,
-  ~150 ms ↔ Sydney), and COG access is request‑count‑bound, so it *compounds*
-  (~5 ranged GETs/chip → +250 ms/chip to us‑east‑2). Batch ingest hides this with
+- Cross-region cost is a **per-request RTT penalty** (~50 ms Oregon↔Ohio,
+  ~150 ms ↔ Sydney), and COG access is request-count-bound, so it *compounds*
+  (~5 ranged GETs/tile → +250 ms/tile to us-east-2). Batch ingest hides this with
   parallelism; interactive viewing does not.
-- On the **detection path** something must move between a foreign‑region source
-  COG and the us‑west‑2 GPU. The lever is **chipper placement**, which decides
-  *what* crosses the boundary:
-
-  | placement | source reads | crosses region | profile |
-  |-----------|--------------|----------------|---------|
-  | chipper in us‑west‑2 (w/ GPU) | foreign COG, **cross‑region range reads** | the windowed GETs | request‑storm, +250 ms/chip — **worst** |
-  | chipper in source region (w/ COG) | **local** | finished chips, one PUT each | bandwidth‑bound, ~$0.02/GB — **best** |
-  | GPU in source region too | local | nothing | zero cross‑region, but a 2nd GPU fleet to run |
-
-  The rule this implies: **co‑locate compute with the source bucket; only
-  *derived* data (chips, lake rows) crosses regions.** A 100k‑chip scan then costs
-  one bulk transfer (~$4) instead of ~500k cross‑region range requests.
-
-This is *why* the registry parks non‑us‑west‑2 collections (Vermont, Indiana in
-us‑east‑2; New Zealand in ap‑southeast‑2 at ~150 ms — the worst) as `active:
-false` with layouts preserved. When region becomes a choice, the work to bring one
-in is: flip `active`, and stand up a source‑region chipper (placement row 2) — not
-an architecture change.
+- The general mitigation is to **co-locate compute with the source bucket** and
+  let only *derived* data (lake rows, indexes) cross regions — one bulk transfer
+  instead of a storm of cross-region range requests.
 
 ## Partition migration (`state/naip_year` → `collection/region/year`)
 
