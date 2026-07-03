@@ -197,13 +197,23 @@ The project is managed as a monorepo containing Shared TypeScript Packages (`pnp
 ## Getting Started
 
 ### Prerequisites
-*   **Node.js** (v24+) & **pnpm** (v10+)
+*   **Node.js** (v20+) & **pnpm** (v10+) — CI runs on Node 20
 *   **Python** (v3.12+)
 *   **Docker** (for SAM container packaging and local testing)
 *   **AWS CLI** & **AWS SAM CLI** (for cloud deployments)
 
 ### 1. Installation & Build
-Install workspaces dependencies and compile the TS packages:
+This repo uses git submodules for the TypeScript test fixtures
+(`fixtures/geotiff-test-data`) and the OGC Tile Matrix Set spec
+(`packages/morecantile/spec`). Clone with submodules — or initialize them in
+an existing clone — otherwise `pnpm test` and the `morecantile` package fail:
+```bash
+git clone --recurse-submodules https://github.com/mwkorver/deckgl-s3-cog-s1m.git
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+Install workspace dependencies and compile the TS packages:
 ```bash
 pnpm install
 pnpm build
@@ -219,34 +229,41 @@ cp .env.example .env
 
 To spin up the local stack (FastAPI server + static viewer) via Docker Compose:
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 Once started, the viewer will be accessible at: **`http://localhost:8089/viewer/`**
 
 For detailed local onboarding and ingest pipelines, see [app/README.md](app/README.md).
 
 ### 3. Testing
-Run the TypeScript package tests using Vitest:
+CI (`.github/workflows/ci.yml`) runs the checks below on every push and pull
+request: Biome + Ruff lint/format, `typecheck`, the TypeScript package tests,
+and the Python API tests.
+
+TypeScript packages (Vitest). Requires the git submodules from step 1 for the
+`geotiff` and `morecantile` fixtures:
 ```bash
+pnpm typecheck
 pnpm test
 ```
 
-Install Python development tooling when you want Ruff linting/formatting:
+Lint and format (Biome for TS, Ruff for Python). `requirements-dev.txt`
+provides Ruff plus the pytest/httpx used by the API tests:
 ```bash
 python3 -m pip install -r requirements-dev.txt
-pnpm lint
-pnpm format:fix
+pnpm check       # biome + ruff, read-only
+pnpm check:fix   # apply fixes
 ```
 
-Run the Python API and ingest tests separately with pytest:
+Python API and ingest tests (pytest). `/health` creates a DuckDB S3 secret
+via the AWS credential chain, so provide credentials — real or dummy:
 ```bash
-AWS_CONFIG_FILE=/dev/null \
-AWS_SHARED_CREDENTIALS_FILE=/dev/null \
-AWS_EC2_METADATA_DISABLED=true \
-python3 -m pytest \
-  app/api/test_endpoints.py \
-  app/api/test_descriptors.py \
-  app/api/test_ingest.py
+pip install -r app/api/requirements.txt
+cd app/api
+AWS_ACCESS_KEY_ID=testing \
+AWS_SECRET_ACCESS_KEY=testing \
+AWS_DEFAULT_REGION=us-west-2 \
+python3 -m pytest
 ```
 
 ### 4. Deployment
