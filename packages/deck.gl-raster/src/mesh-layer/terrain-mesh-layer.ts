@@ -3,10 +3,14 @@ import type { Texture } from "@luma.gl/core";
 import { DrapeTexture } from "../gpu-modules/drape-texture.js";
 import { TerrainDisplace } from "../gpu-modules/terrain-displace.js";
 import type { RasterModule } from "../gpu-modules/types.js";
-import { MeshTextureLayer, type MeshTextureLayerProps } from "./mesh-layer.js";
+import type { MeshTextureLayerProps } from "./mesh-layer.js";
+import { MeshTextureLayer } from "./mesh-layer.js";
 
 /** Props added by {@link TerrainMeshLayer} on top of {@link MeshTextureLayer}. */
-export type TerrainMeshLayerProps = Omit<MeshTextureLayerProps, "image" | "renderPipeline"> & {
+export type TerrainMeshLayerProps = Omit<
+  MeshTextureLayerProps,
+  "image" | "renderPipeline"
+> & {
   /** Row-major single-channel elevation grid (gridWidth × gridHeight). */
   elevationData: Float32Array | null;
   gridWidth: number;
@@ -53,16 +57,24 @@ const defaultProps: DefaultProps<TerrainMeshLayerProps> = {
  */
 export class TerrainMeshLayer extends MeshTextureLayer {
   static override layerName = "terrain-mesh-layer";
-  static override defaultProps = defaultProps as typeof MeshTextureLayer.defaultProps;
+  static override defaultProps =
+    defaultProps as typeof MeshTextureLayer.defaultProps;
 
   override updateState(params: UpdateParameters<this>): void {
     const { props, oldProps } = params;
-    const state = this.state as { elevationTexture?: Texture; drapeTexture?: Texture };
+    const state = this.state as {
+      elevationTexture?: Texture;
+      drapeTexture?: Texture;
+    };
     // (Re)upload the elevation texture only when the data changes -- not when
     // only `exag` (a uniform) changes, so exaggeration is free.
     const p = props as unknown as TerrainMeshLayerProps;
     const data = p.elevationData;
-    if (data && (!state.elevationTexture || data !== (oldProps as unknown as TerrainMeshLayerProps).elevationData)) {
+    if (
+      data &&
+      (!state.elevationTexture ||
+        data !== (oldProps as unknown as TerrainMeshLayerProps).elevationData)
+    ) {
       state.elevationTexture?.destroy?.();
       state.elevationTexture = this.context.device.createTexture({
         data,
@@ -74,7 +86,9 @@ export class TerrainMeshLayer extends MeshTextureLayer {
     }
     if (
       p.drapeImage &&
-      (!state.drapeTexture || p.drapeImage !== (oldProps as unknown as TerrainMeshLayerProps).drapeImage)
+      (!state.drapeTexture ||
+        p.drapeImage !==
+          (oldProps as unknown as TerrainMeshLayerProps).drapeImage)
     ) {
       if (!(oldProps as unknown as TerrainMeshLayerProps).drapeImage) {
         params.changeFlags.extensionsChanged = true;
@@ -100,7 +114,10 @@ export class TerrainMeshLayer extends MeshTextureLayer {
   // getShaders() and pushes its props to the model in draw().
   override _resolveRenderPipeline(): RasterModule[] {
     const p = this.props as unknown as TerrainMeshLayerProps;
-    const state = this.state as { elevationTexture?: Texture; drapeTexture?: Texture };
+    const state = this.state as {
+      elevationTexture?: Texture;
+      drapeTexture?: Texture;
+    };
     const pipeline: RasterModule[] = [
       {
         module: TerrainDisplace,
@@ -126,7 +143,9 @@ export class TerrainMeshLayer extends MeshTextureLayer {
   }
 
   override finalizeState(context: unknown): void {
-    (this.state as { elevationTexture?: Texture; drapeTexture?: Texture }).elevationTexture?.destroy?.();
+    (
+      this.state as { elevationTexture?: Texture; drapeTexture?: Texture }
+    ).elevationTexture?.destroy?.();
     (this.state as { drapeTexture?: Texture }).drapeTexture?.destroy?.();
     // @ts-expect-error -- forward to SimpleMeshLayer's finalizeState signature
     super.finalizeState(context);

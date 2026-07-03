@@ -1,6 +1,10 @@
 export type { RasterModule } from "./gpu-modules/types.js";
 // Not a public API; exported for use in COGLayer and ZarrLayer
 export { renderDebugTileOutline as _renderDebugTileOutline } from "./layer-utils.js";
+export type { MeshTextureLayerProps } from "./mesh-layer/mesh-layer.js";
+export { MeshTextureLayer } from "./mesh-layer/mesh-layer.js";
+export type { TerrainMeshLayerProps } from "./mesh-layer/terrain-mesh-layer.js";
+export { TerrainMeshLayer } from "./mesh-layer/terrain-mesh-layer.js";
 export type {
   MultiRasterTilesetDescriptor,
   SecondaryTileIndex,
@@ -40,7 +44,3 @@ export {
   sortItemsByDistanceFromViewportCenter as _sortItemsByDistanceFromViewportCenter,
   TileMatrixSetAdaptor,
 } from "./raster-tileset/index.js";
-export type { MeshTextureLayerProps } from "./mesh-layer/mesh-layer.js";
-export { MeshTextureLayer } from "./mesh-layer/mesh-layer.js";
-export type { TerrainMeshLayerProps } from "./mesh-layer/terrain-mesh-layer.js";
-export { TerrainMeshLayer } from "./mesh-layer/terrain-mesh-layer.js";

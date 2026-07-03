@@ -6,11 +6,11 @@ import type { Source, TiffImage, TiffImageTileCount } from "@cogeotiff/core";
 import { Photometric, SubFileType, Tiff, TiffTag } from "@cogeotiff/core";
 import type { Affine } from "@s3-cog/affine";
 import type { ProjJson } from "@s3-cog/proj";
+import type { ChunkCachedSourceOptions } from "./chunk-cache.js";
+import { ChunkCachedSource } from "./chunk-cache.js";
 import { crsFromGeoKeys } from "./crs.js";
 import { fetchTile, fetchTiles } from "./fetch.js";
 import type { BandStatistics, GDALMetadata } from "./gdal-metadata.js";
-import { ChunkCachedSource } from "./chunk-cache.js";
-import type { ChunkCachedSourceOptions } from "./chunk-cache.js";
 import { parseGDALMetadata } from "./gdal-metadata.js";
 import type { CachedTags, GeoKeyDirectory } from "./ifd.js";
 import { extractGeoKeyDirectory, prefetchTags } from "./ifd.js";
@@ -53,7 +53,9 @@ export interface GeoTIFFFromUrlOptions {
   /** Optional byte-range chunk cache for tile-data reads. Header/IFD reads keep
    *  using the normal small SourceChunk/SourceCache path. Use a stable
    *  cacheKey, such as s3://bucket/key, not a rotating signed URL. */
-  chunkCache?: false | Omit<ChunkCachedSourceOptions, "cacheKey"> & { cacheKey: string };
+  chunkCache?:
+    | false
+    | (Omit<ChunkCachedSourceOptions, "cacheKey"> & { cacheKey: string });
 }
 
 /**

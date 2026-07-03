@@ -1,7 +1,7 @@
+import proj4 from "proj4";
 import { describe, expect, it } from "vitest";
 import type { ProjJson } from "../../proj/src/index.js";
 import { parseWkt } from "../../proj/src/index.js";
-import proj4 from "proj4";
 
 describe("parseWkt", () => {
   it("produces degree units for EPSG:4326 PROJJSON (from epsg.io)", () => {
@@ -65,146 +65,146 @@ describe("parseWkt", () => {
 
   it("parses EPSG:6527 ProjectedCRS correctly", () => {
     const projjson: any = {
-      "$schema": "https://proj.org/schemas/v0.7/projjson.schema.json",
-      "type": "ProjectedCRS",
-      "name": "NAD83(2011) / New Jersey (ftUS)",
-      "base_crs": {
-        "type": "GeographicCRS",
-        "name": "NAD83(2011)",
-        "datum": {
-          "type": "GeodeticReferenceFrame",
-          "name": "NAD83 (National Spatial Reference System 2011)",
-          "anchor_epoch": 2010,
-          "ellipsoid": {
-            "name": "GRS 1980",
-            "semi_major_axis": 6378137,
-            "inverse_flattening": 298.257222101
-          }
+      $schema: "https://proj.org/schemas/v0.7/projjson.schema.json",
+      type: "ProjectedCRS",
+      name: "NAD83(2011) / New Jersey (ftUS)",
+      base_crs: {
+        type: "GeographicCRS",
+        name: "NAD83(2011)",
+        datum: {
+          type: "GeodeticReferenceFrame",
+          name: "NAD83 (National Spatial Reference System 2011)",
+          anchor_epoch: 2010,
+          ellipsoid: {
+            name: "GRS 1980",
+            semi_major_axis: 6378137,
+            inverse_flattening: 298.257222101,
+          },
         },
-        "coordinate_system": {
-          "subtype": "ellipsoidal",
-          "axis": [
+        coordinate_system: {
+          subtype: "ellipsoidal",
+          axis: [
             {
-              "name": "Geodetic latitude",
-              "abbreviation": "Lat",
-              "direction": "north",
-              "unit": "degree"
+              name: "Geodetic latitude",
+              abbreviation: "Lat",
+              direction: "north",
+              unit: "degree",
             },
             {
-              "name": "Geodetic longitude",
-              "abbreviation": "Lon",
-              "direction": "east",
-              "unit": "degree"
-            }
-          ]
-        },
-        "id": {
-          "authority": "EPSG",
-          "code": 6318
-        }
-      },
-      "conversion": {
-        "name": "SPCS83 New Jersey zone (US survey foot)",
-        "method": {
-          "name": "Transverse Mercator",
-          "id": {
-            "authority": "EPSG",
-            "code": 9807
-          }
-        },
-        "parameters": [
-          {
-            "name": "Latitude of natural origin",
-            "value": 38.8333333333333,
-            "unit": "degree",
-            "id": {
-              "authority": "EPSG",
-              "code": 8801
-            }
-          },
-          {
-            "name": "Longitude of natural origin",
-            "value": -74.5,
-            "unit": "degree",
-            "id": {
-              "authority": "EPSG",
-              "code": 8802
-            }
-          },
-          {
-            "name": "Scale factor at natural origin",
-            "value": 0.9999,
-            "unit": "unity",
-            "id": {
-              "authority": "EPSG",
-              "code": 8805
-            }
-          },
-          {
-            "name": "False easting",
-            "value": 492125,
-            "unit": {
-              "type": "LinearUnit",
-              "name": "US survey foot",
-              "conversion_factor": 0.304800609601219
+              name: "Geodetic longitude",
+              abbreviation: "Lon",
+              direction: "east",
+              unit: "degree",
             },
-            "id": {
-              "authority": "EPSG",
-              "code": 8806
-            }
+          ],
+        },
+        id: {
+          authority: "EPSG",
+          code: 6318,
+        },
+      },
+      conversion: {
+        name: "SPCS83 New Jersey zone (US survey foot)",
+        method: {
+          name: "Transverse Mercator",
+          id: {
+            authority: "EPSG",
+            code: 9807,
           },
+        },
+        parameters: [
           {
-            "name": "False northing",
-            "value": 0,
-            "unit": {
-              "type": "LinearUnit",
-              "name": "US survey foot",
-              "conversion_factor": 0.304800609601219
+            name: "Latitude of natural origin",
+            value: 38.8333333333333,
+            unit: "degree",
+            id: {
+              authority: "EPSG",
+              code: 8801,
             },
-            "id": {
-              "authority": "EPSG",
-              "code": 8807
-            }
-          }
-        ]
-      },
-      "coordinate_system": {
-        "subtype": "Cartesian",
-        "axis": [
-          {
-            "name": "Easting",
-            "abbreviation": "X",
-            "direction": "east",
-            "unit": {
-              "type": "LinearUnit",
-              "name": "US survey foot",
-              "conversion_factor": 0.304800609601219
-            }
           },
           {
-            "name": "Northing",
-            "abbreviation": "Y",
-            "direction": "north",
-            "unit": {
-              "type": "LinearUnit",
-              "name": "US survey foot",
-              "conversion_factor": 0.304800609601219
-            }
-          }
-        ]
+            name: "Longitude of natural origin",
+            value: -74.5,
+            unit: "degree",
+            id: {
+              authority: "EPSG",
+              code: 8802,
+            },
+          },
+          {
+            name: "Scale factor at natural origin",
+            value: 0.9999,
+            unit: "unity",
+            id: {
+              authority: "EPSG",
+              code: 8805,
+            },
+          },
+          {
+            name: "False easting",
+            value: 492125,
+            unit: {
+              type: "LinearUnit",
+              name: "US survey foot",
+              conversion_factor: 0.304800609601219,
+            },
+            id: {
+              authority: "EPSG",
+              code: 8806,
+            },
+          },
+          {
+            name: "False northing",
+            value: 0,
+            unit: {
+              type: "LinearUnit",
+              name: "US survey foot",
+              conversion_factor: 0.304800609601219,
+            },
+            id: {
+              authority: "EPSG",
+              code: 8807,
+            },
+          },
+        ],
       },
-      "scope": "Engineering survey, topographic mapping.",
-      "area": "United States (USA) - New Jersey - counties of Atlantic; Bergen; Burlington; Camden; Cape May; Cumberland; Essex; Gloucester; Hudson; Hunterdon; Mercer; Middlesex; Monmouth; Morris; Ocean; Passaic; Salem; Somerset; Sussex; Union; Warren.",
-      "bbox": {
-        "south_latitude": 38.87,
-        "west_longitude": -75.6,
-        "north_latitude": 41.36,
-        "east_longitude": -73.88
+      coordinate_system: {
+        subtype: "Cartesian",
+        axis: [
+          {
+            name: "Easting",
+            abbreviation: "X",
+            direction: "east",
+            unit: {
+              type: "LinearUnit",
+              name: "US survey foot",
+              conversion_factor: 0.304800609601219,
+            },
+          },
+          {
+            name: "Northing",
+            abbreviation: "Y",
+            direction: "north",
+            unit: {
+              type: "LinearUnit",
+              name: "US survey foot",
+              conversion_factor: 0.304800609601219,
+            },
+          },
+        ],
       },
-      "id": {
-        "authority": "EPSG",
-        "code": 6527
-      }
+      scope: "Engineering survey, topographic mapping.",
+      area: "United States (USA) - New Jersey - counties of Atlantic; Bergen; Burlington; Camden; Cape May; Cumberland; Essex; Gloucester; Hudson; Hunterdon; Mercer; Middlesex; Monmouth; Morris; Ocean; Passaic; Salem; Somerset; Sussex; Union; Warren.",
+      bbox: {
+        south_latitude: 38.87,
+        west_longitude: -75.6,
+        north_latitude: 41.36,
+        east_longitude: -73.88,
+      },
+      id: {
+        authority: "EPSG",
+        code: 6527,
+      },
     };
 
     const def = parseWkt(projjson);

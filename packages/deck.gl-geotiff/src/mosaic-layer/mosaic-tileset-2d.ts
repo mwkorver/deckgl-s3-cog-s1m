@@ -174,7 +174,7 @@ export class MosaicTileset2D<MosaicT extends MosaicSource> extends Tileset2D {
       west - lngBuffer,
       south - latBuffer,
       east + lngBuffer,
-      north + latBuffer
+      north + latBuffer,
     );
 
     const sources = this.getSources();

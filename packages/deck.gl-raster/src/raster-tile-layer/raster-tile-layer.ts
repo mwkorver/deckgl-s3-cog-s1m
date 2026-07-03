@@ -12,8 +12,8 @@ import type {
   _Tileset2DProps as Tileset2DProps,
 } from "@deck.gl/geo-layers";
 import { TileLayer } from "@deck.gl/geo-layers";
-import type { ReprojectionFns } from "@s3-cog/raster-reproject";
 import type { Device } from "@luma.gl/core";
+import type { ReprojectionFns } from "@s3-cog/raster-reproject";
 import { renderDebugTileOutline } from "../layer-utils.js";
 import type { RenderTileResult } from "../raster-layer.js";
 import { RasterLayer } from "../raster-layer.js";
@@ -275,7 +275,10 @@ export class RasterTileLayer<
     getTileData: NonNullable<RasterTileLayerProps<DataT>["getTileData"]>,
     renderTile: NonNullable<RasterTileLayerProps<DataT>["renderTile"]>,
   ): TileLayer {
-    if (!(this.state as any).TilesetClass || (this.state as any).descriptor !== descriptor) {
+    if (
+      !(this.state as any).TilesetClass ||
+      (this.state as any).descriptor !== descriptor
+    ) {
       const device = this.context.device;
       class TilesetFactory extends RasterTileset2D {
         constructor(opts: Tileset2DProps) {

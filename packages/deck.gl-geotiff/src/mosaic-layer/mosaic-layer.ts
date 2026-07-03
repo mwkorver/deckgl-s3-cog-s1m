@@ -212,7 +212,10 @@ export class MosaicLayer<
 
     const { props, oldProps } = params;
 
-    if (props.sources !== oldProps.sources || props.revision !== oldProps.revision) {
+    if (
+      props.sources !== oldProps.sources ||
+      props.revision !== oldProps.revision
+    ) {
       this._buildSpatialIndex();
       this.setState({ sourceRevision: this.state.sourceRevision + 1 });
     }
@@ -326,7 +329,7 @@ export class MosaicLayer<
       },
       renderSubLayers: (props) => {
         const { data } = props;
-        if (!data || !data.source) {
+        if (!data?.source) {
           return null;
         }
         const { source, signal, data: userData } = data;
@@ -335,7 +338,9 @@ export class MosaicLayer<
       },
       ...(onSourceLoad && {
         onTileLoad: (tile) => {
-          if (!tile || !tile.index) return;
+          if (!tile?.index) {
+            return;
+          }
           // `tile.index` is a `ResolvedSource<MosaicT>` from
           // MosaicTileset2D.getTileIndices, which structurally extends
           // MosaicT.
@@ -345,7 +350,7 @@ export class MosaicLayer<
       }),
       ...(onSourceError && {
         onTileError: (error, tile) => {
-          if (!tile || !tile.index) {
+          if (!tile?.index) {
             return;
           }
           const source = tile.index as unknown as MosaicT;
@@ -354,7 +359,9 @@ export class MosaicLayer<
       }),
       ...(onSourceUnload && {
         onTileUnload: (tile) => {
-          if (!tile || !tile.index) return;
+          if (!tile?.index) {
+            return;
+          }
           const source = tile.index as unknown as MosaicT;
           onSourceUnload(source, { data: tile.content?.data });
         },
@@ -363,7 +370,7 @@ export class MosaicLayer<
         onViewportLoad: (tiles) => {
           onViewportLoad(
             tiles
-              .filter((tile) => tile && tile.index)
+              .filter((tile) => tile?.index)
               .map((tile) => ({
                 source: tile.index as unknown as MosaicT,
                 data: tile.content?.data,

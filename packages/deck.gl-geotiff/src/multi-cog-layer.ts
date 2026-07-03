@@ -10,6 +10,7 @@ import type {
   _TileLoadProps as TileLoadProps,
 } from "@deck.gl/geo-layers";
 import { PathLayer, TextLayer } from "@deck.gl/layers";
+import type { Device, Texture, TextureFormat } from "@luma.gl/core";
 import type {
   Corners,
   GetTileDataOptions,
@@ -47,7 +48,6 @@ import {
   metersPerUnit,
   parseWkt,
 } from "@s3-cog/proj";
-import type { Device, Texture, TextureFormat } from "@luma.gl/core";
 import proj4 from "proj4";
 import { DEFAULT_CONCURRENCY_LIMITER } from "./default-concurrency-limiter.js";
 import { fetchGeoTIFF, getGeographicBounds } from "./geotiff/geotiff.js";

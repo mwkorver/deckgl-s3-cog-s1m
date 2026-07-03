@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- GitHub Actions CI (`.github/workflows/ci.yml`): build, typecheck, and tests
-  for the TypeScript packages; `ruff` and `pytest` for the Python API.
+- GitHub Actions CI (`.github/workflows/ci.yml`): build, typecheck, tests, and
+  Biome lint/format for the TypeScript packages; `ruff` and `pytest` for the
+  Python API.
 - `SECURITY.md`, `CODE_OF_CONDUCT.md`, and this changelog.
 - README hero screenshot of the 3D terrain-drape viewer.
 

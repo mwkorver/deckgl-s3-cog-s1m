@@ -1,4 +1,5 @@
 import type { LayerContext, UpdateParameters } from "@deck.gl/core";
+import type { Texture } from "@luma.gl/core";
 import type {
   MinimalTileData,
   GetTileDataOptions as RasterTileGetTileDataOptions,
@@ -7,6 +8,7 @@ import type {
   RenderTileResult,
 } from "@s3-cog/deck.gl-raster";
 import { RasterTileLayer } from "@s3-cog/deck.gl-raster";
+import { LinearRescale } from "@s3-cog/deck.gl-raster/gpu-modules";
 import type {
   ConcurrencyLimiter,
   DecoderPool,
@@ -14,22 +16,23 @@ import type {
   Overview,
 } from "@s3-cog/geotiff";
 import { defaultDecoderPool } from "@s3-cog/geotiff";
-import type { EpsgResolver, ProjectionDefinition } from "@s3-cog/proj";
-import type { ProjJson } from "@s3-cog/proj";
+import type {
+  EpsgResolver,
+  ProjectionDefinition,
+  ProjJson,
+} from "@s3-cog/proj";
 import {
   epsgResolver,
   makeClampedForwardTo3857,
   metersPerUnit,
   parseWkt,
 } from "@s3-cog/proj";
-import type { Texture } from "@luma.gl/core";
 import proj4 from "proj4";
 import { DEFAULT_CONCURRENCY_LIMITER } from "./default-concurrency-limiter.js";
 import { fetchGeoTIFF, getGeographicBounds } from "./geotiff/geotiff.js";
 import type { TextureDataT } from "./geotiff/render-pipeline.js";
 import { inferRenderPipeline } from "./geotiff/render-pipeline.js";
 import { geoTiffToDescriptor } from "./geotiff-tileset.js";
-import { LinearRescale } from "@s3-cog/deck.gl-raster/gpu-modules";
 
 export type { MinimalTileData } from "@s3-cog/deck.gl-raster";
 
@@ -400,12 +403,16 @@ export class COGLayer<
     }
 
     const { bitsPerSample } = geotiff.cachedTags;
-    if (!bitsPerSample || bitsPerSample.length === 0 || bitsPerSample[0] === undefined) {
+    if (
+      !bitsPerSample ||
+      bitsPerSample.length === 0 ||
+      bitsPerSample[0] === undefined
+    ) {
       return userFn as NonNullable<RasterTileLayerProps<DataT>["renderTile"]>;
     }
 
     const bitWidth = bitsPerSample[0];
-    const typeMax = Math.pow(2, bitWidth) - 1;
+    const typeMax = 2 ** bitWidth - 1;
 
     // Avoid rescaling if it's identity (e.g. [0, typeMax])
     if (domain[0] === 0 && domain[1] === typeMax) {
@@ -420,7 +427,9 @@ export class COGLayer<
       if (!tileResult) {
         return null;
       }
-      const pipeline = tileResult.renderPipeline ? [...tileResult.renderPipeline] : [];
+      const pipeline = tileResult.renderPipeline
+        ? [...tileResult.renderPipeline]
+        : [];
       pipeline.push({
         module: LinearRescale,
         props: {

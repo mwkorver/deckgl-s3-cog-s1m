@@ -45,17 +45,17 @@ jobs:
         run: python -m pytest
         working-directory: app/api
 
-  # NOTE: Biome (JS/TS lint + format) is configured (biome.json, `pnpm check`)
-  # but not yet enforced here -- the tree has accumulated style drift from
-  # running without CI. Add the job below once `pnpm check:fix` has been run
-  # and reviewed:
-  #
-  #   lint-js:
-  #     runs-on: ubuntu-latest
-  #     steps:
-  #       - uses: actions/checkout@v4
-  #       - uses: pnpm/action-setup@v4
-  #       - uses: actions/setup-node@v4
-  #         with: { node-version: 20, cache: pnpm }
-  #       - run: pnpm install --frozen-lockfile
-  #       - run: pnpm exec biome ci .
+  lint-js:
+    name: biome (lint + format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # biome is scoped to the packages/* libraries (see biome.json);
+      # the app/ viewer HTML + JSON data are intentionally excluded.
+      - run: pnpm exec biome ci .

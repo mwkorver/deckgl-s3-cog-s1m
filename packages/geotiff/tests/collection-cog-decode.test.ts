@@ -21,9 +21,9 @@
  *   Vermont CLRIR   -> 4-band chunky LERC (mocked layout test)
  */
 import { resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceFile } from "@chunkd/source-file";
 import { SourceHttp } from "@chunkd/source-http";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { toBandSeparate, toPixelInterleaved } from "../src/array.js";
 import { GeoTIFF } from "../src/geotiff.js";
 
@@ -93,7 +93,10 @@ describe("LERC codec layout mapping (regression: Vermont VTORTHO CLRIR)", () => 
 
   async function decodeWithLerc(lercResult: unknown) {
     vi.doMock("lerc", () => {
-      const mod = { load: vi.fn(async () => {}), decode: vi.fn(() => lercResult) };
+      const mod = {
+        load: vi.fn(async () => {}),
+        decode: vi.fn(() => lercResult),
+      };
       return { ...mod, default: mod };
     });
     const { decode } = await import("../src/codecs/lerc.js");

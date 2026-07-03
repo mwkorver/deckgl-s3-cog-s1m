@@ -9,9 +9,9 @@ export { reorderBands, toBandSeparate, toPixelInterleaved } from "./array.js";
 export type { AssembleTilesOptions } from "./assemble.js";
 export { assembleTiles } from "./assemble.js";
 export type {
+  ChunkCachedSourceOptions,
   ChunkCacheStats,
   ChunkCacheStore,
-  ChunkCachedSourceOptions,
 } from "./chunk-cache.js";
 export { ChunkCachedSource } from "./chunk-cache.js";
 export { parseColormap } from "./colormap.js";

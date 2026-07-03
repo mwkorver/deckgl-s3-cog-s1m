@@ -113,7 +113,11 @@ function cloneArrayBuffer(input: ArrayBuffer): ArrayBuffer {
 
 function checkedChunkSize(value: number | undefined): number {
   const chunkSize = value ?? 1024 * 1024;
-  if (!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)) {
+  if (
+    !Number.isFinite(chunkSize) ||
+    chunkSize <= 0 ||
+    !Number.isInteger(chunkSize)
+  ) {
     throw new Error("chunkSize must be a positive integer");
   }
   return chunkSize;
@@ -140,7 +144,11 @@ export class ChunkCachedSource implements Source {
   private memoryBytes = 0;
   private readonly counters: Omit<
     ChunkCacheStats,
-    "memoryBytes" | "memoryMaxBytes" | "memoryEntries" | "inflight" | "chunkSize"
+    | "memoryBytes"
+    | "memoryMaxBytes"
+    | "memoryEntries"
+    | "inflight"
+    | "chunkSize"
   > = {
     memoryHits: 0,
     persistentHits: 0,
@@ -245,7 +253,10 @@ export class ChunkCachedSource implements Source {
       this.memoryBytes -= existing.size;
       this.memory.delete(key);
     }
-    this.memory.set(key, { bytes: cloneArrayBuffer(value), size: value.byteLength });
+    this.memory.set(key, {
+      bytes: cloneArrayBuffer(value),
+      size: value.byteLength,
+    });
     this.memoryBytes += value.byteLength;
     while (this.memoryBytes > this.memoryMaxBytes) {
       const oldestKey = this.memory.keys().next().value;

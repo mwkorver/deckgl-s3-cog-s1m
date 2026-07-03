@@ -1,6 +1,7 @@
 import type { Source, SourceMetadata } from "@chunkd/source";
 import { describe, expect, it } from "vitest";
-import { ChunkCachedSource, type ChunkCacheStore } from "../src/chunk-cache.js";
+import type { ChunkCacheStore } from "../src/chunk-cache.js";
+import { ChunkCachedSource } from "../src/chunk-cache.js";
 
 class RecordingSource implements Source {
   readonly type = "recording";

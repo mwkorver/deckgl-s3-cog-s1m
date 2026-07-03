@@ -13,8 +13,8 @@ import type {
   _Tileset2DProps as Tileset2DProps,
 } from "@deck.gl/geo-layers";
 import { _Tileset2D as Tileset2D } from "@deck.gl/geo-layers";
-import { transformBounds } from "@s3-cog/proj";
 import type { Matrix4 } from "@math.gl/core";
+import { transformBounds } from "@s3-cog/proj";
 import { BoundingVolumeCache } from "./bounding-volume-cache.js";
 import {
   getTileIndices,

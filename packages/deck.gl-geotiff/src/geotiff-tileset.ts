@@ -1,8 +1,5 @@
 import type { ProjectionFunction } from "@s3-cog/deck.gl-raster";
-import {
-  AffineTileset,
-  AffineTilesetLevel,
-} from "@s3-cog/deck.gl-raster";
+import { AffineTileset, AffineTilesetLevel } from "@s3-cog/deck.gl-raster";
 import type { GeoTIFF, Overview } from "@s3-cog/geotiff";
 
 /**

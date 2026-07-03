@@ -1,4 +1,5 @@
 import { Photometric, SampleFormat } from "@cogeotiff/core";
+import type { Device, SamplerProps, Texture } from "@luma.gl/core";
 import type { RenderTileResult } from "@s3-cog/deck.gl-raster";
 import type { RasterModule } from "@s3-cog/deck.gl-raster/gpu-modules";
 import {
@@ -11,9 +12,12 @@ import {
   MaskTexture,
   WhiteIsZero,
 } from "@s3-cog/deck.gl-raster/gpu-modules";
-import type { GeoTIFF, Overview, RasterArrayPixelInterleaved } from "@s3-cog/geotiff";
+import type {
+  GeoTIFF,
+  Overview,
+  RasterArrayPixelInterleaved,
+} from "@s3-cog/geotiff";
 import { parseColormap, toPixelInterleaved } from "@s3-cog/geotiff";
-import type { Device, SamplerProps, Texture } from "@luma.gl/core";
 import type { GetTileDataOptions } from "../cog-layer.js";
 import { addAlphaChannel } from "./geotiff.js";
 import { inferTextureFormat } from "./texture.js";

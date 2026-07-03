@@ -11,7 +11,9 @@
     "ignoreUnknown": true,
     "includes": [
       "**",
+      "!!app/**",
       "!!**/*.log",
+      "!!**/*.html",
       "!!**/coverage",
       "!!**/dist",
       "!!**/fixtures",

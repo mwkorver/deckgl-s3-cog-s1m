@@ -19,7 +19,6 @@
 
 import type { Viewport } from "@deck.gl/core";
 import { _GlobeViewport as GlobeViewport } from "@deck.gl/core";
-import { transformBounds } from "@s3-cog/proj";
 import { Vector3 } from "@math.gl/core";
 import {
   CullingVolume,
@@ -28,6 +27,7 @@ import {
   Plane,
 } from "@math.gl/culling";
 import { lngLatToWorld, worldToLngLat } from "@math.gl/web-mercator";
+import { transformBounds } from "@s3-cog/proj";
 
 import { BoundingVolumeCache } from "./bounding-volume-cache.js";
 import type {

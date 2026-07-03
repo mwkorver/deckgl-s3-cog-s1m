@@ -10,16 +10,25 @@ interface Collection {
   access: "public" | "requester-pays";
 }
 
-function collectionForHref(s3href: string, collections: Collection[]): Collection | null {
+function collectionForHref(
+  s3href: string,
+  collections: Collection[],
+): Collection | null {
   const m = /^s3:\/\/([^/]+)\//.exec(s3href || "");
-  if (!m) return null;
+  if (!m) {
+    return null;
+  }
   return collections.find((p) => p.bucket === m[1]) || null;
 }
 
 function isExpiredSignatureError(error: any): boolean {
   for (let e = error; e; e = e.cause) {
     const msg = String(e?.message || "");
-    if (msg.includes("403") || /expired/i.test(msg) || /accessdenied/i.test(msg)) {
+    if (
+      msg.includes("403") ||
+      /expired/i.test(msg) ||
+      /accessdenied/i.test(msg)
+    ) {
       return true;
     }
   }
@@ -40,11 +49,15 @@ class LazySigningManager {
   public inflightSigns = new Map<string, Promise<string>>();
 
   constructor(
-    private apiFetchMock: (path: string) => Promise<{ ok: boolean; status: number; json: () => Promise<any> }>
+    private apiFetchMock: (
+      path: string,
+    ) => Promise<{ ok: boolean; status: number; json: () => Promise<any> }>,
   ) {}
 
   async signHref(s3href: string, collections: Collection[]): Promise<string> {
-    if (!s3href || !s3href.startsWith("s3://")) return s3href;
+    if (!s3href?.startsWith("s3://")) {
+      return s3href;
+    }
 
     const owner = collectionForHref(s3href, collections);
     if (owner && owner.access === "public") {
@@ -57,15 +70,22 @@ class LazySigningManager {
 
     const now = Date.now();
     const cached = this.signedUrlCache.get(s3href);
-    if (cached && cached.expiresAt > now) return cached.url;
+    if (cached && cached.expiresAt > now) {
+      return cached.url;
+    }
 
     let pending = this.inflightSigns.get(s3href);
     if (!pending) {
       pending = this.apiFetchMock(`/sign?href=${encodeURIComponent(s3href)}`)
         .then(async (resp) => {
-          if (!resp.ok) throw new Error(`sign failed: ${resp.status}`);
+          if (!resp.ok) {
+            throw new Error(`sign failed: ${resp.status}`);
+          }
           const data = await resp.json();
-          const ttlMs = Math.max(0, (Number(data.expires_in) || 0) * 1000 - 60000);
+          const ttlMs = Math.max(
+            0,
+            (Number(data.expires_in) || 0) * 1000 - 60000,
+          );
           this.signedUrlCache.set(s3href, {
             url: data.signed,
             expiresAt: ttlMs ? now + ttlMs : now + 60000,
@@ -104,19 +124,25 @@ describe("Viewer Helpers", () => {
     });
 
     it("returns null for non-s3 hrefs", () => {
-      expect(collectionForHref("https://example.com/tile.tif", collections)).toBeNull();
+      expect(
+        collectionForHref("https://example.com/tile.tif", collections),
+      ).toBeNull();
     });
   });
 
   describe("isExpiredSignatureError", () => {
     it("detects expired error in message", () => {
-      const err = new Error("Request failed with status code 403: SignatureExpired");
+      const err = new Error(
+        "Request failed with status code 403: SignatureExpired",
+      );
       expect(isExpiredSignatureError(err)).toBe(true);
     });
 
     it("detects expired error deep in cause chain", () => {
       const rootCause = new Error("AccessDenied: AWS credentials expired");
-      const middleErr = new Error("Failed fetching range", { cause: rootCause });
+      const middleErr = new Error("Failed fetching range", {
+        cause: rootCause,
+      });
       const topErr = new Error("Failed loading GeoTIFF", { cause: middleErr });
       expect(isExpiredSignatureError(topErr)).toBe(true);
     });
@@ -155,7 +181,9 @@ describe("Viewer Helpers", () => {
       const href = "s3://kyfromabove/imagery/orthos/Phase2/tile.tif";
       const url = await manager.signHref(href, collections);
 
-      expect(url).toBe("https://kyfromabove.s3.amazonaws.com/imagery/orthos/Phase2/tile.tif");
+      expect(url).toBe(
+        "https://kyfromabove.s3.amazonaws.com/imagery/orthos/Phase2/tile.tif",
+      );
       expect(apiFetchMock).not.toHaveBeenCalled();
     });
 
@@ -165,7 +193,8 @@ describe("Viewer Helpers", () => {
         status: 200,
         json: async () => ({
           href: "s3://naip-analytic/tile.tif",
-          signed: "https://naip-analytic.s3.amazonaws.com/tile.tif?AWSAccessKeyId=123",
+          signed:
+            "https://naip-analytic.s3.amazonaws.com/tile.tif?AWSAccessKeyId=123",
           expires_in: 3600,
         }),
       };
