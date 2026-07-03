@@ -66,22 +66,22 @@ By replacing an always-on spatial database with in-process DuckDB queries over G
 ```mermaid
 graph TD
     subgraph Browser ["Browser (Client WebGL/GPU)"]
-        Viewer["<img src='https://cdn.simpleicons.org/mapbox/3bb2d0' width='16'/> MapLibre + deck.gl Viewer"]
-        GeotiffJS["<img src='https://cdn.simpleicons.org/javascript/F7DF1E' width='16'/> geotiff.js range reader"]
-        MosaicLayer["<img src='https://cdn.simpleicons.org/webgl/990000' width='16'/> MosaicLayer / COGLayer / TerrainMeshLayer"]
-        GLSL["<img src='https://cdn.simpleicons.org/opengl/5586A4' width='16'/> GPU Shaders: rescale/composite/hillshade"]
+        Viewer["🗺️ MapLibre + deck.gl Viewer"]
+        GeotiffJS["📦 geotiff.js range reader"]
+        MosaicLayer["⛰️ MosaicLayer / COGLayer / TerrainMeshLayer"]
+        GLSL["⚡ GPU Shaders: rescale/composite/hillshade"]
     end
 
     subgraph AWS ["AWS Cloud (Serverless Stack)"]
-        APIGateway["<img src='https://cdn.simpleicons.org/awslambda/FF9900' width='16'/> FastAPI on Lambda"]
-        DuckDB["<img src='https://cdn.simpleicons.org/duckdb/FFF000' width='16'/> DuckDB Query Engine"]
-        Parquet["<img src='https://cdn.simpleicons.org/amazons3/FF9900' width='16'/> GeoParquet Lake Indexes on S3"]
+        APIGateway["🚀 FastAPI on Lambda"]
+        DuckDB["🦆 DuckDB Query Engine"]
+        Parquet["🗄️ GeoParquet Lake Indexes on S3"]
     end
 
     subgraph External ["External Public Data Sources"]
-        COGBucket["<img src='https://cdn.simpleicons.org/amazons3/FF9900' width='16'/> COG Imagery Buckets on S3"]
-        USGSBucket["<img src='https://cdn.simpleicons.org/amazons3/FF9900' width='16'/> USGS 3DEP S1M Bucket on S3"]
-        OvertureS3["<img src='https://cdn.simpleicons.org/amazons3/FF9900' width='16'/> Overture GeoParquet on S3"]
+        COGBucket["🪣 COG Imagery Buckets on S3"]
+        USGSBucket["🪣 USGS 3DEP S1M Bucket on S3"]
+        OvertureS3["🪣 Overture GeoParquet on S3"]
     end
 
     %% Force vertical layout via invisible links
