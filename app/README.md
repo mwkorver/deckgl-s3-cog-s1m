@@ -183,6 +183,8 @@ requests server-side.
 - `GET /collections/naip`
 - `POST /search` — reads the GeoParquet lake via the in-process DuckDB connection
 - `GET /availability` — state → available NAIP years (powers the viewer dropdowns)
+- `POST /s1m/tiles` — discovers USGS 3DEP Seamless 1-meter DEM tile footprints
+- `POST /buildings/overture` — fetches terrain-seated building footprints from Overture Maps
 - `POST /ingest/options`
 - `POST /ingest/run`
 - `GET /ingest/status/{job_id}`

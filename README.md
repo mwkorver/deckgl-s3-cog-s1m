@@ -114,6 +114,7 @@ To access requester-pays S3 assets securely:
 ### 3. GPU-Accelerated Raster Shaders
 The custom render pipeline uses `luma.gl` shader modules for client-side processing:
 - **Shader Pipelines:** Chained operations process raw pixels: decoding (`FilterNoDataVal`, `CompositeBands`), numeric transformation (`LinearRescale`), and color mapping (`Colormap`, `BlackIsZero`, `CMYKToRGB`).
+- **Band-Separate & LERC Support:** Native support for band-separate decoded layouts (like LERC-compressed Vermont imagery). The pipeline dynamically interleaves separate band arrays (`toPixelInterleaved`) inside the RGBA render path before uploading texture data to the GPU.
 - **16-Bit Normalization:** Unsigned 16-bit integer bands (like New Jersey imagery) are normalized and stretched dynamically.
 - **Firefox/Browser Compatibility:** Implements a CPU-based fallback mechanism that detects lack of native 16-bit texture support (`EXT_texture_norm16` missing in Firefox), rescaling data to 8-bit before GPU upload as `rgba8unorm` textures.
 
@@ -239,7 +240,7 @@ python3 -m pytest
 ```
 
 ### 4. Deployment
-The AWS deployment runs in **`us-west-2`**, where the GeoParquet lake and most source COG buckets — including the primary NAIP archive (`naip-analytic`), Kentucky (`kyfromabove`), and New Jersey (`njogis-imagery`) — reside, keeping compute, indexing, and the bulk of imagery reads in-region. A few collections source cross-region and pay data transfer for their tiles: Indiana (`gisimageryingov`) and Vermont (`vtopendata-prd`) are in `us-east-2`.
+The AWS deployment runs in **`us-west-2`**, where the GeoParquet lake and most source COG buckets — including the primary NAIP archive (`naip-analytic`), Kentucky (`kyfromabove`), and New Jersey (`njogis-imagery`) — reside, keeping compute, indexing, and the bulk of imagery reads in-region. A few collections source cross-region and pay data transfer for their tiles: Indiana (`gisimageryingov`) and Vermont (`vtopendata-prd`, read-only) are in `us-east-2`.
 
 For the step-by-step guide to deploying the serverless ingest, query (read), and static viewer stacks, please refer to the deployment section in **[app/README.md](app/README.md#deploying-to-aws)**.
 
