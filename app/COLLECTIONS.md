@@ -47,10 +47,9 @@ Three universal partition axes — *what / where / when*:
 
 Finer, collection‑specific attributes (NAIP's `quad`, `resolution`, `product`;
 another collection's tile id, band profile, sensor) live in a **`properties`
-bag**, not as partitions. This mirrors the detections lake in
-`sam-concept-worker/OUTPUT_SCHEMA.md` (`collection/year/region` + a `properties`
-struct) so the *imagery* catalog and the *detections* lake share one mental
-model. (Partition **order** between the two lakes is an open decision — see
+bag**, not as partitions. Keeping only `collection`/`region`/`year` as partitions keeps the tree small
+and uniform across collections, while the variable per-collection detail rides
+along in `properties`. (Partition **order** is an open decision — see
 [Open decisions](#open-decisions).)
 
 ---
@@ -524,8 +523,7 @@ Why us‑west‑2 anchors everything:
 - **NAIP** (the primary, highest‑volume collection) lives in us‑west‑2, and the
   other three active collections (KyFromAbove, NJ, Colorado) happen to as well —
   so the entire active set is single‑region with **zero cross‑region exposure**.
-- Cross‑region adds **latency** and **egress cost** for no current benefit. The
-  GPU fleet, the lake, the pre‑cut chips, and the detections are all us‑west‑2.
+- Cross‑region adds **latency** and **egress cost** for no current benefit.
 
 The latency reasoning, kept here so it isn't re‑derived later:
 
@@ -592,17 +590,15 @@ lake, or a backfill that writes the new layout alongside and flips the read root
 
 ## Open decisions
 
-1. **Partition order.** The detections lake committed to `collection/year/region`
-   (`OUTPUT_SCHEMA.md`); NAIP imagery is `state/naip_year` = `region/year`.
-   Prepending `collection=` to the imagery tree gives `collection/region/year` —
-   cheapest migration, keeps region‑before‑year. Matching the detections order
-   (`collection/year/region`) re‑lays the existing NAIP tree. Recommend
-   **`collection/region/year`** for imagery (minimal churn; imagery is browsed
-   region‑first) and accept the two lakes differ in order — order is a physical
-   prune choice, not a schema contract. Revisit if it causes confusion.
+1. **Partition order.** NAIP imagery is `state/naip_year` = `region/year`.
+   Prepending `collection=` gives `collection/region/year` — the cheapest
+   migration, keeping region-before-year. The alternative,
+   `collection/year/region`, would re-lay the existing NAIP tree. Recommend
+   **`collection/region/year`** (minimal churn; imagery is browsed
+   region-first) — order is a physical prune choice, not a schema contract.
+   Revisit if it causes confusion.
 2. **Catalog scope.** One shared `imagery-catalog` vs catalog‑per‑collection.
-3. **`properties` typing.** Struct columns (typed, get stats) vs JSON string —
-   same trade‑off the detections schema flagged; promote frequently‑filtered
+3. **`properties` typing.** Struct columns (typed, get stats) vs JSON string; promote frequently‑filtered
    fields (e.g. `resolution`) to real columns.
 4. **Year as a range** (Vermont mosaics: `2016-2019`). The `year` partition is an
    `int`. Policy when a product's vintage is a span: partition by a single
