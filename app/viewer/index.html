@@ -478,11 +478,13 @@
                 <label class="field" style="flex-wrap:wrap; cursor:pointer; user-select:none;">
                   <input id="footprint-layer-search" name="footprint-layer-mode" value="search" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
                   <strong>Search results</strong>
+                  <span id="search-results-count" class="muted" style="margin-left:2px;"></span>
                   <span class="field" style="gap:6px; margin-left:8px;">
                     Max
                     <input id="limit" type="number" value="18000" min="1" max="18000" style="width:84px;" />
                   </span>
                   <span class="muted" style="flex-basis:100%; margin-left:20px;">The exact COGs your search returned (up to Max) — the same set that renders as imagery.</span>
+                  <span id="search-results-cap-hint" style="flex-basis:100%; margin-left:20px; margin-top:2px; color:#fbbf24; display:none;">Capped at Max — this is only part of the coverage. Zoom in, or switch to the Coverage map for the full extent.</span>
                 </label>
                 <label class="field" style="flex-wrap:wrap; cursor:pointer; user-select:none;">
                   <input id="footprint-layer-coverage" name="footprint-layer-mode" value="coverage" type="radio" autocomplete="off" style="width:auto; padding:0; margin:0;" />
@@ -5462,6 +5464,21 @@
         );
       }
 
+      // Live COG count on the "Search results" option, plus an amber hint when the
+      // result hit the Max limit -- the concrete cue for why the Coverage map
+      // exists (search truncates at scale; coverage doesn't).
+      function updateSearchResultsCount() {
+        const countEl = document.getElementById("search-results-count");
+        const hintEl = document.getElementById("search-results-cap-hint");
+        if (!countEl) return;
+        const n = (lastSearchFeatures || []).length;
+        const limit = Number(limitEl.value || SEARCH_LIMIT_DEFAULT);
+        const capped = n > 0 && n >= limit;
+        countEl.textContent = n === 0 ? "" : `· ${n.toLocaleString()} COG${n === 1 ? "" : "s"}${capped ? " (capped)" : ""}`;
+        countEl.style.color = capped ? "#fbbf24" : "";
+        if (hintEl) hintEl.style.display = capped ? "" : "none";
+      }
+
       function updateNaipSearchFootprintsVisibility() {
         const visibility = toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none";
         for (const layerId of ["naip-search-fill", "naip-search-line"]) {
@@ -5642,6 +5659,7 @@
 
            const features = data.features || [];
           lastSearchFeatures = features;
+          updateSearchResultsCount();
           if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
           lastSearchBbox = body.bbox;
           const isLake = true;
