@@ -84,6 +84,11 @@ graph TD
         OvertureS3[Overture GeoParquet on S3]
     end
 
+    %% Force vertical layout via invisible links
+    Viewer ~~~ APIGateway ~~~ COGBucket
+    GeotiffJS ~~~ DuckDB ~~~ USGSBucket
+    MosaicLayer ~~~ Parquet ~~~ OvertureS3
+
     %% API Queries
     Viewer -->|1. Search BBOX / Tiles / Buildings| APIGateway
     APIGateway -->|2. In-Process Query| DuckDB
