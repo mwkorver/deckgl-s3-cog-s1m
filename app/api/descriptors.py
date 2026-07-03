@@ -438,63 +438,6 @@ NJ = CollectionDescriptor(
 
 
 # --------------------------------------------------------------------------- #
-# Vermont Open Geospatial (vtopendata-prd, public). Layout:
-#   Imagery/_Tiles/VTORTHO/<res>/<profile>/<year>/COGS/VT_<tile>_<yyyymmdd>.tif
-# --------------------------------------------------------------------------- #
-def vt_cog_filter(key: str) -> bool:
-    return key.endswith(".tif") and "/COGS/" in key
-
-
-def vt_key_parser(key: str) -> KeyFields | None:
-    parts = key.split("/")
-    if len(parts) < 8:
-        return None
-    try:
-        year = int(parts[5])
-    except ValueError:
-        return None
-    tile = parts[-1].removesuffix(".tif")
-    return KeyFields(
-        region="vt",
-        year=year,
-        properties={"vt:tile": tile, "vt:resolution": parts[3], "vt:profile": parts[4]},
-    )
-
-
-def vt_enumerate_prefixes(s3, bucket: str, region: str, year: int | None) -> list[str]:
-    out = []
-    base = "Imagery/_Tiles/VTORTHO/"
-    for res_dir in _common_prefixes(s3, bucket, base):
-        for prof_dir in _common_prefixes(s3, bucket, res_dir):
-            if year is not None:
-                pre = f"{prof_dir}{year}/COGS/"
-                resp = s3.list_objects_v2(Bucket=bucket, Prefix=pre, MaxKeys=1)
-                if "Contents" in resp or "CommonPrefixes" in resp:
-                    out.append(pre)
-            else:
-                for yr_dir in _common_prefixes(s3, bucket, prof_dir):
-                    name = yr_dir.rstrip("/").rsplit("/", 1)[-1]
-                    if name.isdigit():
-                        out.append(f"{yr_dir}COGS/")
-    return out
-
-
-VT_OPENDATA = CollectionDescriptor(
-    id="vt-opendata",
-    bucket="vtopendata-prd",
-    access="public",
-    discovery=S3PrefixListing(
-        bucket="vtopendata-prd",
-        access="public",
-        cog_filter=vt_cog_filter,
-        key_parser=vt_key_parser,
-        enumerate_prefixes=vt_enumerate_prefixes,
-        regions=("vt",),
-    ),
-    key_filter=vt_cog_filter,
-)
-
-# --------------------------------------------------------------------------- #
 # Indiana Statewide (gisimageryingov, public). Layout:
 #   imageryoptimized/statewide/<year>/<SPE|SPW>/<res>in/in<year>_<tile>_<res>.tif
 # --------------------------------------------------------------------------- #
@@ -580,9 +523,9 @@ NAIP = CollectionDescriptor(
 )
 
 # Assemble the live registry now that all descriptors are defined. The public
-# S3-prefix collections (KyFromAbove, New Jersey, Vermont, Indiana) are ingestable via
+# S3-prefix collections (KyFromAbove, New Jersey, Indiana) are ingestable via
 # the generic path. Keep in sync with collections/registry.yaml (active collections).
-_REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ, VT_OPENDATA, IN_IMAGERY)})
+_REGISTRY.update({c.id: c for c in (NAIP, KYFROMABOVE, NJ, IN_IMAGERY)})
 
 
 def register_adhoc_collection(
