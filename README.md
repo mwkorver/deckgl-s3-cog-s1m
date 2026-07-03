@@ -19,13 +19,13 @@ https://developmentseed.org/deck.gl-raster/examples/
 
 One of the demos renders a NAIP mosaic using the Microsoft Planetary Computer. Which made me wonder: **why is it always Microsoft's copy of NAIP?**
 
-The original cloud-hosted NAIP archive landed on Amazon S3 years ago as part of the AWS Open Data Program. It was one of the first really big geospatial datasets to prove you could stop shipping hard drives around and start treating imagery like any other cloud-native data source. I spent a good chunk of my time at AWS helping customers do exactly that, so seeing the S3 version mostly absent from demos felt... odd.
+The original cloud-hosted NAIP archive landed on Amazon S3 years ago as part of the AWS Open Data Program. It was the first large geospatial dataset to prove you could stop shipping hard drives around and start treating imagery like any other cloud-native data source. I know because I was the person at AWS who received the 24? SATA drives. I spent a good chunk of my time at AWS helping customers do this kind of thing, so seeing the S3 version mostly absent from recent demos felt... a bit sad.
 
 So this repository started as a simple exercise: take the demo and point it at **`s3://naip-analytic`** instead.
 
 Then scope creep happened.
 
-Around the same time, USGS released the **Seamless 1 Meter Digital Elevation Model (S1M)** as part of the 3D Elevation Program (3DEP).
+Around the same time, I learned that the USGS released the **Seamless 1 Meter Digital Elevation Model (S1M)** as part of the 3D Elevation Program (3DEP).
 
 https://www.usgs.gov/3d-elevation-program/new-product-3d-elevation-program-seamless-1-meter-digital-elevation-model-s1m
 
@@ -45,7 +45,7 @@ The broader goal is to explore what modern cloud-native geospatial applications 
 
 ## Intended audience and purpose
 
-This application is intended for developers, cloud architects, geospatial engineers, and stakeholders involved with federal imagery and elevation programs such as NAIP and USGS 3DEP. It is not primarily a consumer map viewer; it is a working demonstration of how existing federal geospatial data already published on Amazon S3 can be accessed, indexed, searched, and visualized using a cloud-native architecture.
+This application is intended for developers, cloud architects, geospatial engineers, and stakeholders involved with federal imagery and elevation programs such as NAIP and USGS 3DEP. It is not a consumer map viewer; it's a working demonstration of how existing federal geospatial data already published on Amazon S3 can be accessed, indexed, searched, and visualized using a cloud-native architecture.
 
 The project is meant to showcase practical patterns for public-sector geospatial modernization: Cloud-Optimized GeoTIFF range reads from S3, serverless metadata search over GeoParquet with DuckDB, requester-pays-aware asset signing, and browser-side GPU rendering of imagery and terrain. The goal is to make the architecture concrete enough for technical review, program evaluation, and reuse in operational prototypes around federal open data.
 
