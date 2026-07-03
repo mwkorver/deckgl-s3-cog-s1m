@@ -5,6 +5,9 @@
 [![linting: ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![formatted with: biome](https://img.shields.io/badge/formatted%20with-biome-60a5fa.svg)](https://biomejs.dev)
 
+> [!WARNING]
+> **Reference Architecture & Archive Notice:** This repository is a prototype and reference implementation. It is provided **"as-is"** without any support, warranty, or active maintenance. The repository has been archived and is read-only; issues and pull requests are disabled.
+
 A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG) rendering** and **serverless spatial data lake indexing**.
 
 ![NAIP imagery draped over USGS 3DEP S1M 1-meter terrain in the browser viewer](docs/naip-terrain-drape.png)
