@@ -53,6 +53,7 @@ That purpose drives the viewer flow. The `Collection / Region / Year` controls l
 
 > [!NOTE]
 > **Gratitude & Attribution:** This application would have been impossible to build without the outstanding foundations of three key open-source projects:
+> - **[Cloud-Optimized GeoTIFF (COG)](https://www.cogeotiff.org/)** and **[GDAL](https://gdal.org/)**: This project is built on the COG standard for streaming raster data over HTTP. Special thanks to Even Rouault, the lead maintainer of GDAL, libtiff, and PROJ, whose tireless work on these foundational libraries powers the entire cloud-native geospatial ecosystem.
 > - **[vis.gl / deck.gl](https://github.com/visgl/deck.gl)** and **[Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster)**: deck.gl provides the WebGL2/WebGPU visualization framework, while Development Seed's raster rendering work provides the foundation extended in this project for client-side band manipulation and color mapping.
 > - **[DuckDB](https://duckdb.org/)**: The fast, in-process spatial SQL engine that powers the serverless GeoParquet data lake querying.
 > - **[Apache Parquet geospatial types](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#geometry)** and **[GeoParquet](https://geoparquet.org/)**: Parquet provides native `GEOMETRY` and `GEOGRAPHY` logical types, while GeoParquet supplies interoperability guidance and additional geospatial metadata. Together they make it possible to store and query spatial data without a separate GIS database server.
