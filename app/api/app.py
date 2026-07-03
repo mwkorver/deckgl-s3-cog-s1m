@@ -117,6 +117,30 @@ def root():
     }
 
 
+_REGISTRY_EXTENT: dict[str, dict[str, Any]] | None = None
+
+
+def _registry_extent_by_id() -> dict[str, dict[str, Any]]:
+    """Title + extent (region_code, region_kind, years, bbox) per collection, read
+    once from the registry-compiled collections.geojson. Enriches /collections so
+    it carries real metadata instead of bare ids -- the same file the viewer reads
+    for its collection panel."""
+    global _REGISTRY_EXTENT
+    if _REGISTRY_EXTENT is None:
+        out: dict[str, dict[str, Any]] = {}
+        try:
+            fc = json.loads((VIEWER_DIR / "collections.geojson").read_text())
+            for feat in fc.get("features", []):
+                p = feat.get("properties", {})
+                cid = p.get("id")
+                if cid:
+                    out[cid] = {k: p.get(k) for k in ("title", "region_code", "region_kind", "years", "bbox")}
+        except Exception:
+            out = {}
+        _REGISTRY_EXTENT = out
+    return _REGISTRY_EXTENT
+
+
 @app.get("/collections")
 def collections():
     try:
@@ -129,12 +153,18 @@ def collections():
         raise HTTPException(
             status_code=503, detail=f"lake collection listing failed: {exc}"
         )
+    reg = _registry_extent_by_id()
     return {
         "collections": [
             {
                 "id": cid,
                 "type": "Collection",
-                "title": cid.upper(),
+                "title": (reg.get(cid) or {}).get("title") or cid.upper(),
+                "properties": {
+                    k: v
+                    for k, v in (reg.get(cid) or {}).items()
+                    if k != "title" and v is not None
+                },
                 "links": [
                     {"rel": "self", "href": f"/collections/{cid}"},
                     {"rel": "items", "href": "/search"},
