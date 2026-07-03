@@ -43,8 +43,6 @@ Since we already have terrain, it seemed a shame not to add buildings. Flip on t
 
 The broader goal is to explore what modern cloud-native geospatial applications look like when the cloud stores the data, the browser does the work, and servers mostly get out of the way.
 
-The core motivation for this project is to make the numerous open Cloud-Optimized GeoTIFF (COG) datasets hosted on Amazon S3 as part of the Registry of Open Data on AWS—including the USDA National Agriculture Imagery Program (NAIP) imagery and the USGS 3DEP Seamless 1-meter (S1M) elevation DEMs—more visible, accessible, and easily explorable for users directly in the browser.
-
 ## Intended audience and purpose
 
 This application is intended for developers, cloud architects, geospatial engineers, and stakeholders involved with federal imagery and elevation programs such as NAIP and USGS 3DEP. It is not primarily a consumer map viewer; it is a working demonstration of how existing federal geospatial data already published on Amazon S3 can be accessed, indexed, searched, and visualized using a cloud-native architecture.
