@@ -138,6 +138,11 @@ S1M coverage is CONUS-only and still expanding; viewport areas with no S1M tile 
 
 > **Consolidated into the main read API (2026-06):** S1M was previously a standalone terrain Lambda fronted by a token-guarded Function URL (`/s1m/terrain`, `S1M_DEMO_TOKEN`, `deploy-s1m.sh`). That service was removed; terrain discovery (`/s1m/tiles`) is now part of the `deckgl-s3-cog-s1m-read` API, and the DEM read moved entirely into the browser.
 
+### 7. Buildings from Overture (terrain-seated 3D extrusions)
+The **Show buildings** toggle overlays building footprints from the [Overture Maps Foundation](https://overturemaps.org/) dataset:
+- **`POST /buildings/overture`** bbox-prunes a CONUS row-group index ([`build_overture_buildings_index.py`](app/api/build_overture_buildings_index.py)) to the viewport, then reads only the matching row groups straight from Overture's public GeoParquet release — the same in-process DuckDB pattern as `/search` — with a local GeoParquet fallback.
+- Each footprint is sampled against the loaded S1M terrain mesh so it sits on the ground instead of floating, then extruded to its height and rendered as a MapLibre `fill-extrusion` layer.
+
 ---
 
 ## Repository Structure
@@ -155,7 +160,7 @@ The project is managed as a monorepo containing Shared TypeScript Packages (`pnp
 *   **[raster-reproject](packages/raster-reproject)**: Standalone client-side mesh generation and refinement for raster reprojections.
 
 ### Applications (`app/`)
-*   **[api](app/api)**: Python FastAPI Server that serves `/search`, `/availability`, and `/sign` (using an in-process DuckDB database connection), plus the on-demand `/s1m/tiles` (3DEP elevation tile discovery) endpoint.
+*   **[api](app/api)**: Python FastAPI Server that serves `/collections`, `/search`, `/availability`, and `/sign` (using an in-process DuckDB database connection), plus `/s1m/tiles` (3DEP elevation tile discovery) and `/buildings/overture` (Overture footprints) endpoints.
 *   **[viewer](app/viewer)**: Static single-page application built on MapLibre and deck.gl, querying the local/deployed API and rendering tiles dynamically.
 *   **[lambda](app/lambda)**: AWS SAM templates and automation scripts (deploying the read/ingest Lambdas, the DuckDB layer, and the S3-hosted static viewer).
 
@@ -166,7 +171,7 @@ The project is managed as a monorepo containing Shared TypeScript Packages (`pnp
 ### Prerequisites
 *   **Node.js** (v20+) & **pnpm** (v10+) — CI runs on Node 20
 *   **Python** (v3.12+)
-*   **Docker** (for SAM container packaging and local testing)
+*   **Docker** (for AWS SAM container builds and local testing)
 *   **AWS CLI** & **AWS SAM CLI** (for cloud deployments)
 
 ### 1. Installation & Build
@@ -234,7 +239,7 @@ python3 -m pytest
 ```
 
 ### 4. Deployment
-The AWS deployment is intentionally region-locked to **`us-west-2`** because its primary source COG buckets (`naip-analytic`, `njogis-imagery`, and `kyfromabove`) reside there. Deploying compute and indexing in the same region minimizes cross-region latency and eliminates data-transfer charges.
+The AWS deployment runs in **`us-west-2`**, where the GeoParquet lake and most source COG buckets — including the primary NAIP archive (`naip-analytic`), Kentucky (`kyfromabove`), and New Jersey (`njogis-imagery`) — reside, keeping compute, indexing, and the bulk of imagery reads in-region. A few collections source cross-region and pay data transfer for their tiles: Indiana (`gisimageryingov`) and Vermont (`vtopendata-prd`) are in `us-east-2`.
 
 For the step-by-step guide to deploying the serverless ingest, query (read), and static viewer stacks, please refer to the deployment section in **[app/README.md](app/README.md#deploying-to-aws)**.
 
