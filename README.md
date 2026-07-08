@@ -134,24 +134,14 @@ To access requester-pays S3 assets securely:
 - **Token-Aware Self-Heal:** A presigned URL cannot outlive the STS token that signed it. When credentials come from short-lived, auto-rotating login sessions (~15 min), `GET /sign` bounds both the URL's `ExpiresIn` and the server-side presign cache to the token's *real* remaining life (parsing `expiresAt` timezone-aware so it is never over-trusted) and returns the true `expires_in`. The signing client rebuilds on the token's rotation cadence, so it never emits URLs signed with a dead token, and the viewer re-signs before expiry.
 - **Priority Loading:** Uses Euclidean distance from the viewport center to sort and load tiles center-out.
 
-### 3. GPU-Accelerated Raster Shaders
-The custom render pipeline uses `luma.gl` shader modules for client-side processing:
-- **Shader Pipelines:** Chained operations process raw pixels: decoding (`FilterNoDataVal`, `CompositeBands`), numeric transformation (`LinearRescale`), and color mapping (`Colormap`, `BlackIsZero`, `CMYKToRGB`).
-- **Band-Separate & LERC Support:** Native support for band-separate decoded layouts (like LERC-compressed Vermont imagery). The pipeline dynamically interleaves separate band arrays (`toPixelInterleaved`) inside the RGBA render path before uploading texture data to the GPU.
-- **16-Bit Normalization:** Unsigned 16-bit integer bands (like New Jersey imagery) are normalized and stretched dynamically.
-- **Firefox/Browser Compatibility:** Implements a CPU-based fallback mechanism that detects lack of native 16-bit texture support (`EXT_texture_norm16` missing in Firefox), rescaling data to 8-bit before GPU upload as `rgba8unorm` textures.
-
-### 4. Compact EPSG database (309KB)
-Web applications requiring projections usually load massive database bundles. `@s3-cog/epsg` compresses all 7,352 EPSG projection WKT2 definitions into a tiny **309KB** package using the browser's native `DecompressionStream` API to unpack gzip data on-the-fly.
-
-### 5. Declarative & Semi-Automated Onboarding
+### 3. Declarative & Semi-Automated Onboarding
 Adding new image collections is simplified via layout inference:
 - A CLI validates candidate files using a light, dependency-free TIFF header probe.
 - Year tokens are extracted automatically using regex patterns.
 - Geographies/regions are classified spatially using the header's coordinate transform against standard boundaries.
 - Produces clean declarative config in [registry.yaml](app/collections/registry.yaml) without writing custom Python parsing code.
 
-### 6. Elevation as 3D Terrain (USGS 3DEP S1M DEMs)
+### 4. Elevation as 3D Terrain (USGS 3DEP S1M DEMs)
 The USGS 3DEP **Seamless 1-meter (S1M)** DEM is a CONUS-wide elevation dataset distributed as COG + metadata pairs in the public USGS bucket (`s3://prd-tnm/StagedProducts/Elevation/S1M/`, NAD83(2011) Conus Albers / NAVD88). The viewer renders it as a **3D mesh, not as flat imagery**:
 - **Tile discovery:** the whole-collection footprint index contains ~9,600 tile polygons, each carrying its COG path. It is converted from the source GeoPackage to Parquet ahead of time; the reader uses bbox columns for DuckDB pruning and WKB for the exact point-in-polygon check.
 - **`POST /s1m/tiles`** takes a viewport `bbox` (and optional `center`) and returns the covering S1M tiles — each with its public COG URL and footprint ring — ordered nearest-first. This is the only S1M server endpoint; it does not read or download any DEM pixels.
@@ -162,7 +152,7 @@ S1M coverage is CONUS-only and still expanding; viewport areas with no S1M tile 
 
 > **Consolidated into the main read API (2026-06):** S1M was previously a standalone terrain Lambda fronted by a token-guarded Function URL (`/s1m/terrain`, `S1M_DEMO_TOKEN`, `deploy-s1m.sh`). That service was removed; terrain discovery (`/s1m/tiles`) is now part of the `deckgl-s3-cog-s1m-read` API, and the DEM read moved entirely into the browser.
 
-### 7. Buildings from Overture (terrain-seated 3D extrusions)
+### 5. Buildings from Overture (terrain-seated 3D extrusions)
 The **Show buildings** toggle overlays building footprints from the [Overture Maps Foundation](https://overturemaps.org/) dataset:
 - **`POST /buildings/overture`** bbox-prunes a CONUS row-group index ([`build_overture_buildings_index.py`](app/api/build_overture_buildings_index.py)) to the viewport, then reads only the matching row groups straight from Overture's public GeoParquet release — the same in-process DuckDB pattern as `/search` — with a local GeoParquet fallback.
 - Each footprint is sampled against the loaded S1M terrain mesh so it sits on the ground instead of floating, then extruded to its height and rendered as a MapLibre `fill-extrusion` layer.
@@ -174,6 +164,7 @@ The **Show buildings** toggle overlays building footprints from the [Overture Ma
 The project is managed as a monorepo containing Shared TypeScript Packages (`pnpm` workspaces) and an Application suite:
 
 ### Shared Packages (`packages/`)
+Derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) monorepo (MIT — see each package's `LICENSE`), vendored here so the viewer builds standalone. Listed for orientation; they are not this project's contribution.
 *   **[deck.gl-geotiff](packages/deck.gl-geotiff)**: High-level `COGLayer` integrating with `deck.gl`'s `TileLayer`.
 *   **[deck.gl-raster](packages/deck.gl-raster)**: Custom shaders and GPU modules (`luma.gl` `ShaderModule` instances) for dynamic color operations and filters.
 *   **[geotiff](packages/geotiff)**: Range-read and optimization wrappers for in-browser COG retrieval.
