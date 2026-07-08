@@ -5,8 +5,8 @@
 [![linting: ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![formatted with: biome](https://img.shields.io/badge/formatted%20with-biome-60a5fa.svg)](https://biomejs.dev)
 
-> [!WARNING]
-> **Reference Architecture Notice:** This repository is a prototype and reference implementation. It is provided **"as-is"** without any support, warranty, or active maintenance. Issues are disabled, and pull requests are not actively monitored or accepted.
+> [!NOTE]
+> **Reference implementation, released under [MIT](LICENSE) — use, fork, and adapt it freely.** It is a prototype provided as-is, with no support or active maintenance; issues and pull requests aren't monitored, so please fork rather than wait on changes here. The TypeScript packages under [`packages/`](packages/) are derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) (MIT) — see the per-package `LICENSE` files.
 
 A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG) rendering** and **serverless spatial data lake indexing**.
 
@@ -55,9 +55,9 @@ The project is meant to showcase practical patterns for public-sector geospatial
 That purpose drives the viewer flow. The `Collection / Region / Year` controls let a user first inspect data availability and footprints in 2D at a CONUS scale, without paying the cost or cognitive load of terrain rendering. Once they understand which imagery exists for an area and vintage, they can move into the Viewer panel's 3D terrain mode and drape that imagery over the currently available USGS 3DEP S1M COG DEM coverage. In other words, the app separates broad federal-data discovery from detailed 3D inspection: first confirm the imagery footprint, then examine how that imagery behaves on the available 1-meter elevation surface.
 
 > [!NOTE]
-> **Gratitude & Attribution:** This application would have been impossible to build without the outstanding foundations of three key open-source projects:
+> **Gratitude & Attribution:** This application would have been impossible to build without the outstanding foundations of several open-source projects:
 > - **[Cloud-Optimized GeoTIFF (COG)](https://www.cogeotiff.org/)** and **[GDAL](https://gdal.org/)**: This project is built on the COG standard for streaming raster data over HTTP. Special thanks to Even Rouault, the lead maintainer of GDAL, libtiff, and PROJ, whose tireless work on these foundational libraries powers the entire cloud-native geospatial ecosystem.
-> - **[vis.gl / deck.gl](https://github.com/visgl/deck.gl)** and **[Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster)**: deck.gl provides the WebGL2/WebGPU visualization framework, while Development Seed's raster rendering work provides the foundation extended in this project for client-side band manipulation and color mapping.
+> - **[vis.gl / deck.gl](https://github.com/visgl/deck.gl)** and **[Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster)**: deck.gl provides the WebGL2/WebGPU visualization framework. The TypeScript packages under [`packages/`](packages/) are **derived from Development Seed's deck.gl-raster monorepo** (MIT) and extended here for client-side band manipulation, color mapping, and COG/terrain rendering — each retains the upstream copyright in its `LICENSE`.
 > - **[DuckDB](https://duckdb.org/)**: The fast, in-process spatial SQL engine that powers the serverless GeoParquet data lake querying.
 > - **[Apache Parquet geospatial types](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#geometry)** and **[GeoParquet](https://geoparquet.org/)**: Parquet provides native `GEOMETRY` and `GEOGRAPHY` logical types, while GeoParquet supplies interoperability guidance and additional geospatial metadata. Together they make it possible to store and query spatial data without a separate GIS database server.
 > 
