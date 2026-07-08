@@ -258,6 +258,25 @@
       .small {
         font-size: 12px;
       }
+      /* Sub-group heading + inline field help, used in the ingest forms. */
+      .field-group-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #5e9bf0;
+        margin-top: 6px;
+      }
+      .field-hint {
+        display: block;
+        margin-top: 3px;
+        font-size: 11px;
+        font-weight: 400;
+        color: #8b949e;
+      }
+      .field-hint code {
+        color: #c9d1d9;
+      }
       .status-ok {
         color: #86efac;
       }
@@ -660,42 +679,55 @@
 
               <!-- Custom S3 Mode Fields -->
               <div id="ingest-custom-fields" class="controls" style="display: none;">
-                <label class="small">
+
+                <!-- Where the imagery lives -->
+                <div class="field-group-label">Source — where the COGs live</div>
+                <label class="small" style="display:block;">
                   S3 bucket
-                  <input id="ingest-custom-bucket" type="text" value="gisimageryingov" placeholder="gisimageryingov" />
+                  <input id="ingest-custom-bucket" type="text" value="gisimageryingov" placeholder="gisimageryingov" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  <span class="field-hint">Bucket holding the COG imagery, e.g. <code>gisimageryingov</code>.</span>
                 </label>
-                <label class="small">
-                  S3 prefix
-                  <input id="ingest-custom-prefix" type="text" value="imageryoptimized/statewide/2024/SPW/03in/" placeholder="imageryoptimized/statewide/2024/SPW/03in/" />
+                <label class="small" style="display:block;">
+                  Folder path (key prefix)
+                  <input id="ingest-custom-prefix" type="text" value="imageryoptimized/statewide/2023/SPW/03in/" placeholder="imageryoptimized/statewide/2023/SPW/03in/" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  <span class="field-hint">Path inside the bucket to scan. Leave blank to scan the whole bucket.</span>
                 </label>
-                <label class="small">
-                  Collection Name / ID
-                  <input id="ingest-custom-collection" type="text" value="in-imagery-2024" placeholder="in-imagery-2024" />
+                <label class="small" style="display:block;">
+                  Bucket access
+                  <select id="ingest-custom-access" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                    <option value="public" selected>Public — anonymous read</option>
+                    <option value="private">Private — signed with credentials</option>
+                    <option value="requester-pays">Requester pays</option>
+                  </select>
+                  <span class="field-hint">How the read Lambda fetches objects from this bucket.</span>
+                </label>
+
+                <!-- How it is filed in the lake -->
+                <div class="field-group-label">Catalog — how it's filed &amp; searched</div>
+                <label class="small" style="display:block;">
+                  Collection ID
+                  <input id="ingest-custom-collection" type="text" value="in-imagery" placeholder="in-imagery" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                  <span class="field-hint">Name this collection is stored and searched under, e.g. <code>in-imagery-2024</code>.</span>
                 </label>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;">
                   <label class="small" style="display:block;">
-                    Region Code
+                    Region / state code
                     <input id="ingest-custom-region" type="text" value="in" maxlength="16" placeholder="in" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                    <span class="field-hint">Partition key, e.g. <code>in</code>.</span>
                   </label>
                   <label class="small" style="display:block;">
-                    Year
-                    <input id="ingest-custom-year" type="number" value="2024" min="1900" max="2100" style="width:100%; box-sizing:border-box; margin-top:2px;" />
-                  </label>
-                  <label class="small" style="display:block;">
-                    Access Mode
-                    <select id="ingest-custom-access" style="width:100%; box-sizing:border-box; margin-top:2px;">
-                      <option value="public" selected>Public</option>
-                      <option value="private">Private/signed</option>
-                      <option value="requester-pays">Requester pays</option>
-                    </select>
-                  </label>
-                  <label class="small" style="display:block;">
-                    Strategy
-                    <select id="ingest-custom-strategy" style="width:100%; box-sizing:border-box; margin-top:2px;">
-                      <option value="manifest-cog-headers" selected>COG headers</option>
-                    </select>
+                    Imagery year
+                    <input id="ingest-custom-year" type="number" value="2023" min="1900" max="2100" style="width:100%; box-sizing:border-box; margin-top:2px;" />
+                    <span class="field-hint">Flight / vintage year.</span>
                   </label>
                 </div>
+                <label class="small" style="display:block;">
+                  Metadata source
+                  <select id="ingest-custom-strategy" style="width:100%; box-sizing:border-box; margin-top:2px;">
+                    <option value="manifest-cog-headers" selected>Read from COG headers</option>
+                  </select>
+                  <span class="field-hint">Where footprint &amp; projection metadata is read from.</span>
+                </label>
               </div>
 
               <div style="display:flex; gap:8px; margin-top:8px;">
@@ -985,7 +1017,11 @@
       const resolutionDebugEl = document.getElementById("resolution-debug");
 
       const resultsEl = document.getElementById("results");
-      const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
+      // Only the top-level tabs carry data-tab. The ingest-mode buttons reuse the
+      // .tab-button style but manage their own state (switchIngestMode); scoping to
+      // [data-tab] keeps switchTab off them, or clicking a mode button would fire
+      // switchTab(undefined) and blank every .tab-panel.
+      const tabButtons = Array.from(document.querySelectorAll(".tab-button[data-tab]"));
       const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
       const refreshEnvironmentBtn = document.getElementById("refresh-environment");
       const environmentChecksEl = document.getElementById("environment-checks");
