@@ -1,5 +1,7 @@
 # Test fixtures
 
+> This document and the fixture-construction workflow come from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) monorepo (MIT); "we" below refers to the upstream authors. Not this project's original work.
+
 This document details how we construct our test fixtures. The mesh algorithm doesn't need any of the source _image data_, we only need specific metadata (width, height, geotransform, projection). Therefore, we either use `gdalinfo` to extract such metadata or we parse from STAC metadata.
 
 ### NAIP

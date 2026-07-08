@@ -1,5 +1,7 @@
 # @s3-cog/epsg
 
+> Derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) monorepo (MIT), vendored into this repo — see [LICENSE](./LICENSE). Not this project's original work.
+
 The full EPSG projection database, compressed to **309kb** for the web.
 
 [EPSG]: https://en.wikipedia.org/wiki/EPSG_Geodetic_Parameter_Dataset

@@ -1,5 +1,7 @@
 # morecantile-ts
 
+> Derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) monorepo (MIT), vendored into this repo — see [LICENSE](./LICENSE). Not this project's original work.
+
 ![](./assets/morecantile-diagram.jpg)
 
 > Image credit [@vincentsarago].

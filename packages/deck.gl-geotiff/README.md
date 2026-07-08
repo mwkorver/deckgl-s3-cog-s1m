@@ -1,5 +1,7 @@
 # @s3-cog/deck.gl-geotiff
 
+> Derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) monorepo (MIT), vendored into this repo — see [LICENSE](./LICENSE). Not this project's original work.
+
 High-level API for rendering [Cloud-Optimized GeoTIFFs] in deck.gl.
 
 [Cloud-Optimized GeoTIFFs]: https://cogeo.org/

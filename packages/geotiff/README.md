@@ -1,5 +1,7 @@
 # @s3-cog/geotiff
 
+> Derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) monorepo (MIT), vendored into this repo — see [LICENSE](./LICENSE). Not this project's original work.
+
 Fast, high-level GeoTIFF reader written in TypeScript for the browser, wrapping [`@cogeotiff/core`][cogeotiff-lib].
 
 [cogeotiff-lib]: https://github.com/blacha/cogeotiff
