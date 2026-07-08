@@ -5,14 +5,14 @@
 # /search, /availability) and the S1M/buildings indexes from a private S3 bucket.
 # The api container can't use the host's "login"-type credential helper, so it
 # needs file-based creds. But writing those under the SAME profile name as your
-# host login (korver-dev) shadows the login helper -- the credentials file wins,
+# host login profile shadows the login helper -- the credentials file wins,
 # so `aws login` refreshes never take and you get ExpiredToken on a fresh login.
 #
 # So the container uses a DEDICATED profile (deckgl-s3-cog-s1m-local) that lives
-# only in the credentials file, while your host keeps using korver-dev via the
-# login helper. This script exports fresh creds from your live korver-dev login
-# and writes them to [deckgl-s3-cog-s1m-local], leaving [korver-dev] untouched
-# (and cleaning any stray copy).
+# only in the credentials file, while your host keeps using your login profile
+# via the login helper. This script exports fresh creds from your live login
+# and writes them to [deckgl-s3-cog-s1m-local], leaving your login profile
+# untouched (and cleaning any stray copy).
 #
 # Run whenever the viewer shows ingested collections (NJ, KyFromAbove) as "not
 # ingested" or the API returns 503 ExpiredToken. Prereq: you are logged in on the
@@ -23,9 +23,20 @@ COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRED_FILE="${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}"
 
 # The host login identity to copy creds FROM, and the dedicated file profile the
-# container reads (must match AWS_PROFILE in app/.env).
-LOGIN_PROFILE="${AWS_LOGIN_PROFILE:-korver-dev}"
+# container reads (must match AWS_PROFILE in app/.env). Set AWS_LOGIN_PROFILE in
+# your shell or in app/.env (gitignored) to your SSO login profile name.
+if [[ -z "${AWS_LOGIN_PROFILE:-}" && -f "$COMPOSE_DIR/.env" ]]; then
+  AWS_LOGIN_PROFILE="$(grep -E '^AWS_LOGIN_PROFILE=' "$COMPOSE_DIR/.env" | tail -1 | cut -d= -f2-)"
+fi
+LOGIN_PROFILE="${AWS_LOGIN_PROFILE:-}"
 CONTAINER_PROFILE="${AWS_CONTAINER_PROFILE:-deckgl-s3-cog-s1m-local}"
+
+if [[ -z "$LOGIN_PROFILE" ]]; then
+  echo "ERROR: no login profile configured. Set AWS_LOGIN_PROFILE to your host SSO" >&2
+  echo "       login profile, either in your shell or in app/.env, e.g.:" >&2
+  echo "         AWS_LOGIN_PROFILE=my-sso-profile ./refresh-creds.sh" >&2
+  exit 1
+fi
 
 if [[ "$LOGIN_PROFILE" == "$CONTAINER_PROFILE" ]]; then
   echo "ERROR: LOGIN_PROFILE and CONTAINER_PROFILE must differ (they collide and shadow)." >&2
