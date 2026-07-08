@@ -10,7 +10,7 @@
 
 A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG) rendering** and **serverless spatial data lake indexing**.
 
-![NAIP imagery draped over USGS 3DEP S1M 1-meter terrain in the browser viewer](docs/naip-terrain-drape.png)
+![NAIP imagery draped over the USGS 3DEP S1M 1-meter terrain in the browser viewer](docs/NAIP-S1M.gif)
 
 *NAIP aerial imagery draped over the USGS 3DEP Seamless 1-meter DEM, rendered client-side in the browser directly from Cloud-Optimized GeoTIFFs.*
 
