@@ -254,7 +254,9 @@ python3 -m pytest
 ```
 
 ### 4. Deployment
-The AWS deployment runs in **`us-west-2`**, where the GeoParquet lake and most source COG buckets — including the primary NAIP archive (`naip-analytic`), Kentucky (`kyfromabove`), and New Jersey (`njogis-imagery`) — reside, keeping compute, indexing, and the bulk of imagery reads in-region. A few collections source cross-region and pay data transfer for their tiles: Indiana (`gisimageryingov`) and Vermont (`vtopendata-prd`, read-only) are in `us-east-2`.
+The AWS deployment runs in **`us-west-2`**, where the GeoParquet lake and most source COG buckets — including the primary NAIP archive (`naip-analytic`), Kentucky (`kyfromabove`), and New Jersey (`njogis-imagery`) — reside, keeping compute, indexing, and the bulk of imagery reads in-region. Indiana (`gisimageryingov`) sources cross-region — it is in `us-east-2` — and pays data transfer for its tiles.
+
+A fresh deployment comes up with a working lake, not an empty one. The foundation stack creates the deployer's retained viewer/output bucket and **seeds its `lake/` prefix from a shared, read-only seed bucket (`deckgl-s3-cog-s1m-seed-us-west2`)** — a CloudFormation custom resource copies the demo GeoParquet footprints and the S1M and Overture-buildings indexes on create/update. The seed is a demo subset — only some NAIP states and years have been ingested — so the ingest path is there to add or refresh collections beyond it.
 
 For the step-by-step guide to deploying the serverless ingest, query (read), and static viewer stacks, please refer to the deployment section in **[app/README.md](app/README.md#deploying-to-aws)**.
 
