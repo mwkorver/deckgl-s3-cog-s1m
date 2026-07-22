@@ -1,8 +1,10 @@
+import io
 import os
 import sys
-import io
 from unittest.mock import patch
+
 import pyarrow as pa
+import pytest
 
 # Ensure the parent directory is in the path so we can import ingest_duckdb
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -59,11 +61,8 @@ def test_reconcile_completeness_shortfall_strict():
     payloads = [
         {"state": "nj", "naip_year": "2020"}
     ]
-    try:
+    with pytest.raises(SystemExit, match="aborting before write"):
         ingest.reconcile_completeness(manifest, payloads, strict=True)
-        assert False, "Should have raised SystemExit"
-    except SystemExit as e:
-        assert "aborting before write" in str(e)
 
 
 def test_payloads_to_arrow_naip():
@@ -90,14 +89,14 @@ def test_payloads_to_arrow_naip():
             "proj_transform": [1.0, 0.0, 0.0, 0.0, -1.0, 0.0]
         }
     ]
-    
+
     table = ingest.payloads_to_arrow(payloads, collection="naip")
     assert isinstance(table, pa.Table)
     assert "region" in table.column_names
     assert "year" in table.column_names
     assert table.column("region").to_pylist() == ["nj"]
     assert table.column("year").to_pylist() == [2020]
-    
+
     props = table.column("properties").to_pylist()
     assert len(props) == 1
     assert "naip:product" in props[0]
@@ -130,7 +129,7 @@ def test_payloads_to_arrow_generic():
     table = ingest.payloads_to_arrow(payloads, collection="kyfromabove")
     assert table.column("region").to_pylist() == ["ky"]
     assert table.column("year").to_pylist() == [2022]
-    
+
     props = table.column("properties").to_pylist()
     assert "resolution" in props[0]
     assert "season" in props[0]

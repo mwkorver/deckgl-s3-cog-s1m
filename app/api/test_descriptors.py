@@ -175,10 +175,10 @@ def test_s3prefixlisting_live():
 def test_get_descriptor_bucket_lookup():
     nj_desc = d.get_descriptor("nj-imagery")
     assert nj_desc.id == "nj-imagery"
-    
+
     nj_by_bucket = d.get_descriptor("njogis-imagery")
     assert nj_by_bucket is nj_desc
-    
+
     ky_desc = d.get_descriptor("kyfromabove")
     ky_by_bucket = d.get_descriptor("kyfromabove")
     assert ky_by_bucket is ky_desc
@@ -191,21 +191,21 @@ def test_register_adhoc_collection():
     region = "tx"
     year = 2024
     access = "public"
-    
+
     desc = d.register_adhoc_collection(cid, bucket, prefix, region, year, access)
-    
+
     assert desc.id == cid
     assert desc.bucket == bucket
     assert desc.access == access
     assert desc.key_filter("imagery/cogs/tile_2024.tif") is True
     assert desc.key_filter("imagery/cogs/tile_2024.tfw") is False
-    
+
     kf = desc.discovery.key_parser("imagery/cogs/tile_2024.tif")
     assert kf is not None
     assert kf.region == region
     assert kf.year == year
     assert kf.properties["tile"] == "tile_2024"
-    
+
     assert d.get_descriptor(cid) is desc
     assert d.get_descriptor(bucket) is desc
 

@@ -7,14 +7,21 @@ extend-exclude = [
   ".venv",
   "dist",
   "node_modules",
+  # Vendored upstream git submodules -- not ours to lint. geotiff-test-data
+  # additionally ships its own pyproject.toml, which ruff would otherwise
+  # auto-discover and apply (at its own line-length) to everything beneath it.
   "packages/morecantile/spec",
-  "fixtures/geotiff-test-data/rasterio_generated",
+  "fixtures/geotiff-test-data",
 ]
 
 [tool.ruff.lint]
 select = [
-  "E9",
-  "F",
+  "E",  # pycodestyle errors (line-length above is only enforced once E is on)
+  "W",  # pycodestyle warnings
+  "F",  # pyflakes
+  "I",  # import sorting
+  "B",  # flake8-bugbear
+  "UP", # pyupgrade -- keep syntax current with target-version
 ]
 
 [tool.ruff.lint.per-file-ignores]

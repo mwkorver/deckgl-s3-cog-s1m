@@ -25,7 +25,6 @@ import pyarrow.dataset as ds
 import pyarrow.fs as fs
 import pyarrow.parquet as pq
 
-
 DEFAULT_RELEASE = "2026-06-17.0"
 DEFAULT_SOURCE = (
     "overturemaps-us-west-2/release/"

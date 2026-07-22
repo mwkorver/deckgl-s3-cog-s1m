@@ -1,18 +1,11 @@
 import argparse
+import io
 import json
 import os
 import re
-import io
 import threading
-
-_pyproj_lock = threading.RLock()
-
-# Clean up empty AWS environment variables to prevent boto3 ProfileNotFound errors
-for var in ["AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]:
-    if var in os.environ and not os.environ[var].strip():
-        del os.environ[var]
-
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -20,18 +13,26 @@ from time import perf_counter
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
-from PIL import Image
+from PIL import Image, TiffImagePlugin
+from pyproj import Transformer
+
+_pyproj_lock = threading.RLock()
+
+# Clean up empty AWS environment variables to prevent boto3 ProfileNotFound
+# errors. Safe to do after `import boto3`: profiles are resolved when a Session
+# or client is constructed, not at import time.
+for var in ["AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]:
+    if var in os.environ and not os.environ[var].strip():
+        del os.environ[var]
 
 # We only read GeoTIFF header tags here, never decode pixels, so PIL's
 # decompression-bomb guard (which warns/raises on large dimensions) is just
 # noise for full-size NAIP COGs. Disable it for this header-only path.
 Image.MAX_IMAGE_PIXELS = None
-from PIL import TiffImagePlugin
+
 TiffImagePlugin.COMPRESSION_INFO[34887] = "lerc"
-from pyproj import Transformer
 
 EARTHSEARCH_API = os.environ.get("S3_COG_EARTHSEARCH_API", "https://earth-search.aws.element84.com/v1/search")
 EARTHSEARCH_PAGE_SIZE = int(os.environ.get("S3_COG_EARTHSEARCH_PAGE_SIZE", "500"))
@@ -166,7 +167,12 @@ def determine_latest_years(states: set[str]):
     return latest_by_state
 
 
-def build_manifest_inventory(states: set[str], years: set[int] | None, latest_year_only: bool, limit_per_partition: int):
+def build_manifest_inventory(
+    states: set[str],
+    years: set[int] | None,
+    latest_year_only: bool,
+    limit_per_partition: int,
+):
     if not MANIFEST_PATH.exists():
         raise RuntimeError(f"manifest file not found: {MANIFEST_PATH}")
 
@@ -214,7 +220,8 @@ def build_manifest_inventory(states: set[str], years: set[int] | None, latest_ye
         row["metadata_href"] = f"s3://naip-analytic/{metadata_key}" if metadata_key else None
 
     print(
-        f"manifest selected {len(selected):,} assets for states={sorted(states)} years={sorted(years) if years else 'latest' if latest_year_only else 'all'}",
+        f"manifest selected {len(selected):,} assets for states={sorted(states)} "
+        f"years={sorted(years) if years else 'latest' if latest_year_only else 'all'}",
         flush=True,
     )
     return selected, latest_by_state
@@ -238,7 +245,6 @@ def build_manifest_inventory_from_index(
     it). This path is for the PostGIS-free lake ingest (ingest_duckdb.py).
     """
     import duckdb
-
     import duckdb_s3
 
     # Local paths must exist up front; s3:// paths are validated lazily by
@@ -334,11 +340,13 @@ def earthsearch_items_for_state(state: str, page_size: int, year: int | None = N
         data, request_ms = post_json(EARTHSEARCH_API, body)
         features = data.get("features") or []
         print(
-            f"earthsearch state={state} year={year or 'all'} page={page} returned={len(features)} matched={data.get('numberMatched') or data.get('context', {}).get('matched')} request_ms={request_ms:.1f}",
+            f"earthsearch state={state} year={year or 'all'} page={page} "
+            f"returned={len(features)} "
+            f"matched={data.get('numberMatched') or data.get('context', {}).get('matched')} "
+            f"request_ms={request_ms:.1f}",
             flush=True,
         )
-        for feature in features:
-            yield feature
+        yield from features
         next_link = next((link for link in data.get("links", []) if link.get("rel") == "next"), None)
         if not next_link:
             return
@@ -406,7 +414,12 @@ def row_to_insertable(manifest_row: dict[str, Any], item: dict[str, Any]):
     eo_bands = image_asset.get("eo:bands")
     raster_bands = image_asset.get("raster:bands")
     acquisition_date = filename_parts["acquisition_date"] or parse_datetime_date(properties.get("datetime"))
-    band_count = len(raster_bands) if isinstance(raster_bands, list) else (len(eo_bands) if isinstance(eo_bands, list) else None)
+    if isinstance(raster_bands, list):
+        band_count = len(raster_bands)
+    elif isinstance(eo_bands, list):
+        band_count = len(eo_bands)
+    else:
+        band_count = None
     bands = None
     if isinstance(eo_bands, list):
         names = [band.get("common_name") or band.get("name") for band in eo_bands if isinstance(band, dict)]
@@ -539,7 +552,7 @@ class S3File(io.RawIOBase):
             try:
                 data = self.s3.get_object(**params)["Body"].read()
             except Exception as e:  # noqa: BLE001
-                raise OSError(f"S3 read error: {e}")
+                raise OSError(f"S3 read error: {e}") from e
         n = len(data)
         b[:n] = data
         self.position += n
@@ -636,7 +649,7 @@ def fetch_cog_metadata(s3_client, manifest_row, request_payer="requester"):
     geom_geojson = geo["geom"]
 
     acquisition_date = filename_parts["acquisition_date"]
-    
+
     # Generate mock STAC item response compatible with the schema
     item_mock_stac = {
         "id": f"{bucket}/{key}",
@@ -742,7 +755,7 @@ def process_manifest_cog_headers(
             executor.submit(fetch_cog_metadata, s3_client, row, request_payer): row
             for row in manifest_rows.values()
         }
-        
+
         for idx, future in enumerate(as_completed(futures), start=1):
             row = futures[future]
             try:

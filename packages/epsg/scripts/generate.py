@@ -9,9 +9,9 @@ As of February 2026, this uses EPSG version 12.049.
 """
 
 from __future__ import annotations
+
 import gzip
 from io import StringIO
-
 from zipfile import ZipFile
 
 

@@ -41,13 +41,13 @@ def load_extensions(con, *, spatial: bool = True, httpfs: bool = False) -> None:
 
 
 def load_login_session_credentials(profile_name: str):
-    import os
-    import json
-    import time
-    from pathlib import Path
-    from datetime import datetime
     import configparser
-    
+    import json
+    import os
+    import time
+    from datetime import datetime
+    from pathlib import Path
+
     home = Path(os.environ.get("HOME", "/root"))
     cache_dir = home / ".aws" / "login" / "cache"
     if not cache_dir.exists():
@@ -109,17 +109,17 @@ def enable_s3(con, aws_access_key_id: str | None = None, aws_secret_access_key: 
     else:
         con.execute("INSTALL aws; LOAD aws;")
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
-    
+
     access_key = aws_access_key_id
     secret_key = aws_secret_access_key
     token = None
-    
+
     # Try to resolve credentials using boto3 if not explicitly provided
     if not (access_key and secret_key):
         try:
             import boto3
             profile = os.environ.get("AWS_PROFILE") or os.environ.get("AWS_DEFAULT_PROFILE")
-            
+
             session = boto3.Session(profile_name=profile) if profile else boto3.Session()
             try:
                 credentials = session.get_credentials()
@@ -139,7 +139,7 @@ def enable_s3(con, aws_access_key_id: str | None = None, aws_secret_access_key: 
                     token = frozen.token
                 except Exception as exc:
                     print(f"Warning: freezing credentials failed: {exc}", flush=True)
-            
+
             # Fall back to custom login session credentials parser if no credentials resolved
             if not access_key:
                 pname = profile or "default"
@@ -174,7 +174,13 @@ def uses_s3(*paths: str) -> bool:
     return any(str(p).startswith("s3://") for p in paths if p)
 
 
-def configure(con, *paths: str, spatial: bool = True, aws_access_key_id: str | None = None, aws_secret_access_key: str | None = None) -> None:
+def configure(
+    con,
+    *paths: str,
+    spatial: bool = True,
+    aws_access_key_id: str | None = None,
+    aws_secret_access_key: str | None = None,
+) -> None:
     """Load the needed extensions and wire S3 if any path is s3://.
 
     httpfs is only loaded when S3 is in play (local reads don't need it).

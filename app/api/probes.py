@@ -6,9 +6,8 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import boto3
-from botocore.exceptions import BotoCoreError, ClientError
-
 from aws_s3 import get_aws_credentials, get_s3_direct_client
+from botocore.exceptions import BotoCoreError, ClientError
 from config import (
     COLLECTION_ID,
     EARTHSEARCH_API,

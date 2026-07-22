@@ -1,8 +1,5 @@
-import os
 import json
-
-import s1m
-
+import os
 from pathlib import Path
 from secrets import compare_digest
 from threading import Thread
@@ -10,15 +7,12 @@ from time import monotonic
 from typing import Any
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
-
+import s1m
 from aws_s3 import (
     maybe_sign_s3_href,
     prepare_signed_hrefs,
-    rewrite_feature_assets,
     reset_aws_credentials_cache,
+    rewrite_feature_assets,
     validate_signable_s3_href,
 )
 from config import (
@@ -37,10 +31,14 @@ from config import (
     VIEWER_DIR,
 )
 from duckdb_s3 import load_extensions
-from ingest_options import build_ingest_options
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 from ingest_jobs import get_ingest_job, run_ingest_job, set_ingest_job
+from ingest_options import build_ingest_options
 from lake import get_lake_duckdb, is_expired_token_error, lake_collections, reset_lake_duckdb
 from probes import build_environment_payload
+
 
 class NoCacheStaticFiles(StaticFiles):
     def is_not_modified(self, response_headers: dict, request_headers: dict) -> bool:
@@ -152,7 +150,7 @@ def collections():
         # retryable 503 so the client keeps its last-known list and retries.
         raise HTTPException(
             status_code=503, detail=f"lake collection listing failed: {exc}"
-        )
+        ) from exc
     reg = _registry_extent_by_id()
     return {
         "collections": [
@@ -244,12 +242,12 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
     try:
         year = int(year)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail=f"invalid year: {year!r}")
+        raise HTTPException(status_code=400, detail=f"invalid year: {year!r}") from None
     # Default to COG-headers: authoritative + complete, works for any collection,
     # no third-party STAC dependency. manifest-earthsearch can silently drop tiles
     # (it once ingested 430 of WA-2023's 5,720) and is kept only as opt-in.
     strategy = str(body.get("strategy") or "manifest-cog-headers")
-    
+
     bucket = body.get("source_bucket")
     prefix = body.get("source_prefix")
     access = body.get("source_access")
@@ -281,20 +279,20 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
             )
             collection = descriptor.id
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     else:
         try:
             descriptor = descriptors.get_descriptor(collection_id)
             collection = descriptor.id
         except SystemExit as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Optional per-partition cap; absent/0 means "all" (CLI default).
     raw_limit = body.get("limit_per_partition")
     try:
         limit_per_partition = int(raw_limit) if raw_limit not in (None, "") else None
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="invalid limit_per_partition")
+        raise HTTPException(status_code=400, detail="invalid limit_per_partition") from None
     if limit_per_partition is not None and limit_per_partition < 0:
         raise HTTPException(status_code=400, detail="limit_per_partition must be >= 0")
 
@@ -302,7 +300,7 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
     try:
         max_workers = int(raw_workers) if raw_workers not in (None, "") else None
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="invalid max_workers")
+        raise HTTPException(status_code=400, detail="invalid max_workers") from None
     if max_workers is not None and (max_workers < 1 or max_workers > 128):
         raise HTTPException(status_code=400, detail="max_workers must be between 1 and 128")
 
@@ -383,7 +381,7 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
     try:
         year = int(year)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail=f"invalid year: {year!r}")
+        raise HTTPException(status_code=400, detail=f"invalid year: {year!r}") from None
 
     # Default to COG-headers: authoritative + complete, works for any collection,
     # no third-party STAC dependency. manifest-earthsearch can silently drop tiles
@@ -399,7 +397,7 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
     try:
         limit = int(raw_limit) if raw_limit not in (None, "") else SYNC_INGEST_DEFAULT_LIMIT
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="invalid limit_per_partition")
+        raise HTTPException(status_code=400, detail="invalid limit_per_partition") from None
     if limit < 0 or (limit > 0 and limit > SYNC_INGEST_MAX_LIMIT):
         raise HTTPException(
             status_code=400,
@@ -437,19 +435,19 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
             )
             collection = descriptor.id
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     else:
         try:
             descriptor = descriptors.get_descriptor(collection_id)
             collection = descriptor.id
         except SystemExit as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     raw_workers = body.get("max_workers")
     try:
         max_workers = int(raw_workers) if raw_workers not in (None, "") else 16
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="invalid max_workers")
+        raise HTTPException(status_code=400, detail="invalid max_workers") from None
     if max_workers < 1 or max_workers > 128:
         raise HTTPException(status_code=400, detail="max_workers must be between 1 and 128")
 
@@ -458,8 +456,9 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
 
     # Lazy import: keep duckdb/ingest off the cold-start path for non-ingest
     # requests (the read API is the common case).
-    import ingest_duckdb as ig
     from types import SimpleNamespace
+
+    import ingest_duckdb as ig
 
     args = SimpleNamespace(
         collection=collection,
@@ -485,7 +484,7 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
     try:
         payloads = ig.acquire_payloads(args)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"ingest acquisition failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"ingest acquisition failed: {exc}") from exc
 
     # No assets for this (state, year): export() would crash on an empty table,
     # so return a clear "nothing to ingest" result instead of a 500.
@@ -506,7 +505,7 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
         # so report the payload count as rows_ingested for an accurate signal.
         lake_total = ig.export(payloads, args.out, args.row_group_size, args.single_file, args.collection)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"ingest export failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"ingest export failed: {exc}") from exc
 
     return {
         "status": "completed",
@@ -616,7 +615,7 @@ def availability(collection: str = COLLECTION_ID):
         msg = str(exc).lower()
         if "no files found" in msg or "no files matched" in msg:
             return {"engine": "duckdb", "states": {}}
-        raise HTTPException(status_code=500, detail=f"availability query failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"availability query failed: {exc}") from exc
     return {"engine": "duckdb", "states": dict(sorted(states.items())), "gsd": gsd, "extent": extent}
 
 
@@ -658,7 +657,7 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> str:
     try:
         xmin, ymin, xmax, ymax = (float(v) for v in bbox)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="bbox values must be numeric")
+        raise HTTPException(status_code=400, detail="bbox values must be numeric") from None
     limit = min(int(body.get("limit", 1000)), 18000)
 
     filters = [
@@ -893,7 +892,7 @@ def naip_coverage_mvt(
         if "no files found" in msg or "no files matched" in msg:
             tile = b""
         else:
-            raise HTTPException(status_code=500, detail=f"naip coverage mvt failed: {exc}")
+            raise HTTPException(status_code=500, detail=f"naip coverage mvt failed: {exc}") from exc
 
     return Response(
         content=tile or b"",
@@ -1181,7 +1180,7 @@ def s1m_tiles(body: dict[str, Any]):
     try:
         west, south, east, north = (float(v) for v in bbox)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="bbox values must be numbers.")
+        raise HTTPException(status_code=400, detail="bbox values must be numbers.") from None
     center = body.get("center")
     order_center = tuple(center) if isinstance(center, (list, tuple)) and len(center) == 2 else None
     raw_max = body.get("max_tiles")
@@ -1189,7 +1188,7 @@ def s1m_tiles(body: dict[str, Any]):
     try:
         tiles = s1m.cover_tiles(west, south, east, north, max_tiles=max_tiles, order_center=order_center)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"S1M tiles lookup failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"S1M tiles lookup failed: {exc}") from exc
     return {"tiles": tiles}
 
 

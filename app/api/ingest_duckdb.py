@@ -28,11 +28,10 @@ import os
 from pathlib import Path
 from time import perf_counter
 
-import duckdb
-import pyarrow as pa
-
 import descriptors
+import duckdb
 import ingest_manifest as im
+import pyarrow as pa
 
 # Lake root the read API serves from (S3_COG_LAKE_ROOT), so a panel-triggered
 # ingest writes where /search reads -- local or s3://. Falls back to the local
@@ -119,8 +118,8 @@ def parse_args():
     parser.add_argument("--source-access-key-id", help="AWS Access Key ID for S3 client authentication")
     parser.add_argument("--source-secret-access-key", help="AWS Secret Access Key for S3 client authentication")
     return parser.parse_args()
- 
- 
+
+
 def acquire_payloads(args):
     """Run the shared data-acquisition layer and return row-store payloads.
     Mirrors ingest_iceberg.acquire_payloads so both paths ingest identical
@@ -134,7 +133,7 @@ def acquire_payloads(args):
         source_access = getattr(args, "source_access", "public") or "public"
         state = args.states[0] if args.states else "unknown"
         year = args.years[0] if args.years else 2026
-        
+
         descriptor = descriptors.register_adhoc_collection(
             collection_id=args.collection,
             bucket=source_bucket,
@@ -205,14 +204,21 @@ def acquire_payloads(args):
         print(f"join results matched={len(payloads):,} manifest_only_missing_stac={len(missing_rows):,}", flush=True)
 
         if missing_rows:
-            print(f"Warning: {len(missing_rows):,} assets missing from EarthSearch STAC. Falling back to S3 COG header parsing for these assets...", flush=True)
+            print(
+                f"Warning: {len(missing_rows):,} assets missing from EarthSearch STAC. "
+                "Falling back to S3 COG header parsing for these assets...",
+                flush=True,
+            )
             fallback_payloads, failed = im.process_manifest_cog_headers(
                 missing_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer,
                 aws_access_key_id=args.source_access_key_id,
                 aws_secret_access_key=args.source_secret_access_key,
             )
             payloads.extend(fallback_payloads)
-            print(f"Fallback COG header extraction: matched={len(fallback_payloads):,} failed={len(failed):,}", flush=True)
+            print(
+                f"Fallback COG header extraction: matched={len(fallback_payloads):,} failed={len(failed):,}",
+                flush=True,
+            )
 
     # Completeness reconciliation: the manifest index mirrors the authoritative
     # bucket listing, so any per-partition shortfall here is a silent data loss

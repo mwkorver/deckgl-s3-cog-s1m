@@ -24,7 +24,6 @@ import argparse
 from time import perf_counter
 
 import duckdb
-
 import duckdb_s3
 
 

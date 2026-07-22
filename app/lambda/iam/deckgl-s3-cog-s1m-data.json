@@ -19,10 +19,7 @@
     {
       "Sid": "ManifestIndexReadShared",
       "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket",
-        "s3:GetObject"
-      ],
+      "Action": ["s3:ListBucket", "s3:GetObject"],
       "Resource": [
         "arn:aws:s3:::naip-stac-catalog",
         "arn:aws:s3:::naip-stac-catalog/*"
@@ -31,21 +28,13 @@
     {
       "Sid": "NaipSourceReadRequesterPays",
       "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket",
-        "s3:GetObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::naip-analytic",
-        "arn:aws:s3:::naip-analytic/*"
-      ]
+      "Action": ["s3:ListBucket", "s3:GetObject"],
+      "Resource": ["arn:aws:s3:::naip-analytic", "arn:aws:s3:::naip-analytic/*"]
     },
     {
       "Sid": "Whoami",
       "Effect": "Allow",
-      "Action": [
-        "sts:GetCallerIdentity"
-      ],
+      "Action": ["sts:GetCallerIdentity"],
       "Resource": "*"
     }
   ]

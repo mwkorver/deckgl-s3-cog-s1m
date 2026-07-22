@@ -31,9 +31,8 @@ _reader = None
 
 def _open_reader() -> dict:
     import duckdb
-    from pyproj import Transformer
-
     import duckdb_s3
+    from pyproj import Transformer
 
     con = duckdb.connect(":memory:")
     duckdb_s3.configure(con, S1M_INDEX_URL, spatial=False)

@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 
-
 # Clean up empty AWS environment variables to prevent boto3 ProfileNotFound errors.
 for var in ["AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]:
     if var in os.environ and not os.environ[var].strip():
@@ -52,9 +51,8 @@ MODULE_DIR = Path(__file__).resolve().parent
 VIEWER_DIR = MODULE_DIR / "viewer"
 if not VIEWER_DIR.exists():
     VIEWER_DIR = MODULE_DIR.parent / "viewer"
-DEFAULT_REPO_ROOT = (
-    Path(__file__).resolve().parents[2] if len(Path(__file__).resolve().parents) > 2 else Path(__file__).resolve().parent
-)
+_MODULE_PATH = Path(__file__).resolve()
+DEFAULT_REPO_ROOT = _MODULE_PATH.parents[2] if len(_MODULE_PATH.parents) > 2 else _MODULE_PATH.parent
 REPO_ROOT = Path(os.environ.get("S3_COG_REPO_ROOT", DEFAULT_REPO_ROOT))
 LOCAL_MODULE_DIRS = {
     "deck.gl-geotiff": REPO_ROOT / "packages" / "deck.gl-geotiff" / "dist",

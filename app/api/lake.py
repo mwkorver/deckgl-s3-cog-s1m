@@ -5,7 +5,6 @@ from threading import Lock
 from aws_s3 import get_aws_credentials, get_aws_credentials_expiry, get_s3_client, reset_aws_credentials_cache
 from config import COLLECTION_ID, LAKE_ROOT
 
-
 # Standalone in-process DuckDB connection -- the only query engine. It reads the
 # GeoParquet lake directly, so the service works without a database server.
 _lake_duckdb_con = None

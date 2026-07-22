@@ -118,9 +118,7 @@
     {
       "Sid": "PassExecRoleToLambda",
       "Effect": "Allow",
-      "Action": [
-        "iam:PassRole"
-      ],
+      "Action": ["iam:PassRole"],
       "Resource": "arn:aws:iam::__ACCOUNT_ID__:role/deckgl-s3-cog-s1m-*",
       "Condition": {
         "StringEquals": {
@@ -154,28 +152,19 @@
     {
       "Sid": "ViewerBucketList",
       "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket",
-        "s3:GetBucketLocation"
-      ],
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
       "Resource": "arn:aws:s3:::deckgl-s3-cog-s1m-__ACCOUNT_ID__-us-west2"
     },
     {
       "Sid": "ViewerBucketObjects",
       "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject"
-      ],
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
       "Resource": "arn:aws:s3:::deckgl-s3-cog-s1m-__ACCOUNT_ID__-us-west2/*"
     },
     {
       "Sid": "EcrAuthToken",
       "Effect": "Allow",
-      "Action": [
-        "ecr:GetAuthorizationToken"
-      ],
+      "Action": ["ecr:GetAuthorizationToken"],
       "Resource": "*"
     },
     {
@@ -205,10 +194,7 @@
     {
       "Sid": "SamBootstrapParam",
       "Effect": "Allow",
-      "Action": [
-        "ssm:GetParameter",
-        "ssm:GetParameters"
-      ],
+      "Action": ["ssm:GetParameter", "ssm:GetParameters"],
       "Resource": "arn:aws:ssm:us-west-2:__ACCOUNT_ID__:parameter/aws-sam-cli-managed-default*"
     }
   ]

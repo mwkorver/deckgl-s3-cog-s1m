@@ -23,8 +23,9 @@ request-payer mode take it as a parameter (default preserves current behavior).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 
 # --------------------------------------------------------------------------- #
@@ -567,7 +568,7 @@ def register_lake_collections():
     and dynamically register descriptors for any ad-hoc/custom collections.
     """
     from config import LAKE_ROOT
-    from lake import lake_collections, get_lake_duckdb
+    from lake import get_lake_duckdb, lake_collections
 
     try:
         collections = lake_collections()
@@ -581,14 +582,17 @@ def register_lake_collections():
 
         try:
             read_glob = f"{LAKE_ROOT}/collection={cid}/**/*.parquet"
-            sql = f"select source_bucket, region, year, source_key from read_parquet('{read_glob}', hive_partitioning=true) limit 1"
+            sql = (
+                "select source_bucket, region, year, source_key "
+                f"from read_parquet('{read_glob}', hive_partitioning=true) limit 1"
+            )
             res = get_lake_duckdb().cursor().execute(sql).fetchone()
             if res:
                 bucket, region, year, source_key = res
                 prefix = ""
                 if "/" in source_key:
                     prefix = source_key.rsplit("/", 1)[0] + "/"
-                
+
                 access = "requester-pays" if bucket in REQUESTER_PAYS_BUCKETS else "public"
                 register_adhoc_collection(
                     collection_id=cid,

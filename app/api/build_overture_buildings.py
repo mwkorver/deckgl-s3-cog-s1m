@@ -17,7 +17,6 @@ import pyarrow.dataset as ds
 import pyarrow.fs as fs
 import pyarrow.parquet as pq
 
-
 DEFAULT_RELEASE = "2026-06-17.0"
 DEFAULT_SOURCE = (
     "s3://overturemaps-us-west-2/release/"
@@ -127,7 +126,8 @@ def flatten_batch(batch: pa.RecordBatch) -> pa.RecordBatch:
     names.append("theme")
     arrays.append(pa.array(["building"] * batch.num_rows, type=pa.string()))
     names.append("type")
-    bbox = batch.column("bbox").combine_chunks() if isinstance(batch.column("bbox"), pa.ChunkedArray) else batch.column("bbox")
+    bbox_col = batch.column("bbox")
+    bbox = bbox_col.combine_chunks() if isinstance(bbox_col, pa.ChunkedArray) else bbox_col
     for child_name, out_name in (
         ("xmin", "bbox_xmin"),
         ("ymin", "bbox_ymin"),

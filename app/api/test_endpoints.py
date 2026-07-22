@@ -6,6 +6,7 @@ os.environ["S3_COG_LAKE_ROOT"] = ""
 
 import datetime
 from unittest.mock import MagicMock, patch
+
 from fastapi.testclient import TestClient
 
 # Ensure the parent directory is in the path so we can import app

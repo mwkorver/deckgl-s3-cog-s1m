@@ -13,8 +13,6 @@ from urllib.parse import urlparse
 
 import boto3
 from botocore.exceptions import BotoCoreError, CredentialRetrievalError
-from fastapi import HTTPException
-
 from config import (
     PRESIGN_CACHE_MAXSIZE,
     PRESIGN_CACHE_TTL,
@@ -23,7 +21,7 @@ from config import (
     REQUEST_PAYER,
     SIGN_ASSET_URLS,
 )
-
+from fastapi import HTTPException
 
 _cached_creds = None  # (access_key_id, secret_access_key, session_token, expires_ts)
 _global_s3_client = None

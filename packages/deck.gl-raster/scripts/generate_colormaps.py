@@ -19,11 +19,10 @@ Run with:
 
 from pathlib import Path
 
-from imageio.v3 import imwrite
 import numpy as np
+from imageio.v3 import imwrite
 from rio_tiler.colormap import cmap as cmap_registry
 from rio_tiler.colormap import make_lut
-
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "src" / "gpu-modules"
 
