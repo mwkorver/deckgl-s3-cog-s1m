@@ -11,6 +11,9 @@ PUBLIC kyfromabove bucket (unsigned, free) and is best-effort: it SKIPs if offli
 import os
 import sys
 
+import pytest
+from botocore.exceptions import BotoCoreError, ClientError
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # allow `import descriptors`
 import descriptors as d  # noqa: E402
 
@@ -154,22 +157,32 @@ def test_region_intersect_guard():
 # --------------------------------------------------------------------------- #
 # Live (best-effort): real public kyfromabove bucket, narrow slice            #
 # --------------------------------------------------------------------------- #
+@pytest.mark.network
 def test_s3prefixlisting_live():
+    """Prefix discovery against the real public kyfromabove bucket.
+
+    Deselected by default (see the `network` marker in pyproject.toml); run with
+    `pytest -m network`. A unit suite should not depend on a third-party bucket
+    being reachable.
+
+    It previously caught every Exception and did `return "skipped"`, which pytest
+    counts as a pass -- so it reported success whether it had run or not, while
+    silently making a live S3 call on every unit-test run. A skip has to be a
+    real skip or the suite overstates its own coverage.
+    """
     try:
         # cap counts COGs/prefix (not raw keys), so a small cap reliably yields
         # that many .tif and stops listing early -> fast.
-        rows, latest = d.KYFROMABOVE.discovery.enumerate(
+        rows, _latest = d.KYFROMABOVE.discovery.enumerate(
             regions={"ky"}, years={2022}, latest_year_only=False, limit_per_partition=12
         )
-    except Exception as e:  # offline / no network
-        print(f"  SKIP live test ({type(e).__name__}: {str(e)[:60]})")
-        return "skipped"
+    except (BotoCoreError, ClientError, OSError) as exc:
+        pytest.skip(f"kyfromabove unreachable: {type(exc).__name__}: {exc}")
     assert rows, "live KyFromAbove 2022 returned no COGs"
     sample = next(iter(rows.values()))
-    assert sample["region"] == "ky" and sample["year"] == 2022
+    assert sample["region"] == "ky"
+    assert sample["year"] == 2022
     assert sample["source_key"].endswith("_cog.tif")
-    print(f"  live: {len(rows)} real ky/2022 COGs, e.g. {sample['source_key']}")
-    return "ok"
 
 
 def test_get_descriptor_bucket_lookup():
@@ -223,12 +236,20 @@ if __name__ == "__main__":
         test_register_adhoc_collection,
     ]
     failed = 0
+    skipped = 0
     for t in tests:
         try:
-            r = t()
-            print(f"PASS {t.__name__}" + (f" ({r})" if r else ""))
+            t()
+            print(f"PASS {t.__name__}")
+        except pytest.skip.Exception as e:
+            # pytest.skip() raises rather than returns, so this runner has to
+            # know about it -- otherwise the live test crashes the whole run
+            # whenever the network is down.
+            skipped += 1
+            print(f"SKIP {t.__name__}: {e}")
         except AssertionError as e:
             failed += 1
             print(f"FAIL {t.__name__}: {e}")
-    print(f"\n{len(tests) - failed}/{len(tests)} passed")
+    passed = len(tests) - failed - skipped
+    print(f"\n{passed} passed, {skipped} skipped, {failed} failed")
     sys.exit(1 if failed else 0)

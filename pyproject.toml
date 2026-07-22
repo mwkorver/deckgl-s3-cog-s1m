@@ -33,3 +33,11 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "app/api/test_*.py" = ["F811"]
+
+[tool.pytest.ini_options]
+# Deselect network-dependent tests by default so the suite is hermetic and does
+# not depend on a third-party bucket being up. Run them with `pytest -m network`.
+addopts = "-m 'not network'"
+markers = [
+  "network: hits a live third-party service (opt-in, run with `pytest -m network`)",
+]
