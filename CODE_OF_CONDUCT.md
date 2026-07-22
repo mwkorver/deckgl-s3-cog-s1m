@@ -20,9 +20,10 @@ otherwise would just be a nicer-sounding lie.
 This applies wherever the project is the subject — issues, pull requests,
 discussions, or someone bringing it up elsewhere.
 
-If you need to raise something privately, email mwkorver@gmail.com. Security
-problems go through [SECURITY.md](SECURITY.md) instead, which is a real process
-with a real inbox.
+Security problems are the one thing with a real process: they go through
+[SECURITY.md](SECURITY.md), which uses GitHub's private reporting so the report
+stays confidential until there is a fix. For anything else private, use the
+contact details on [my GitHub profile](https://github.com/mwkorver).
 
 Worth repeating from [CONTRIBUTING.md](CONTRIBUTING.md): this is a reference
 implementation, not a maintained project. Pull requests are not reviewed. Fork
