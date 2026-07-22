@@ -1,15 +1,17 @@
-# NAIP GeoParquet Coverage Index — public dataset (`s3://naip-stac-catalog`)
+# NAIP GeoParquet Coverage Index — public dataset (`s3://naip-geoparquet-index`)
 
 A cloud-native, queryable coverage index over the USDA **NAIP** 4-band COG tiles
 in the public `naip-analytic` bucket. One row per quarter-quad COG, as a
 Hive-partitioned **GeoParquet** dataset. Read-only, `us-west-2`.
 
 > [!IMPORTANT]
-> **This index is not STAC.** It is a purpose-built schema (see below), and the
-> bucket name `naip-stac-catalog` is historical — a bucket cannot be renamed in
-> place. The read API in this repo *does* serve valid STAC Items built from these
-> rows (STAC 1.1.0 + projection v2.0.0 + grid v1.1.0), but the Parquet itself is
-> not STAC. If STAC interoperability is the goal, the thing to adopt is
+> **This index is not STAC.** It is a purpose-built schema (see below). The read
+> API in this repo *does* serve valid STAC Items built from these rows (STAC
+> 1.1.0 + projection v2.0.0 + grid v1.1.0), but the Parquet itself is not STAC —
+> which is why the bucket is named for the format it actually uses. (It was
+> `naip-stac-catalog` until the contents were re-examined; S3 has no rename, so
+> the data was copied to this bucket.) If STAC interoperability is the goal, the
+> thing to adopt is
 > [stac-geoparquet](https://github.com/stac-utils/stac-geoparquet), which
 > specifies how STAC Items are stored in GeoParquet. That is a schema change, not
 > a rename.
@@ -40,7 +42,7 @@ This directory holds the artifacts to publish it on the
 ## Data layout
 
 ```
-s3://naip-stac-catalog/
+s3://naip-geoparquet-index/
   manifest-index/
     state=<st>/naip_year=<yyyy>/data_0.parquet      # Hive partitions
 ```
@@ -74,14 +76,14 @@ CREATE SECRET (TYPE s3, PROVIDER credential_chain, REGION 'us-west-2');
 SET s3_requester_pays=true;
 
 SELECT source_key, acq_date, quad
-FROM read_parquet('s3://naip-stac-catalog/manifest-index/**/*.parquet',
+FROM read_parquet('s3://naip-geoparquet-index/manifest-index/**/*.parquet',
                   hive_partitioning=true)
 WHERE state='wa' AND naip_year=2023
 LIMIT 10;
 
 -- tile counts per state-year (coverage at a glance)
 SELECT state, naip_year, count(*) tiles
-FROM read_parquet('s3://naip-stac-catalog/manifest-index/**/*.parquet',
+FROM read_parquet('s3://naip-geoparquet-index/manifest-index/**/*.parquet',
                   hive_partitioning=true)
 GROUP BY state, naip_year ORDER BY state, naip_year;
 ```
@@ -89,8 +91,8 @@ GROUP BY state, naip_year ORDER BY state, naip_year;
 Browse it (authenticated; `--no-sign-request` fails while Requester Pays is on):
 
 ```bash
-aws s3 ls s3://naip-stac-catalog/ --request-payer requester
-aws s3 ls s3://naip-stac-catalog/manifest-index/ --request-payer requester | head
+aws s3 ls s3://naip-geoparquet-index/ --request-payer requester
+aws s3 ls s3://naip-geoparquet-index/manifest-index/ --request-payer requester | head
 ```
 
 ## Publishing / maintenance (author, admin creds)
@@ -99,7 +101,7 @@ These are bucket-admin actions (`s3:CreateBucket`, `PutBucketPolicy`,
 `PutBucketCors`) — run with admin/root, not the scoped deploy user.
 
 ```bash
-REGION=us-west-2; B=naip-stac-catalog
+REGION=us-west-2; B=naip-geoparquet-index
 
 # 1. create (out-of-band; this is the shared cross-account bucket, NOT stack-managed)
 aws s3api create-bucket --bucket $B --region $REGION \

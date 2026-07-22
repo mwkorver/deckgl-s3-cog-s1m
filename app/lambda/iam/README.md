@@ -19,7 +19,7 @@ and the shared read-only source buckets the demo needs.
 | File | Type | Attached to | Purpose |
 |---|---|---|---|
 | `deckgl-s3-cog-s1m-deploy.json` | customer-managed policy | `deckgl-s3-cog-s1m-deploy` role | deploy plane (CFN/Lambda/ECR/SAM-bucket/`iam:PassRole`+`CreateRole`). |
-| `deckgl-s3-cog-s1m-data.json` | inline policy | `deckgl-s3-cog-s1m-deploy` role | S3 data plane for local CLI / docker-compose ingest (read `naip-analytic` + `naip-stac-catalog`, RW the lake). |
+| `deckgl-s3-cog-s1m-data.json` | inline policy | `deckgl-s3-cog-s1m-deploy` role | S3 data plane for local CLI / docker-compose ingest (read `naip-analytic` + `naip-geoparquet-index`, RW the lake). |
 | `deckgl-s3-cog-s1m-deploy-trust.json` | trust policy | `deckgl-s3-cog-s1m-deploy` role | who may `sts:AssumeRole` the deploy role (your human SSO principal). |
 
 No AWS-managed policies — they're account-wide and defeat the "narrow" goal.

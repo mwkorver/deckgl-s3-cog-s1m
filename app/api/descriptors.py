@@ -113,7 +113,7 @@ class KeyFields:
 # Well-known public buckets that have S3 Requester Pays enabled, so reads/lists
 # must be signed and carry RequestPayer=requester. Used to coerce the access mode
 # for ad-hoc/panel ingests targeting them, so a "public" selection doesn't 403.
-REQUESTER_PAYS_BUCKETS = {"naip-analytic", "naip-visualization", "naip-stac-catalog"}
+REQUESTER_PAYS_BUCKETS = {"naip-analytic", "naip-visualization", "naip-geoparquet-index"}
 
 # Buckets known to hold NO cloud-optimized imagery (metadata, FGDC sidecars, and
 # tile-index shapefiles only), so an ingest would find nothing usable. Reject

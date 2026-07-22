@@ -4,9 +4,10 @@
 ##
 ## Naming note: this index is NOT a STAC catalog, and this record deliberately
 ## no longer claims to be one. It is a purpose-built Hive-partitioned GeoParquet
-## dataset with its own column set (see Description). The S3 bucket is still
-## named `naip-stac-catalog` -- a bucket cannot be renamed in place, so the
-## record describes the artifact accurately rather than matching the name.
+## dataset with its own column set (see Description). The bucket was originally
+## `naip-stac-catalog`; since S3 has no rename, the data was copied to
+## `naip-geoparquet-index` so the name matches the contents. Done before this
+## record was ever submitted, so no published reference to the old name exists.
 ##
 ## If STAC interoperability is wanted later, the thing to adopt is
 ## stac-geoparquet (https://github.com/stac-utils/stac-geoparquet), which
@@ -53,7 +54,7 @@ Resources:
       NAIP GeoParquet coverage index (Hive-partitioned by state, naip_year).
       Requester-pays: callers must authenticate and send the request-payer
       header, and are billed for requests and egress.
-    ARN: arn:aws:s3:::naip-stac-catalog/manifest-index
+    ARN: arn:aws:s3:::naip-geoparquet-index/manifest-index
     Region: us-west-2
     Type: S3 Bucket
     RequesterPays: True

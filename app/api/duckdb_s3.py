@@ -14,7 +14,7 @@ We create an httpfs secret from the ambient credential chain (Lambda execution
 role on Lambda; env/profile creds in docker) and enable requester-pays.
 
   requester-pays note: SET s3_requester_pays=true is required for *non-owner*
-  consumers of the public naip-stac-catalog bucket -- without the header their
+  consumers of the public naip-geoparquet-index bucket -- without the header their
   reads get 403. For the bucket owner it is a harmless no-op (the owner is
   exempt from sending the header, though still bears any cross-region egress).
 """

@@ -116,7 +116,7 @@ NAIP = CollectionDescriptor(
     bucket="naip-analytic",
     root_prefix="",                       # state/ is the top level
     access="requester-pays",
-    discovery=ManifestIndex(root="s3://naip-stac-catalog/manifest-index"),
+    discovery=ManifestIndex(root="s3://naip-geoparquet-index/manifest-index"),
     cog_filter=lambda k: k.endswith(".tif") and "/rgbir_cog/" in k,
     key_parser=parse_naip_key,   # state/year/res/.../quad/...  ->  KeyFields
 )
@@ -567,9 +567,9 @@ lake, or a backfill that writes the new layout alongside and flips the read root
 - The viewer's ingest panel grows a **collection** dropdown above State/Year;
   selecting a collection repopulates the region/year options from that
   collection's partitions.
-- The imagery coverage index (`naip-stac-catalog/manifest-index` — a GeoParquet
-  index, not a STAC catalog, despite the historical bucket name) is, by that
-  name, NAIP's. A multi‑collection world wants either an index‑per‑collection or
+- The imagery coverage index (`naip-geoparquet-index/manifest-index` — a
+  GeoParquet index, not a STAC catalog) is, by its name, NAIP's. A
+  multi‑collection world wants either an index‑per‑collection or
   a shared `imagery-index` partitioned `collection/region/year` — decide when the
   second collection actually lands.
 

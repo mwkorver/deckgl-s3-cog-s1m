@@ -38,7 +38,7 @@ Resources:
       Environment:
         Variables:
           S3_COG_LAKE_ROOT: !Sub "s3://deckgl-s3-cog-s1m-${AWS::AccountId}-us-west2/lake"
-          S3_COG_MANIFEST_INDEX: s3://naip-stac-catalog/manifest-index
+          S3_COG_MANIFEST_INDEX: s3://naip-geoparquet-index/manifest-index
           S3_COG_MANIFEST_SOURCE: s3://naip-analytic/manifest.txt
           S3_COG_REQUEST_PAYER: requester
           S3_COG_SIGN_ASSET_URLS: "1"
@@ -63,8 +63,8 @@ Resources:
                 - s3:GetObject
                 - s3:ListBucket
               Resource:
-                - arn:aws:s3:::naip-stac-catalog
-                - arn:aws:s3:::naip-stac-catalog/*
+                - arn:aws:s3:::naip-geoparquet-index
+                - arn:aws:s3:::naip-geoparquet-index/*
         - Statement:
             - Effect: Allow
               Action:
