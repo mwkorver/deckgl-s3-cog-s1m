@@ -48,8 +48,12 @@ INGEST_URL = (os.environ.get("S3_COG_INGEST_URL") or "").rstrip("/")
 # this unset; Lambda write endpoints fail closed when it is missing.
 INGEST_TOKEN = os.environ.get("S3_COG_INGEST_TOKEN", "")
 MODULE_DIR = Path(__file__).resolve().parent
+# In the container the viewer is COPYed to api/viewer; running from a checkout it
+# lives at app/viewer. Probe for index.html rather than the directory: an empty
+# api/viewer (a stale mkdir, or a bind mount that shadowed the COPY) satisfied the
+# old exists() check, so the fallback never fired and /viewer served 404s.
 VIEWER_DIR = MODULE_DIR / "viewer"
-if not VIEWER_DIR.exists():
+if not (VIEWER_DIR / "index.html").exists():
     VIEWER_DIR = MODULE_DIR.parent / "viewer"
 _MODULE_PATH = Path(__file__).resolve()
 DEFAULT_REPO_ROOT = _MODULE_PATH.parents[2] if len(_MODULE_PATH.parents) > 2 else _MODULE_PATH.parent

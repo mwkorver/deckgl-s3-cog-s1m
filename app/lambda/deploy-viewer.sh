@@ -104,6 +104,15 @@ aws s3 cp "$STAGE/local-modules/" "s3://$BUCKET/local-modules/" \
   --recursive --region "$REGION" \
   --cache-control "no-cache, no-store, must-revalidate"
 
+# app.js is the viewer application itself, on an equally stable URL. It used to
+# be inlined in index.html and so could never go stale independently; now that it
+# is a separate cacheable asset it needs the same revalidation, or a browser can
+# pair a fresh index.html with a cached older app.
+aws s3 cp "$STAGE/app.js" "s3://$BUCKET/app.js" \
+  --region "$REGION" \
+  --content-type "text/javascript" \
+  --cache-control "no-cache, no-store, must-revalidate"
+
 # (CloudFront removed -- the viewer is served straight from the S3 website
 # endpoint and public COGs are read directly, so there is no tile cache to
 # invalidate.)
