@@ -7,6 +7,8 @@
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css"
+      integrity="sha384-gNYNsUmuZqDYiT3gbirWTV5K7rt71RoveS/yXAaU09d4ZUmeDVTD3XoqB6uJAIFR"
+      crossorigin="anonymous"
     />
     <style>
       html,
@@ -846,7 +848,16 @@
          param overrides both, handy for pointing the static viewer at any API.
          404 of a missing config.js is harmless. -->
     <script src="config.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+    <!-- Subresource integrity: the browser refuses the file if the CDN ever
+         serves different bytes for this URL. Only possible on classic script and
+         link tags -- import maps have no integrity field (the proposal is not
+         shipped), so the ~23 esm.sh modules below are pinned by version only.
+         Vendoring them alongside /local-modules/ is the way to close that. -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"
+      integrity="sha384-1qC0PnXk2fgMDybOtZF1ui4LM5Sxm7o0TbEkwfxTTVdlZvuNENNGCKUub7d644HP"
+      crossorigin="anonymous"
+    ></script>
     <script type="importmap">
       {
         "imports": {
