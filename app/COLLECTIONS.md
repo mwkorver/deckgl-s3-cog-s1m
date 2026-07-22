@@ -13,6 +13,15 @@ COG aerial‑imagery collections in the AWS Registry of Open Data (RODA)" — se
 [The collection registry](#the-collection-registry--the-map-lookup), which
 enumerates the seven that exist today.
 
+`cog_filter` only matches key conventions (`/rgbir_cog/`, `_cog.tif`, or bare
+`.tif` for user‑supplied buckets), which is a claim about the *name*, not the
+file. `_validate_cog_structure` (`ingest_manifest.py`) tests the claim while the
+header is already open: the file must be internally tiled, and must carry
+overviews unless its longest side is under 512 px. A file failing either is
+skipped with a reason and counted in the ingest's `failed` list, because without
+tiles and overviews the viewer's range‑read model degrades into fetching whole
+images. Set `S3_COG_REQUIRE_COG=0` to index such files anyway.
+
 Status: **design only** — no code changed yet. This documents the seam to cut and
 the descriptor/adapter shape, so the refactor lands deliberately.
 

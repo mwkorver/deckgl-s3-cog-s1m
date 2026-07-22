@@ -119,6 +119,79 @@ def test_payloads_to_arrow_generic():
     assert "season" in props[0]
 
 
+# --- COG structure validation -------------------------------------------------
+# Every collection selects assets by key convention (`/rgbir_cog/`, `_cog.tif`,
+# or bare `.tif`), so _validate_cog_structure is the only thing that actually
+# tests the "COG" claim. These cover the decision table without network I/O.
+
+
+class _FakeTiff:
+    """Minimal stand-in for a PIL TIFF: size, tags, and IFD count."""
+
+    def __init__(self, size, tags, n_frames=1):
+        self.size = size
+        self.tag_v2 = tags
+        self._n_frames = n_frames
+
+    @property
+    def n_frames(self):
+        if self._n_frames is None:
+            raise OSError("unreadable IFD chain")
+        return self._n_frames
+
+
+def _tiled(block=512):
+    return {322: block, 323: block}
+
+
+def test_validate_cog_accepts_tiled_with_overviews():
+    from ingest_manifest import _validate_cog_structure
+
+    _validate_cog_structure(_FakeTiff((12000, 10000), _tiled(), n_frames=4), "b", "k.tif")
+
+
+def test_validate_cog_rejects_stripped():
+    """No internal tiling means a range read cannot address a sub-window."""
+    from ingest_manifest import _validate_cog_structure
+
+    with pytest.raises(ValueError, match="no internal tiling"):
+        _validate_cog_structure(_FakeTiff((12000, 10000), {278: 1}, n_frames=4), "b", "k.tif")
+
+
+def test_validate_cog_rejects_large_image_without_overviews():
+    """A single IFD forces full-resolution reads for a zoomed-out view."""
+    from ingest_manifest import _validate_cog_structure
+
+    with pytest.raises(ValueError, match="no overviews"):
+        _validate_cog_structure(_FakeTiff((12000, 10000), _tiled(), n_frames=1), "b", "k.tif")
+
+
+def test_validate_cog_allows_small_image_without_overviews():
+    """Under one block, a zoomed-out read is a single request either way."""
+    from ingest_manifest import _validate_cog_structure
+
+    _validate_cog_structure(_FakeTiff((256, 256), _tiled(), n_frames=1), "b", "k.tif")
+
+
+def test_validate_cog_treats_unreadable_ifd_chain_as_missing_overviews():
+    from ingest_manifest import _validate_cog_structure
+
+    with pytest.raises(ValueError, match="no overviews"):
+        _validate_cog_structure(_FakeTiff((12000, 10000), _tiled(), n_frames=None), "b", "k.tif")
+
+
+def test_validate_cog_can_be_disabled():
+    """S3_COG_REQUIRE_COG=0 indexes non-COGs anyway."""
+    import ingest_manifest as im
+
+    original = im.REQUIRE_COG
+    im.REQUIRE_COG = False
+    try:
+        im._validate_cog_structure(_FakeTiff((12000, 10000), {278: 1}, n_frames=1), "b", "k.tif")
+    finally:
+        im.REQUIRE_COG = original
+
+
 if __name__ == "__main__":
     tests = [
         test_derive_product,

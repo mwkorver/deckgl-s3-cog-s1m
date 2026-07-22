@@ -575,6 +575,58 @@ def parse_geokeys(geokey_directory):
     return keys
 
 
+# Whether to reject GeoTIFFs that are not actually cloud optimized. On by
+# default: the viewer's entire model is HTTP range reads against tiles and
+# overviews, so a stripped or overview-less file is not merely suboptimal, it
+# reads the whole image to draw anything. Set to 0 to index such files anyway.
+REQUIRE_COG = os.environ.get("S3_COG_REQUIRE_COG", "1") not in {"0", "false", "False"}
+
+# A file whose longest side is under this needs no overviews -- it is already
+# about one block, so a zoomed-out read costs a single request either way.
+# Matches the smallest blocksize GDAL's COG driver emits.
+_COG_MIN_OVERVIEW_DIM = 512
+
+
+def _validate_cog_structure(im, bucket, key):
+    """Reject GeoTIFFs that are not Cloud Optimized.
+
+    Being a *COG* rather than a plain GeoTIFF is two structural properties:
+    internal tiling, and reduced-resolution overviews. Neither is implied by the
+    filename, and every collection here selects assets by key convention
+    (`/rgbir_cog/`, `_cog.tif`, or just `.tif` for user-supplied buckets), so
+    without this the only thing asserting "COG" is a substring.
+
+    Checked here because the header is already open and paid for -- the tags cost
+    nothing extra on top of the georeferencing read.
+    """
+    if not REQUIRE_COG:
+        return
+
+    href = f"s3://{bucket}/{key}"
+    width, height = im.size
+
+    # TileWidth/TileLength are absent on a stripped file. Range reads then have
+    # no addressable sub-window: fetching any region means fetching whole rows.
+    tile_width = im.tag_v2.get(322)
+    tile_length = im.tag_v2.get(323)
+    if not tile_width or not tile_length:
+        rows_per_strip = im.tag_v2.get(278)
+        raise ValueError(
+            f"not a COG -- no internal tiling (TileWidth/TileLength absent"
+            f"{f', RowsPerStrip={rows_per_strip}' if rows_per_strip else ''}): {href}"
+        )
+
+    # Overviews are extra IFDs. Without them a zoomed-out view has to read
+    # full-resolution pixels for every tile on screen.
+    if max(width, height) > _COG_MIN_OVERVIEW_DIM:
+        try:
+            ifd_count = im.n_frames
+        except Exception:  # noqa: BLE001 -- unreadable IFD chain is itself a red flag
+            ifd_count = 1
+        if ifd_count < 2:
+            raise ValueError(f"not a COG -- no overviews (single IFD) for a {width}x{height} image: {href}")
+
+
 def _extract_cog_geo(s3_client, bucket, key, request_payer="requester"):
     """Collection-NEUTRAL COG header read: geometry/CRS/transform/bbox/bands from
     the GeoTIFF tags. Shared by the NAIP reader (fetch_cog_metadata) and the
@@ -582,6 +634,11 @@ def _extract_cog_geo(s3_client, bucket, key, request_payer="requester"):
     NAIP filenames or any collection's key layout."""
     s3_file = S3File(s3_client, bucket, key, request_payer=request_payer)
     with Image.open(s3_file) as im:
+        # Before trusting the georeferencing, confirm the file is actually a COG.
+        # Every collection selects assets by key convention, so this is the only
+        # place the claim gets tested.
+        _validate_cog_structure(im, bucket, key)
+
         width, height = im.size
         proj_shape = [height, width]  # standard is [height, width] in proj:shape
 
