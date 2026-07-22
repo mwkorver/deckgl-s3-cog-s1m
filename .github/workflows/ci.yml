@@ -25,24 +25,13 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # morecantile's typecheck lists OGC-spec JSON files from its git
-      # submodule (packages/morecantile/spec) that don't resolve at the
-      # tsconfig path -- pre-existing-broken (fails locally too), so it's
-      # excluded from typecheck.
       - run: pnpm build
-      - run: pnpm --filter='!@s3-cog/morecantile' -r typecheck
-      # NOTE: geotiff, deck.gl-geotiff, and morecantile tests read from git
-      # submodules (fixtures/geotiff-test-data, packages/morecantile/spec)
-      # that aren't populating in CI (empty checkout -> ENOENT on the .tif
-      # fixtures). Until the submodule fetch/pin is fixed, run only the
-      # self-contained package suites. TODO: fix submodules, then drop these
-      # exclusions to restore full test coverage.
-      - run: >-
-          pnpm
-          --filter='!@s3-cog/morecantile'
-          --filter='!@s3-cog/geotiff'
-          --filter='!@s3-cog/deck.gl-geotiff'
-          -r test
+      - run: pnpm -r typecheck
+      # geotiff's integration-rasterio suite compares against .npy arrays that
+      # geotiff-test-data generates rather than commits (`pixi run generate-npy`).
+      # That suite self-skips when they're absent, so it reports as skipped here
+      # instead of being excluded by a --filter.
+      - run: pnpm -r test
 
   python:
     name: ruff · pytest (Python)
