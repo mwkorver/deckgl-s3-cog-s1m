@@ -12,7 +12,7 @@ def _gpkg_geometry_to_wkb(blob: bytes) -> bytes:
     flags = blob[3]
     envelope_sizes = {0: 0, 1: 32, 2: 48, 3: 48, 4: 64}
     envelope_bytes = envelope_sizes[(flags >> 1) & 0x07]
-    return bytes(blob[8 + envelope_bytes:])
+    return bytes(blob[8 + envelope_bytes :])
 
 
 def convert(source: Path, output: Path) -> int:
@@ -35,9 +35,7 @@ def convert(source: Path, output: Path) -> int:
         {
             "fid": pa.array((row[0] for row in rows), type=pa.int64()),
             "dataset": pa.array((row[1] for row in rows), type=pa.string()),
-            "geometry_wkb": pa.array(
-                (_gpkg_geometry_to_wkb(row[2]) for row in rows), type=pa.binary()
-            ),
+            "geometry_wkb": pa.array((_gpkg_geometry_to_wkb(row[2]) for row in rows), type=pa.binary()),
             "bbox_xmin": pa.array((row[3] for row in rows), type=pa.float64()),
             "bbox_xmax": pa.array((row[4] for row in rows), type=pa.float64()),
             "bbox_ymin": pa.array((row[5] for row in rows), type=pa.float64()),
@@ -55,9 +53,7 @@ def convert(source: Path, output: Path) -> int:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert S1M_Products.gpkg to the terrain reader's Parquet index."
-    )
+    parser = argparse.ArgumentParser(description="Convert S1M_Products.gpkg to the terrain reader's Parquet index.")
     parser.add_argument("source", type=Path, help="Local S1M_Products.gpkg")
     parser.add_argument("output", type=Path, help="Output .parquet path")
     args = parser.parse_args()

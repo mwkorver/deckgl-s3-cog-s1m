@@ -118,6 +118,7 @@ def enable_s3(con, aws_access_key_id: str | None = None, aws_secret_access_key: 
     if not (access_key and secret_key):
         try:
             import boto3
+
             profile = os.environ.get("AWS_PROFILE") or os.environ.get("AWS_DEFAULT_PROFILE")
 
             session = boto3.Session(profile_name=profile) if profile else boto3.Session()

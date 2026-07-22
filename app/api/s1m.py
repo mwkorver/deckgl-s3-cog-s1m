@@ -59,15 +59,19 @@ def cover_dataset(lon: float, lat: float) -> str | None:
     reader = get_reader()
     x, y = reader["to_albers"].transform(lon, lat)
     escaped_url = S1M_INDEX_URL.replace("'", "''")
-    candidates = reader["con"].execute(
-        f"""
+    candidates = (
+        reader["con"]
+        .execute(
+            f"""
         SELECT dataset, geometry_wkb
         FROM read_parquet('{escaped_url}')
         WHERE bbox_xmin <= ? AND bbox_xmax >= ?
           AND bbox_ymin <= ? AND bbox_ymax >= ?
         """,
-        [x, x, y, y],
-    ).fetchall()
+            [x, x, y, y],
+        )
+        .fetchall()
+    )
 
     from shapely import from_wkb
     from shapely.geometry import Point
@@ -79,8 +83,14 @@ def cover_dataset(lon: float, lat: float) -> str | None:
     return None
 
 
-def cover_tiles(west: float, south: float, east: float, north: float,
-                max_tiles: int | None = 24, order_center: tuple[float, float] | None = None) -> list[dict]:
+def cover_tiles(
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+    max_tiles: int | None = 24,
+    order_center: tuple[float, float] | None = None,
+) -> list[dict]:
     """All S1M tiles intersecting a lon/lat bbox, nearest-to-centre first.
 
     Used to fill the viewport with terrain. The bbox columns make this a cheap
@@ -107,8 +117,10 @@ def cover_tiles(west: float, south: float, east: float, north: float,
     else:
         cx, cy = (axmin + axmax) / 2, (aymin + aymax) / 2
     escaped_url = S1M_INDEX_URL.replace("'", "''")
-    rows = reader["con"].execute(
-        f"""
+    rows = (
+        reader["con"]
+        .execute(
+            f"""
         SELECT dataset, bbox_xmin, bbox_xmax, bbox_ymin, bbox_ymax, geometry_wkb
         FROM read_parquet('{escaped_url}')
         WHERE bbox_xmin <= ? AND bbox_xmax >= ?
@@ -117,8 +129,10 @@ def cover_tiles(west: float, south: float, east: float, north: float,
                + (((bbox_ymin + bbox_ymax) / 2 - ?) * ((bbox_ymin + bbox_ymax) / 2 - ?)),
                dataset
         """,
-        [axmax, axmin, aymax, aymin, cx, cx, cy, cy],
-    ).fetchall()
+            [axmax, axmin, aymax, aymin, cx, cx, cy, cy],
+        )
+        .fetchall()
+    )
     from shapely import from_wkb
     from shapely.geometry import box
     from shapely.ops import transform as shapely_transform
@@ -138,12 +152,14 @@ def cover_tiles(west: float, south: float, east: float, north: float,
             if poly.geom_type != "Polygon" or poly.is_empty:
                 continue
             rings.append([[float(lon), float(lat)] for lon, lat in poly.exterior.coords])
-        tiles.append({
-            "dataset": f"s3://{S1M_BUCKET}/StagedProducts/Elevation/{dataset}",
-            "center_lnglat": [clon, clat],
-            "bbox": [w, s, e, n],
-            "footprint": rings,
-        })
+        tiles.append(
+            {
+                "dataset": f"s3://{S1M_BUCKET}/StagedProducts/Elevation/{dataset}",
+                "center_lnglat": [clon, clat],
+                "bbox": [w, s, e, n],
+                "footprint": rings,
+            }
+        )
         if max_tiles is not None and len(tiles) >= int(max_tiles):
             break
     return tiles

@@ -43,26 +43,28 @@ def main():
         if not bbox:
             continue
         src = c.get("source") or {}
-        feats.append({
-            "type": "Feature",
-            "properties": {
-                "id": c["id"],
-                "title": c.get("title", c["id"]),
-                "active": bool(c.get("active")),
-                "status": c.get("status"),
-                "region_kind": ext.get("region_kind"),
-                "region_code": ext.get("region_code"),
-                "years": ext.get("years"),
-                "bucket": src.get("bucket"),
-                "bucket_region": src.get("bucket_region"),
-                "root_prefix": src.get("root_prefix", ""),
-                "access": src.get("access"),
-                "cog_verified": bool(c.get("cog_verified")),
-                "display": c.get("display"),
-                "bbox": bbox,
-            },
-            "geometry": {"type": "Polygon", "coordinates": bbox_to_polygon(bbox)},
-        })
+        feats.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "id": c["id"],
+                    "title": c.get("title", c["id"]),
+                    "active": bool(c.get("active")),
+                    "status": c.get("status"),
+                    "region_kind": ext.get("region_kind"),
+                    "region_code": ext.get("region_code"),
+                    "years": ext.get("years"),
+                    "bucket": src.get("bucket"),
+                    "bucket_region": src.get("bucket_region"),
+                    "root_prefix": src.get("root_prefix", ""),
+                    "access": src.get("access"),
+                    "cog_verified": bool(c.get("cog_verified")),
+                    "display": c.get("display"),
+                    "bbox": bbox,
+                },
+                "geometry": {"type": "Polygon", "coordinates": bbox_to_polygon(bbox)},
+            }
+        )
 
     fc = {
         "type": "FeatureCollection",

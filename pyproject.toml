@@ -14,6 +14,13 @@ extend-exclude = [
   "fixtures/geotiff-test-data",
 ]
 
+[tool.ruff.format]
+# The Python helper scripts under packages/ come from Development Seed's
+# deck.gl-raster (see the per-package LICENSE files). Keep linting them, but
+# don't reformat them: gratuitous style drift only makes diffing against
+# upstream harder if these are ever re-synced.
+exclude = ["packages/**"]
+
 [tool.ruff.lint]
 select = [
   "E",  # pycodestyle errors (line-length above is only enforced once E is on)

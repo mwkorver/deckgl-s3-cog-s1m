@@ -45,6 +45,8 @@ jobs:
       - run: pip install -r requirements-dev.txt -r app/api/requirements.txt
       - name: ruff check
         run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
       - name: pytest
         run: python -m pytest
         working-directory: app/api

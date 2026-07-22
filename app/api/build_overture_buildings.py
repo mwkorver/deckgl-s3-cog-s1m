@@ -18,10 +18,7 @@ import pyarrow.fs as fs
 import pyarrow.parquet as pq
 
 DEFAULT_RELEASE = "2026-06-17.0"
-DEFAULT_SOURCE = (
-    "s3://overturemaps-us-west-2/release/"
-    "{release}/theme=buildings/type=building"
-)
+DEFAULT_SOURCE = "s3://overturemaps-us-west-2/release/{release}/theme=buildings/type=building"
 DEFAULT_OUTPUT = "/cache/overture/buildings_nj.parquet"
 REGION_BBOXES = {
     "nj": (-75.6, 38.8, -73.8, 41.4),
@@ -62,9 +59,7 @@ def parse_bbox(value: str) -> tuple[float, float, float, float]:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Export a bbox-clipped Overture buildings GeoParquet file."
-    )
+    parser = argparse.ArgumentParser(description="Export a bbox-clipped Overture buildings GeoParquet file.")
     parser.add_argument(
         "--release",
         default=DEFAULT_RELEASE,
@@ -233,8 +228,7 @@ def main():
     elapsed = perf_counter() - started
     print(f"rows: {row_count:,}", flush=True)
     print(
-        "extent: "
-        f"{extent[0]:.6f},{extent[1]:.6f},{extent[2]:.6f},{extent[3]:.6f}",
+        f"extent: {extent[0]:.6f},{extent[1]:.6f},{extent[2]:.6f},{extent[3]:.6f}",
         flush=True,
     )
     print(f"rows_with_height: {rows_with_height:,}", flush=True)

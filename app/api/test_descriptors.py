@@ -22,7 +22,7 @@ def test_ky_key_parser():
     k = "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E300_2022_6IN_cog.tif"
     kf = d.ky_key_parser(k)
     assert kf is not None
-    assert kf.region == "ky"          # constant: the collection IS the state
+    assert kf.region == "ky"  # constant: the collection IS the state
     assert kf.year == 2022
     assert kf.properties["kyaped:resolution"] == "6IN"
     assert kf.properties["phase"] == "Phase2"
@@ -57,7 +57,7 @@ def test_ky_cog_filter():
     keep = "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E300_2022_6IN_cog.tif"
     assert d.ky_cog_filter(keep) is True
     drop = [
-        "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E300_2022_6IN_cog.tfw",   # sidecar
+        "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E300_2022_6IN_cog.tfw",  # sidecar
         "imagery/orthos/Phase1/KY_KYAPED_2014_6IN_Overviews/Z_2014_6IN_cog.tif",  # overviews
         "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/Metadata/info.xml",
         "imagery/orthos/Phase3/County-Mosaics/big_2023_3IN_cog.tif",
@@ -92,7 +92,7 @@ class FakeS3:
             cps = set()
             for k in self.keys:
                 if k.startswith(Prefix):
-                    rest = k[len(Prefix):]
+                    rest = k[len(Prefix) :]
                     if "/" in rest:
                         cps.add(Prefix + rest.split("/", 1)[0] + "/")
             return {"CommonPrefixes": [{"Prefix": p} for p in sorted(cps)], "IsTruncated": False}
@@ -102,11 +102,11 @@ class FakeS3:
 
 _KEYS = [
     "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E300_2022_6IN_cog.tif",
-    "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E300_2022_6IN_cog.tfw",   # sidecar -> drop
+    "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E300_2022_6IN_cog.tfw",  # sidecar -> drop
     "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/N013E301_2022_6IN_cog.tif",
-    "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/Metadata/info.xml",           # -> drop
-    "imagery/orthos/Phase2/KY_KYAPED_2021_6IN/X12_2021_6IN_cog.tif",        # other year
-    "imagery/orthos/Phase1/KY_KYAPED_2014_1FT/Y07_2014_1FT_cog.tif",        # other year
+    "imagery/orthos/Phase2/KY_KYAPED_2022_6IN/Metadata/info.xml",  # -> drop
+    "imagery/orthos/Phase2/KY_KYAPED_2021_6IN/X12_2021_6IN_cog.tif",  # other year
+    "imagery/orthos/Phase1/KY_KYAPED_2014_1FT/Y07_2014_1FT_cog.tif",  # other year
     "imagery/orthos/Phase1/KY_KYAPED_2014_6IN_Overviews/Z_2014_6IN_cog.tif",  # overviews -> drop
 ]
 
@@ -114,8 +114,8 @@ _KEYS = [
 def test_s3prefixlisting_year_filter():
     fake = FakeS3(_KEYS)
     rows, latest = d.KYFROMABOVE.discovery.enumerate(
-        regions={"ky"}, years={2022}, latest_year_only=False,
-        limit_per_partition=0, s3=fake)
+        regions={"ky"}, years={2022}, latest_year_only=False, limit_per_partition=0, s3=fake
+    )
     # only the two 2022 6IN tiles survive (sidecar, Metadata, Overviews, other years gone)
     assert len(rows) == 2, sorted(r["source_key"] for r in rows.values())
     for r in rows.values():
@@ -129,25 +129,25 @@ def test_s3prefixlisting_year_filter():
 def test_s3prefixlisting_all_years_and_latest():
     fake = FakeS3(_KEYS)
     rows, latest = d.KYFROMABOVE.discovery.enumerate(
-        regions={"ky"}, years=None, latest_year_only=False,
-        limit_per_partition=0, s3=fake)
+        regions={"ky"}, years=None, latest_year_only=False, limit_per_partition=0, s3=fake
+    )
     years = sorted({r["year"] for r in rows.values()})
-    assert years == [2014, 2021, 2022]          # all discovered
-    assert len(rows) == 4                        # 2x2022 + 2021 + 2014 (noise filtered)
+    assert years == [2014, 2021, 2022]  # all discovered
+    assert len(rows) == 4  # 2x2022 + 2021 + 2014 (noise filtered)
     assert latest == {"ky": 2022}
 
     rows2, _ = d.KYFROMABOVE.discovery.enumerate(
-        regions={"ky"}, years=None, latest_year_only=True,
-        limit_per_partition=0, s3=fake)
-    assert {r["year"] for r in rows2.values()} == {2022}   # latest-only keeps 2022
+        regions={"ky"}, years=None, latest_year_only=True, limit_per_partition=0, s3=fake
+    )
+    assert {r["year"] for r in rows2.values()} == {2022}  # latest-only keeps 2022
 
 
 def test_region_intersect_guard():
     # constant-region collection: asking for a different region crawls nothing
     fake = FakeS3(_KEYS)
     rows, _ = d.KYFROMABOVE.discovery.enumerate(
-        regions={"tx"}, years={2022}, latest_year_only=False,
-        limit_per_partition=0, s3=fake)
+        regions={"tx"}, years={2022}, latest_year_only=False, limit_per_partition=0, s3=fake
+    )
     assert rows == {}
 
 
@@ -159,8 +159,8 @@ def test_s3prefixlisting_live():
         # cap counts COGs/prefix (not raw keys), so a small cap reliably yields
         # that many .tif and stops listing early -> fast.
         rows, latest = d.KYFROMABOVE.discovery.enumerate(
-            regions={"ky"}, years={2022}, latest_year_only=False,
-            limit_per_partition=12)
+            regions={"ky"}, years={2022}, latest_year_only=False, limit_per_partition=12
+        )
     except Exception as e:  # offline / no network
         print(f"  SKIP live test ({type(e).__name__}: {str(e)[:60]})")
         return "skipped"
@@ -211,11 +211,17 @@ def test_register_adhoc_collection():
 
 
 if __name__ == "__main__":
-    tests = [test_ky_key_parser, test_ky_cog_filter, test_nj_key_parser_and_filter,
-             test_s3prefixlisting_year_filter,
-             test_s3prefixlisting_all_years_and_latest, test_region_intersect_guard,
-             test_s3prefixlisting_live, test_get_descriptor_bucket_lookup,
-             test_register_adhoc_collection]
+    tests = [
+        test_ky_key_parser,
+        test_ky_cog_filter,
+        test_nj_key_parser_and_filter,
+        test_s3prefixlisting_year_filter,
+        test_s3prefixlisting_all_years_and_latest,
+        test_region_intersect_guard,
+        test_s3prefixlisting_live,
+        test_get_descriptor_bucket_lookup,
+        test_register_adhoc_collection,
+    ]
     failed = 0
     for t in tests:
         try:

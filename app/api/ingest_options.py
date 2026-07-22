@@ -32,7 +32,7 @@ def build_ingest_options(body: dict[str, Any]):
         return {"collection": collection, "collections": ingestable, "states": [], "strategies": []}
 
     states = []
-    for r in (getattr(disc, "regions", ()) or ()):
+    for r in getattr(disc, "regions", ()) or ():
         states.append({"state": r, "years": list(cached_available_years(collection, r))})
 
     if collection == "naip":
@@ -44,6 +44,7 @@ def build_ingest_options(body: dict[str, Any]):
         strategies = [{"id": "manifest-cog-headers", "label": "COG headers", "available": True}]
 
     from config import LAKE_ROOT
+
     bucket_name = ""
     account_id = ""
     if LAKE_ROOT.startswith("s3://"):

@@ -250,9 +250,7 @@ def build_manifest_inventory_from_index(
     # Local paths must exist up front; s3:// paths are validated lazily by
     # httpfs when the read runs (no client-side stat).
     if not str(index_root).startswith("s3://") and not Path(index_root).exists():
-        raise RuntimeError(
-            f"manifest index not found: {index_root} (run build_manifest_index.py)"
-        )
+        raise RuntimeError(f"manifest index not found: {index_root} (run build_manifest_index.py)")
 
     con = duckdb.connect()
     duckdb_s3.configure(con, index_root, spatial=False)
@@ -267,16 +265,16 @@ def build_manifest_inventory_from_index(
     where = [f"state in ({state_list})"] if states else []
 
     # latest_by_state: one max(naip_year) per state, computed in SQL.
-    latest_rows = con.sql(
-        f"select state, max(naip_year) as y from idx where state in ({state_list}) group by state"
-    ).fetchall() if states else []
+    latest_rows = (
+        con.sql(f"select state, max(naip_year) as y from idx where state in ({state_list}) group by state").fetchall()
+        if states
+        else []
+    )
     latest_by_state = {state: int(year) for state, year in latest_rows}
 
     if latest_year_only:
         # keep only each state's latest year
-        pairs = " or ".join(
-            f"(state = '{s}' and naip_year = {y})" for s, y in latest_by_state.items()
-        )
+        pairs = " or ".join(f"(state = '{s}' and naip_year = {y})" for s, y in latest_by_state.items())
         where.append(f"({pairs})" if pairs else "false")
     elif years:
         year_list = ", ".join(str(int(y)) for y in years)
@@ -360,7 +358,7 @@ def build_stac_index(states: set[str], years_by_state: dict[str, int | None], pa
     for state in sorted(states):
         year = years_by_state.get(state)
         for feature in earthsearch_items_for_state(state, page_size, year=year):
-            image_asset = ((feature.get("assets") or {}).get("image") or {})
+            image_asset = (feature.get("assets") or {}).get("image") or {}
             href = image_asset.get("href")
             if isinstance(href, str):
                 index[href] = feature
@@ -388,13 +386,15 @@ def geometry_from_proj_bbox(proj_bbox: list[float], crs):
         ]
     return {
         "type": "Polygon",
-        "coordinates": [[
-            [corners[0][0], corners[0][1]],
-            [corners[1][0], corners[1][1]],
-            [corners[2][0], corners[2][1]],
-            [corners[3][0], corners[3][1]],
-            [corners[0][0], corners[0][1]],
-        ]],
+        "coordinates": [
+            [
+                [corners[0][0], corners[0][1]],
+                [corners[1][0], corners[1][1]],
+                [corners[2][0], corners[2][1]],
+                [corners[3][0], corners[3][1]],
+                [corners[0][0], corners[0][1]],
+            ]
+        ],
     }
 
 
@@ -488,7 +488,6 @@ def row_to_insertable(manifest_row: dict[str, Any], item: dict[str, Any]):
     }
 
 
-
 class S3File(io.RawIOBase):
     # GeoTIFF header (IFD + the tags we read) lives at the front of the file.
     # Prefetch this many bytes in ONE ranged GET so PIL's many small tag reads
@@ -540,7 +539,7 @@ class S3File(io.RawIOBase):
         # Serve from the prefetched header buffer when the whole read fits inside
         # it (the common case for tag parsing); else fall back to a ranged GET.
         if end <= len(self._buf):
-            data = self._buf[self.position:end]
+            data = self._buf[self.position : end]
         else:
             params = {
                 "Bucket": self.bucket,
@@ -570,7 +569,7 @@ def parse_geokeys(geokey_directory):
         offset = 4 + i * 4
         if offset + 4 > len(geokey_directory):
             break
-        key_id, tag_location, count, value_offset = geokey_directory[offset:offset+4]
+        key_id, tag_location, count, value_offset = geokey_directory[offset : offset + 4]
         if tag_location == 0:
             keys[key_id] = value_offset
     return keys
@@ -589,12 +588,14 @@ def _extract_cog_geo(s3_client, bucket, key, request_payer="requester"):
         band_count = len(im.getbands())
         bands = "red,green,blue,nir" if band_count == 4 else ",".join(im.getbands())
 
-        pixel_scale = im.tag_v2.get(33550)   # ModelPixelScaleTag
-        tiepoints = im.tag_v2.get(33922)     # ModelTiepointTag
-        geokeys_raw = im.tag_v2.get(34735)   # GeoKeyDirectoryTag
+        pixel_scale = im.tag_v2.get(33550)  # ModelPixelScaleTag
+        tiepoints = im.tag_v2.get(33922)  # ModelTiepointTag
+        geokeys_raw = im.tag_v2.get(34735)  # GeoKeyDirectoryTag
         ascii_params = im.tag_v2.get(34737)  # GeoAsciiParamsTag (CRS citation)
         if not pixel_scale or not tiepoints or not geokeys_raw:
-            raise ValueError(f"Missing required GeoTIFF tags (pixel_scale, tiepoints, or geokeys) in S3 object: s3://{bucket}/{key}")
+            raise ValueError(
+                f"Missing required GeoTIFF tags (pixel_scale, tiepoints, or geokeys) in S3 object: s3://{bucket}/{key}"
+            )
 
         geokeys = parse_geokeys(geokeys_raw)
         pcs = geokeys.get(3072) or geokeys.get(2048)
@@ -611,9 +612,10 @@ def _extract_cog_geo(s3_client, bucket, key, request_payer="requester"):
                 raise ValueError(f"user-defined CRS (32767) with no citation: s3://{bucket}/{key}")
             with _pyproj_lock:
                 from pyproj import CRS
+
                 crs_obj = CRS.from_user_input(citation)
-                proj_epsg = crs_obj.to_epsg() or 0       # resolved EPSG when known
-                crs = proj_epsg or citation              # transformer accepts int or name
+                proj_epsg = crs_obj.to_epsg() or 0  # resolved EPSG when known
+                crs = proj_epsg or citation  # transformer accepts int or name
 
         scale_x, scale_y = float(pixel_scale[0]), float(pixel_scale[1])
         tie_x, tie_y = float(tiepoints[3]), float(tiepoints[4])
@@ -625,9 +627,14 @@ def _extract_cog_geo(s3_client, bucket, key, request_payer="requester"):
         geom = geometry_from_proj_bbox(proj_bbox, crs)
 
     return {
-        "proj_shape": proj_shape, "band_count": band_count, "bands": bands,
-        "proj_epsg": int(proj_epsg), "gsd": gsd, "proj_transform": proj_transform,
-        "proj_bbox": proj_bbox, "geom": geom,
+        "proj_shape": proj_shape,
+        "band_count": band_count,
+        "bands": bands,
+        "proj_epsg": int(proj_epsg),
+        "gsd": gsd,
+        "proj_transform": proj_transform,
+        "proj_bbox": proj_bbox,
+        "geom": geom,
     }
 
 
@@ -667,7 +674,7 @@ def fetch_cog_metadata(s3_client, manifest_row, request_payer="requester"):
                 "href": manifest_row["asset_href"],
                 "title": f"NAIP Imagery DOQQ {manifest_row['filename']}",
             }
-        }
+        },
     }
 
     return {
@@ -736,6 +743,7 @@ def process_manifest_cog_headers(
     failed = []
 
     from botocore.config import Config
+
     config = Config(max_pool_connections=max_workers)
     if aws_access_key_id and aws_secret_access_key:
         session = boto3.Session(
@@ -752,8 +760,7 @@ def process_manifest_cog_headers(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(fetch_cog_metadata, s3_client, row, request_payer): row
-            for row in manifest_rows.values()
+            executor.submit(fetch_cog_metadata, s3_client, row, request_payer): row for row in manifest_rows.values()
         }
 
         for idx, future in enumerate(as_completed(futures), start=1):
@@ -786,7 +793,7 @@ def fetch_cog_geo_generic(s3_client, row, request_payer=None):
         "year": int(row["year"]),
         "properties": row.get("properties") or {},
         "geom_geojson": json.dumps(geo["geom"]),
-        "acquisition_date": None,   # vintage `year` is the temporal key; no per-tile date
+        "acquisition_date": None,  # vintage `year` is the temporal key; no per-tile date
         "gsd": geo["gsd"],
         "proj_epsg": geo["proj_epsg"],
         "proj_bbox": geo["proj_bbox"],
@@ -818,9 +825,7 @@ def process_cog_headers_generic(
         from botocore import UNSIGNED
         from botocore.config import Config
 
-        s3_client = boto3.client(
-            "s3", config=Config(signature_version=UNSIGNED, max_pool_connections=max_workers)
-        )
+        s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED, max_pool_connections=max_workers))
     else:
         from botocore.config import Config
 
@@ -837,10 +842,7 @@ def process_cog_headers_generic(
     total = len(rows)
     print(f"Began COG header parsing for {total:,} selected assets...", flush=True)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(fetch_cog_geo_generic, s3_client, row, request_payer): row
-            for row in rows.values()
-        }
+        futures = {executor.submit(fetch_cog_geo_generic, s3_client, row, request_payer): row for row in rows.values()}
         for idx, future in enumerate(as_completed(futures), start=1):
             row = futures[future]
             try:
@@ -851,4 +853,3 @@ def process_cog_headers_generic(
                 failed.append((row["asset_href"], str(e)))
                 print(f"Failed to parse COG header for {row['asset_href']}: {e}", flush=True)
     return results, failed
-

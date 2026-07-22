@@ -51,12 +51,16 @@ class NoCacheStaticFiles(StaticFiles):
         response.headers["Expires"] = "0"
         return response
 
+
 app = FastAPI(title="Local ordered STAC")
+
 
 @app.on_event("startup")
 def startup_event():
     import descriptors
+
     descriptors.register_lake_collections()
+
 
 # /search responses carry one presigned asset URL per feature, each ~1.5KB --
 # dominated by the X-Amz-Security-Token, which is byte-for-byte identical across
@@ -69,6 +73,7 @@ if VIEWER_DIR.exists():
 for mount_name, mount_dir in LOCAL_MODULE_DIRS.items():
     if mount_dir.exists():
         app.mount(f"/local-modules/{mount_name}", NoCacheStaticFiles(directory=mount_dir), name=f"local-{mount_name}")
+
 
 @app.get("/health")
 def health():
@@ -148,9 +153,7 @@ def collections():
         # masked as "only the default collection is ingested" -- that silently
         # hides other ingested collections from the viewer. Surface it as a
         # retryable 503 so the client keeps its last-known list and retries.
-        raise HTTPException(
-            status_code=503, detail=f"lake collection listing failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"lake collection listing failed: {exc}") from exc
     reg = _registry_extent_by_id()
     return {
         "collections": [
@@ -158,11 +161,7 @@ def collections():
                 "id": cid,
                 "type": "Collection",
                 "title": (reg.get(cid) or {}).get("title") or cid.upper(),
-                "properties": {
-                    k: v
-                    for k, v in (reg.get(cid) or {}).items()
-                    if k != "title" and v is not None
-                },
+                "properties": {k: v for k, v in (reg.get(cid) or {}).items() if k != "title" and v is not None},
                 "links": [
                     {"rel": "self", "href": f"/collections/{cid}"},
                     {"rel": "items", "href": "/search"},
@@ -253,6 +252,7 @@ def ingest_run(body: dict[str, Any], _: None = Depends(require_ingest_token)):
     access = body.get("source_access")
 
     import descriptors
+
     collection_id = str(body.get("collection") or COLLECTION_ID)
 
     if collection_id not in descriptors._REGISTRY and not bucket:
@@ -409,6 +409,7 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
     access = body.get("source_access")
 
     import descriptors
+
     collection_id = str(body.get("collection") or COLLECTION_ID)
 
     if collection_id not in descriptors._REGISTRY and not bucket:
@@ -521,9 +522,25 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
 
 
 def make_stac_feature(row) -> dict[str, Any]:
-    (source_bucket, source_key, geom_json, xmin, ymin, xmax, ymax, acq_date, gsd,
-     collection, region, year, properties_json, proj_epsg, proj_shape,
-     proj_transform, asset_href) = row
+    (
+        source_bucket,
+        source_key,
+        geom_json,
+        xmin,
+        ymin,
+        xmax,
+        ymax,
+        acq_date,
+        gsd,
+        collection,
+        region,
+        year,
+        properties_json,
+        proj_epsg,
+        proj_shape,
+        proj_transform,
+        asset_href,
+    ) = row
 
     geometry = geom_json if isinstance(geom_json, dict) else json.loads(geom_json) if geom_json else None
 
@@ -535,42 +552,43 @@ def make_stac_feature(row) -> dict[str, Any]:
             extra = {}
 
     props = {
-        'datetime': f"{acq_date.isoformat()}T00:00:00Z" if acq_date else None,
-        'gsd': gsd,
-        'region': region,
-        'year': year,
+        "datetime": f"{acq_date.isoformat()}T00:00:00Z" if acq_date else None,
+        "gsd": gsd,
+        "region": region,
+        "year": year,
         # back-compat aliases the current (Phase-3) viewer still reads:
-        'naip:state': region,
-        'naip:year': year,
-        'proj:epsg': proj_epsg,
-        'proj:shape': proj_shape,
-        'proj:transform': proj_transform,
+        "naip:state": region,
+        "naip:year": year,
+        "proj:epsg": proj_epsg,
+        "proj:shape": proj_shape,
+        "proj:transform": proj_transform,
     }
     # Merge collection-scoped properties (e.g. naip:quad/resolution/product).
     for k, v in extra.items():
         props.setdefault(k, v)
-    quad = extra.get('naip:quad')
+    quad = extra.get("naip:quad")
     if quad:
-        props.setdefault('grid:code', f"DOQQ-{quad}")
+        props.setdefault("grid:code", f"DOQQ-{quad}")
 
     feature = {
-        'type': 'Feature',
-        'stac_version': '1.0.0',
-        'stac_extensions': [],
-        'id': f"{source_bucket}/{source_key}",
-        'collection': collection or COLLECTION_ID,
-        'geometry': geometry,
-        'bbox': [xmin, ymin, xmax, ymax],
-        'properties': {k: v for k, v in props.items() if v is not None},
-        'assets': {
-            'image': {
-                'href': asset_href,
-                'type': 'image/tiff; application=geotiff; profile=cloud-optimized',
-                'roles': ['data']
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "stac_extensions": [],
+        "id": f"{source_bucket}/{source_key}",
+        "collection": collection or COLLECTION_ID,
+        "geometry": geometry,
+        "bbox": [xmin, ymin, xmax, ymax],
+        "properties": {k: v for k, v in props.items() if v is not None},
+        "assets": {
+            "image": {
+                "href": asset_href,
+                "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+                "roles": ["data"],
             }
-        }
+        },
     }
     return feature
+
 
 @app.get("/availability")
 def availability(collection: str = COLLECTION_ID):
@@ -647,7 +665,7 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> str:
     # collection: accept the request's collection (sanitized), default to naip.
     # A single value drives both the partition scope and the WHERE prune.
     requested = body.get("collections", [COLLECTION_ID])
-    collection = (requested[0] if isinstance(requested, list) and requested else COLLECTION_ID)
+    collection = requested[0] if isinstance(requested, list) and requested else COLLECTION_ID
     collection = "".join(ch for ch in str(collection).lower() if ch.isalnum() or ch in "-_") or COLLECTION_ID
 
     bbox = body.get("bbox")
@@ -714,8 +732,8 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> str:
         proj_epsg, proj_shape, proj_transform,
         asset_href
       from read_parquet('{read_path}', hive_partitioning=true)
-      where {' and '.join(filters)}
-      order by {', '.join(order_terms)}
+      where {" and ".join(filters)}
+      order by {", ".join(order_terms)}
       limit {limit}
     """
 
@@ -724,7 +742,7 @@ def _finalize_lake_result(rows, response, request_started_at, sql_seconds, engin
     """Shared post-query path for both lake engines: build features, sign URLs,
     set timing headers, return the FeatureCollection."""
     features = [make_stac_feature(row) for row in rows]
-    result = {'type': 'FeatureCollection', 'features': features, 'links': []}
+    result = {"type": "FeatureCollection", "features": features, "links": []}
 
     rewrite_stats: dict[str, float | int] = {
         "presign_seconds": 0.0,
@@ -798,10 +816,12 @@ def search(body: dict[str, Any], response: Response):
 # /naip-coverage and /buildings/overture are this fork's own endpoints (absent
 # from the upstream parent); restored here after Phase 1 modularized app.py.
 
+
 def _webmercator_tile_bbox_lnglat(z: int, x: int, y: int) -> tuple[float, float, float, float]:
     """Lon/lat (west, south, east, north) of a WebMercatorQuad z/x/y tile."""
     import math
-    n = 2 ** z
+
+    n = 2**z
 
     def tile_x_to_lon(tile_x: int) -> float:
         return tile_x / n * 360.0 - 180.0
@@ -828,7 +848,7 @@ def naip_coverage_mvt(
     """
     if z < 4 or z > 15:
         return Response(content=b"", media_type="application/vnd.mapbox-vector-tile")
-    if x < 0 or y < 0 or x >= 2 ** z or y >= 2 ** z:
+    if x < 0 or y < 0 or x >= 2**z or y >= 2**z:
         raise HTTPException(status_code=404, detail="tile outside WebMercatorQuad bounds")
 
     collection = "".join(ch for ch in str(collection).lower() if ch.isalnum() or ch in "-_") or COLLECTION_ID
@@ -879,7 +899,7 @@ def naip_coverage_mvt(
             year as yr,
             gsd
           from read_parquet('{escaped_path}', hive_partitioning=true), bounds
-          where {' and '.join(filters)}
+          where {" and ".join(filters)}
         )
         select ST_AsMVT(features, 'naip', 4096, 'geom')
         from features
@@ -905,8 +925,15 @@ def naip_coverage_mvt(
 # viewport prefilter) + the attributes the viewer's 3D layer renders. Skipping
 # the facade_*/roof_* columns keeps each row-group fetch small.
 _OVERTURE_READ_COLS = [
-    "id", "height", "min_height", "num_floors", "subtype", "class",
-    "has_parts", "bbox", "geometry",
+    "id",
+    "height",
+    "min_height",
+    "num_floors",
+    "subtype",
+    "class",
+    "has_parts",
+    "bbox",
+    "geometry",
 ]
 # A viewport intersecting more row groups than this is too zoomed-out to stream
 # cheaply (each row group is ~38k buildings / ~5 MB). The viewer only enables
@@ -923,6 +950,7 @@ def _overture_s3():
     global _overture_s3fs
     if _overture_s3fs is None:
         import pyarrow.fs as pa_fs
+
         _overture_s3fs = pa_fs.S3FileSystem(region=OVERTURE_SOURCE_REGION, anonymous=True)
     return _overture_s3fs
 
@@ -934,9 +962,11 @@ def _load_overture_index():
     if _overture_index and _overture_index[0] == OVERTURE_BUILDINGS_INDEX:
         return _overture_index[1]
     import pyarrow.parquet as pq
+
     try:
         if OVERTURE_BUILDINGS_INDEX.startswith("s3://"):
             import pyarrow.fs as pa_fs
+
             fsys = pa_fs.S3FileSystem(region=OVERTURE_SOURCE_REGION)
             table = pq.read_table(OVERTURE_BUILDINGS_INDEX[5:], filesystem=fsys)
         else:
@@ -955,6 +985,7 @@ def _overture_pf(key: str):
     pf = _overture_pf_cache.get(key)
     if pf is None:
         import pyarrow.parquet as pq
+
         pf = pq.ParquetFile(key, filesystem=_overture_s3())
         _overture_pf_cache[key] = pf
     return pf
@@ -994,18 +1025,28 @@ def _overture_features_from_index(bboxes, limit):
                 break
     total_rg = sum(len(v) for v in by_file.values())
     if total_rg == 0:
-        return {"type": "FeatureCollection", "features": [], "links": [], "limit": limit,
-                "bboxes": len(bboxes), "row_groups": 0, "source": "overture-index"}
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "links": [],
+            "limit": limit,
+            "bboxes": len(bboxes),
+            "row_groups": 0,
+            "source": "overture-index",
+        }
     if total_rg > _OVERTURE_MAX_ROW_GROUPS:
         raise HTTPException(
             status_code=413,
-            detail=(f"viewport spans {total_rg} Overture row groups "
-                    f"(max {_OVERTURE_MAX_ROW_GROUPS}); zoom in to load buildings"),
+            detail=(
+                f"viewport spans {total_rg} Overture row groups "
+                f"(max {_OVERTURE_MAX_ROW_GROUPS}); zoom in to load buildings"
+            ),
         )
 
     # 2. Fetch only the matching row groups from Overture's public S3.
     import pyarrow as pa
     import pyarrow.compute as pc
+
     tables = []
     for key, rgs in by_file.items():
         tables.append(_overture_pf(key).read_row_groups(sorted(rgs), columns=_OVERTURE_READ_COLS))
@@ -1024,15 +1065,20 @@ def _overture_features_from_index(bboxes, limit):
         mask = m if mask is None else pc.or_(mask, m)
     table = table.filter(mask)
     if table.num_rows == 0:
-        return {"type": "FeatureCollection", "features": [], "links": [], "limit": limit,
-                "bboxes": len(bboxes), "row_groups": total_rg, "source": "overture-index"}
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "links": [],
+            "limit": limit,
+            "bboxes": len(bboxes),
+            "row_groups": total_rg,
+            "source": "overture-index",
+        }
 
     # 4. Exact intersect + GeoJSON via DuckDB over the (small) fetched table.
-    values_sql = ",\n".join(
-        f"({i}, {w:.12f}, {s:.12f}, {e:.12f}, {n:.12f})"
-        for i, (w, s, e, n) in enumerate(bboxes)
-    )
+    values_sql = ",\n".join(f"({i}, {w:.12f}, {s:.12f}, {e:.12f}, {n:.12f})" for i, (w, s, e, n) in enumerate(bboxes))
     import duckdb
+
     con = duckdb.connect(":memory:")
     try:
         load_extensions(con, spatial=True)
@@ -1068,21 +1114,47 @@ def _overture_features_from_index(bboxes, limit):
         con.close()
 
     features = []
-    for (bid, height, min_height, num_floors, subtype, building_class, has_parts,
-         xmin, ymin, xmax, ymax, geom_json) in rows:
+    for (
+        bid,
+        height,
+        min_height,
+        num_floors,
+        subtype,
+        building_class,
+        has_parts,
+        xmin,
+        ymin,
+        xmax,
+        ymax,
+        geom_json,
+    ) in rows:
         props = {
-            "id": bid, "height": height, "min_height": min_height,
-            "num_floors": num_floors, "subtype": subtype, "class": building_class,
+            "id": bid,
+            "height": height,
+            "min_height": min_height,
+            "num_floors": num_floors,
+            "subtype": subtype,
+            "class": building_class,
             "has_parts": has_parts,
         }
-        features.append({
-            "type": "Feature", "id": bid, "geometry": json.loads(geom_json),
-            "bbox": [xmin, ymin, xmax, ymax],
-            "properties": {k: v for k, v in props.items() if v is not None},
-        })
-    return {"type": "FeatureCollection", "features": features, "links": [],
-            "limit": limit, "bboxes": len(bboxes), "row_groups": total_rg,
-            "source": "overture-index"}
+        features.append(
+            {
+                "type": "Feature",
+                "id": bid,
+                "geometry": json.loads(geom_json),
+                "bbox": [xmin, ymin, xmax, ymax],
+                "properties": {k: v for k, v in props.items() if v is not None},
+            }
+        )
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "links": [],
+        "limit": limit,
+        "bboxes": len(bboxes),
+        "row_groups": total_rg,
+        "source": "overture-index",
+    }
 
 
 def _overture_features_from_local(bboxes, limit):
@@ -1091,12 +1163,10 @@ def _overture_features_from_local(bboxes, limit):
     path = Path(OVERTURE_BUILDINGS_PARQUET)
     if not OVERTURE_BUILDINGS_PARQUET or not path.exists():
         return None
-    values_sql = ",\n".join(
-        f"({i}, {w:.12f}, {s:.12f}, {e:.12f}, {n:.12f})"
-        for i, (w, s, e, n) in enumerate(bboxes)
-    )
+    values_sql = ",\n".join(f"({i}, {w:.12f}, {s:.12f}, {e:.12f}, {n:.12f})" for i, (w, s, e, n) in enumerate(bboxes))
     parquet_path = str(path).replace("'", "''")
     import duckdb
+
     con = duckdb.connect(":memory:")
     try:
         load_extensions(con, spatial=True)
@@ -1120,20 +1190,47 @@ def _overture_features_from_local(bboxes, limit):
     finally:
         con.close()
     features = []
-    for (bid, height, min_height, num_floors, subtype, building_class, has_parts,
-         xmin, ymin, xmax, ymax, geom_json, _rn) in rows:
+    for (
+        bid,
+        height,
+        min_height,
+        num_floors,
+        subtype,
+        building_class,
+        has_parts,
+        xmin,
+        ymin,
+        xmax,
+        ymax,
+        geom_json,
+        _rn,
+    ) in rows:
         props = {
-            "id": bid, "height": height, "min_height": min_height,
-            "num_floors": num_floors, "subtype": subtype, "class": building_class,
+            "id": bid,
+            "height": height,
+            "min_height": min_height,
+            "num_floors": num_floors,
+            "subtype": subtype,
+            "class": building_class,
             "has_parts": has_parts,
         }
-        features.append({
-            "type": "Feature", "id": bid, "geometry": json.loads(geom_json),
-            "bbox": [xmin, ymin, xmax, ymax],
-            "properties": {k: v for k, v in props.items() if v is not None},
-        })
-    return {"type": "FeatureCollection", "features": features, "links": [],
-            "limit": limit, "bboxes": len(bboxes), "source": "overture-local"}
+        features.append(
+            {
+                "type": "Feature",
+                "id": bid,
+                "geometry": json.loads(geom_json),
+                "bbox": [xmin, ymin, xmax, ymax],
+                "properties": {k: v for k, v in props.items() if v is not None},
+            }
+        )
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "links": [],
+        "limit": limit,
+        "bboxes": len(bboxes),
+        "source": "overture-local",
+    }
 
 
 @app.post("/buildings/overture")
@@ -1161,8 +1258,9 @@ def overture_buildings(body: dict[str, Any]):
     if result is None:
         raise HTTPException(
             status_code=404,
-            detail=(f"Overture buildings index not found: {OVERTURE_BUILDINGS_INDEX} "
-                    "(and no local fallback configured)"),
+            detail=(
+                f"Overture buildings index not found: {OVERTURE_BUILDINGS_INDEX} (and no local fallback configured)"
+            ),
         )
     return result
 

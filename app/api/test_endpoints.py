@@ -98,14 +98,8 @@ def test_availability():
         assert response.status_code == 200
         data = response.json()
         assert data["engine"] == "duckdb"
-        assert data["states"] == {
-            "ky": [2021],
-            "nj": [2022, 2020]
-        }
-        assert data["gsd"] == {
-            "ky": {"2021": 0.6},
-            "nj": {"2020": 1.0, "2022": 0.3}
-        }
+        assert data["states"] == {"ky": [2021], "nj": [2022, 2020]}
+        assert data["gsd"] == {"ky": {"2021": 0.6}, "nj": {"2020": 1.0, "2022": 0.3}}
         assert data["extent"]["ky"]["2021"] == [-89.6, 36.5, -81.9, 39.2]
         assert data["extent"]["nj"]["2022"] == [-75.6, 38.9, -73.9, 41.4]
 
@@ -175,19 +169,27 @@ def test_search_success():
         dummy_geom = '{"type":"Polygon","coordinates":[[[-75,39],[-74,39],[-74,40],[-75,40],[-75,39]]]}'
         mock_cursor.execute.return_value.fetchall.return_value = [
             (
-                "naip-analytic", "state/year/tile.tif", dummy_geom,
-                -75.0, 39.0, -74.0, 40.0,
-                datetime.date(2022, 6, 15), 0.6, "naip", "nj", 2022, "{}",
-                3857, "[10, 10]", "[1, 0, 0, 0, 1, 0]",
-                "s3://naip-analytic/state/year/tile.tif"
+                "naip-analytic",
+                "state/year/tile.tif",
+                dummy_geom,
+                -75.0,
+                39.0,
+                -74.0,
+                40.0,
+                datetime.date(2022, 6, 15),
+                0.6,
+                "naip",
+                "nj",
+                2022,
+                "{}",
+                3857,
+                "[10, 10]",
+                "[1, 0, 0, 0, 1, 0]",
+                "s3://naip-analytic/state/year/tile.tif",
             )
         ]
 
-        search_payload = {
-            "collections": ["naip"],
-            "bbox": [-75.0, 39.0, -74.0, 40.0],
-            "limit": 10
-        }
+        search_payload = {"collections": ["naip"], "bbox": [-75.0, 39.0, -74.0, 40.0], "limit": 10}
         response = client.post("/search", json=search_payload)
         assert response.status_code == 200
         data = response.json()

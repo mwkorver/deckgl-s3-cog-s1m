@@ -52,10 +52,14 @@ def run_ingest_job(
     source_secret_access_key: str | None = None,
 ):
     command = [
-        sys.executable, str(INGEST_SCRIPT_PATH),
-        "--collection", collection,
-        "--states", state,
-        "--strategy", strategy,
+        sys.executable,
+        str(INGEST_SCRIPT_PATH),
+        "--collection",
+        collection,
+        "--states",
+        state,
+        "--strategy",
+        strategy,
     ]
     if year is not None:
         command.extend(["--years", str(year)])

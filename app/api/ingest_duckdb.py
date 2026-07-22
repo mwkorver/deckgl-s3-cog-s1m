@@ -165,19 +165,22 @@ def acquire_payloads(args):
     # NAIP filename parse, no strategy choice (header read is the only path).
     if isinstance(descriptor.discovery, descriptors.S3PrefixListing):
         payloads, failed = im.process_cog_headers_generic(
-            manifest_rows, max_workers=args.max_workers,
-            request_payer=descriptor.request_payer, access=descriptor.access,
+            manifest_rows,
+            max_workers=args.max_workers,
+            request_payer=descriptor.request_payer,
+            access=descriptor.access,
             aws_access_key_id=args.source_access_key_id,
             aws_secret_access_key=args.source_secret_access_key,
         )
         print(f"COG header extraction: matched={len(payloads):,} failed={len(failed):,}", flush=True)
-        reconcile_completeness(manifest_rows, payloads, collection=args.collection,
-                               strict=args.strict_completeness)
+        reconcile_completeness(manifest_rows, payloads, collection=args.collection, strict=args.strict_completeness)
         return payloads
 
     if args.strategy == "manifest-cog-headers":
         payloads, failed = im.process_manifest_cog_headers(
-            manifest_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer,
+            manifest_rows,
+            max_workers=args.max_workers,
+            request_payer=descriptor.request_payer,
             aws_access_key_id=args.source_access_key_id,
             aws_secret_access_key=args.source_secret_access_key,
         )
@@ -210,7 +213,9 @@ def acquire_payloads(args):
                 flush=True,
             )
             fallback_payloads, failed = im.process_manifest_cog_headers(
-                missing_rows, max_workers=args.max_workers, request_payer=descriptor.request_payer,
+                missing_rows,
+                max_workers=args.max_workers,
+                request_payer=descriptor.request_payer,
                 aws_access_key_id=args.source_access_key_id,
                 aws_secret_access_key=args.source_secret_access_key,
             )
@@ -223,8 +228,7 @@ def acquire_payloads(args):
     # Completeness reconciliation: the manifest index mirrors the authoritative
     # bucket listing, so any per-partition shortfall here is a silent data loss
     # (the EarthSearch path's failure mode). Flag it loudly; optionally fail.
-    reconcile_completeness(manifest_rows, payloads, collection=args.collection,
-                           strict=args.strict_completeness)
+    reconcile_completeness(manifest_rows, payloads, collection=args.collection, strict=args.strict_completeness)
     return payloads
 
 
@@ -256,8 +260,9 @@ def reconcile_completeness(manifest_rows, payloads, collection="naip", strict=Fa
 
     if shortfalls:
         total_drop = sum(s[3] for s in shortfalls)
-        msg = (f"COMPLETENESS WARNING: {len(shortfalls)} partition(s) short by "
-               f"{total_drop:,} rows vs the manifest/bucket.")
+        msg = (
+            f"COMPLETENESS WARNING: {len(shortfalls)} partition(s) short by {total_drop:,} rows vs the manifest/bucket."
+        )
         if strict:
             raise SystemExit(f"{msg} (--strict-completeness set; aborting before write)")
         print(f"\n!!! {msg} Proceeding anyway (re-run with --strict-completeness to abort).", flush=True)
@@ -352,7 +357,7 @@ def _delete_partition_prefixes(
     if is_s3:
         import boto3
 
-        bucket, _, base_key = out_path[len("s3://"):].partition("/")
+        bucket, _, base_key = out_path[len("s3://") :].partition("/")
         base_key = base_key.rstrip("/")
         region_name = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
         if aws_access_key_id and aws_secret_access_key:
@@ -372,9 +377,7 @@ def _delete_partition_prefixes(
             paginator = s3.get_paginator("list_objects_v2")
             keys = [
                 {"Key": obj["Key"]}
-                for page in paginator.paginate(
-                    Bucket=bucket, Prefix=prefix, RequestPayer="requester"
-                )
+                for page in paginator.paginate(Bucket=bucket, Prefix=prefix, RequestPayer="requester")
                 for obj in page.get("Contents", [])
             ]
             for i in range(0, len(keys), 1000):
@@ -418,7 +421,9 @@ def export(
 
     con = duckdb.connect()
     duckdb_s3.configure(
-        con, out_path, spatial=True,
+        con,
+        out_path,
+        spatial=True,
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_access_key,
     )
@@ -427,9 +432,7 @@ def export(
     if not single_file:
         # Clear the partitions we're about to write so overwrite_or_ignore
         # doesn't leave stale data_N.parquet behind (duplicate rows on read).
-        parts = con.execute(
-            "select distinct collection, region, year from staging"
-        ).fetchall()
+        parts = con.execute("select distinct collection, region, year from staging").fetchall()
         _delete_partition_prefixes(out_path, parts, aws_access_key_id, aws_secret_access_key)
 
     if single_file:
@@ -491,9 +494,7 @@ def export(
     # (e.g. lake/s1m/S1M_Products.parquet), which have no collection= key and
     # break hive_partitioning with a "key collection not found" binder error.
     read_glob = str(out_path) if single_file else f"{out_path}/collection=*/region=*/year=*/*.parquet"
-    count = con.sql(
-        f"select count(*) from read_parquet('{read_glob}', hive_partitioning=true)"
-    ).fetchone()[0]
+    count = con.sql(f"select count(*) from read_parquet('{read_glob}', hive_partitioning=true)").fetchone()[0]
     con.close()
     return count
 
@@ -504,8 +505,13 @@ def main():
 
     payloads = acquire_payloads(args)
     count = export(
-        payloads, args.out, args.row_group_size, args.single_file, args.collection,
-        args.source_access_key_id, args.source_secret_access_key,
+        payloads,
+        args.out,
+        args.row_group_size,
+        args.single_file,
+        args.collection,
+        args.source_access_key_id,
+        args.source_secret_access_key,
     )
 
     total_ms = (perf_counter() - started_at) * 1000

@@ -26,10 +26,7 @@ import pyarrow.fs as fs
 import pyarrow.parquet as pq
 
 DEFAULT_RELEASE = "2026-06-17.0"
-DEFAULT_SOURCE = (
-    "overturemaps-us-west-2/release/"
-    "{release}/theme=buildings/type=building"
-)
+DEFAULT_SOURCE = "overturemaps-us-west-2/release/{release}/theme=buildings/type=building"
 # CONUS lon/lat envelope (OGC:CRS84). Deliberately a touch generous so coastal
 # and border footprints are not clipped by a tight box.
 CONUS_BBOX = (-125.0, 24.4, -66.9, 49.4)
@@ -48,23 +45,20 @@ def parse_bbox(value: str) -> tuple[float, float, float, float]:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Build a CONUS row-group index over the Overture buildings release."
+    parser = argparse.ArgumentParser(description="Build a CONUS row-group index over the Overture buildings release.")
+    parser.add_argument(
+        "--release", default=DEFAULT_RELEASE, help=f"Overture release id, for example {DEFAULT_RELEASE}"
     )
-    parser.add_argument("--release", default=DEFAULT_RELEASE,
-                        help=f"Overture release id, for example {DEFAULT_RELEASE}")
-    parser.add_argument("--source", default=DEFAULT_SOURCE,
-                        help="Source parquet dataset key (no scheme). May include {release}.")
-    parser.add_argument("--bbox", type=parse_bbox, default=None,
-                        help="Clip envelope xmin,ymin,xmax,ymax in OGC:CRS84 (default: CONUS).")
-    parser.add_argument("--region", default="us-west-2",
-                        help="AWS region of the source bucket.")
-    parser.add_argument("--workers", type=int, default=24,
-                        help="Parallel footer reads.")
-    parser.add_argument("--output", default=DEFAULT_OUTPUT,
-                        help="Local output index parquet path.")
-    parser.add_argument("--upload-uri", default=None,
-                        help="Optional s3://bucket/key to upload the finished index to.")
+    parser.add_argument(
+        "--source", default=DEFAULT_SOURCE, help="Source parquet dataset key (no scheme). May include {release}."
+    )
+    parser.add_argument(
+        "--bbox", type=parse_bbox, default=None, help="Clip envelope xmin,ymin,xmax,ymax in OGC:CRS84 (default: CONUS)."
+    )
+    parser.add_argument("--region", default="us-west-2", help="AWS region of the source bucket.")
+    parser.add_argument("--workers", type=int, default=24, help="Parallel footer reads.")
+    parser.add_argument("--output", default=DEFAULT_OUTPUT, help="Local output index parquet path.")
+    parser.add_argument("--upload-uri", default=None, help="Optional s3://bucket/key to upload the finished index to.")
     return parser.parse_args()
 
 
@@ -93,15 +87,17 @@ def scan_file(filesystem, key: str, bbox) -> list[dict]:
             rg.column(col["bbox.ymax"]).statistics.max,
         )
         if intersects(ext, bbox):
-            records.append({
-                "file": key,
-                "row_group": r,
-                "num_rows": rg.num_rows,
-                "bbox_xmin": ext[0],
-                "bbox_ymin": ext[1],
-                "bbox_xmax": ext[2],
-                "bbox_ymax": ext[3],
-            })
+            records.append(
+                {
+                    "file": key,
+                    "row_group": r,
+                    "num_rows": rg.num_rows,
+                    "bbox_xmin": ext[0],
+                    "bbox_ymin": ext[1],
+                    "bbox_xmax": ext[2],
+                    "bbox_ymax": ext[3],
+                }
+            )
     return records
 
 
@@ -134,12 +130,14 @@ def main():
     print(f"files touched:           {files_hit} / {len(files)}", flush=True)
     print(f"buildings (upper bound): {total_rows:,}", flush=True)
 
-    table = pa.Table.from_pylist(records).replace_schema_metadata({
-        b"overture_release": args.release.encode(),
-        b"overture_source": source.encode(),
-        b"overture_region": args.region.encode(),
-        b"index_bbox": ",".join(str(v) for v in bbox).encode(),
-    })
+    table = pa.Table.from_pylist(records).replace_schema_metadata(
+        {
+            b"overture_release": args.release.encode(),
+            b"overture_source": source.encode(),
+            b"overture_region": args.region.encode(),
+            b"index_bbox": ",".join(str(v) for v in bbox).encode(),
+        }
+    )
     pq.write_table(table, args.output, compression="zstd")
     print(f"wrote {args.output} in {perf_counter() - started:.1f}s", flush=True)
 

@@ -58,12 +58,14 @@ class ManifestIndexAdapter:
     @property
     def regions(self) -> tuple[str, ...]:
         from config import STATE_BBOXES
+
         return tuple(sorted(STATE_BBOXES.keys()))
 
     def available_years(self, region: str) -> list[int]:
         """Fetch available years for a state by listing the naip_year= partitions."""
         from aws_s3 import get_s3_direct_client
         from config import MANIFEST_INDEX
+
         years = set()
         root = self.index_root or str(MANIFEST_INDEX)
         if root.startswith("s3://"):
@@ -95,7 +97,6 @@ class ManifestIndexAdapter:
         )
 
 
-
 # --------------------------------------------------------------------------- #
 # key_parser contract + S3-prefix-listing adapter (Phase 2)                    #
 # --------------------------------------------------------------------------- #
@@ -104,9 +105,9 @@ class KeyFields:
     """What a collection's key_parser extracts from one S3 key. The uniform shape
     every layout quirk collapses to; everything downstream sees only this."""
 
-    region: str            # key-parsed (NAIP states, NZ councils) or constant (ky)
-    year: int              # path level, regex from a folder, or filename
-    properties: dict       # collection-scoped extras (resolution, tile id, ...)
+    region: str  # key-parsed (NAIP states, NZ councils) or constant (ky)
+    year: int  # path level, regex from a folder, or filename
+    properties: dict  # collection-scoped extras (resolution, tile id, ...)
 
 
 # Well-known public buckets that have S3 Requester Pays enabled, so reads/lists
@@ -295,10 +296,7 @@ def get_descriptor(collection_id: str = "naip") -> CollectionDescriptor:
 
 def is_source_asset(bucket: str, key: str) -> bool:
     """Whether a bucket/key matches an active collection's COG key pattern."""
-    return any(
-        descriptor.bucket == bucket and descriptor.key_filter(key)
-        for descriptor in _REGISTRY.values()
-    )
+    return any(descriptor.bucket == bucket and descriptor.key_filter(key) for descriptor in _REGISTRY.values())
 
 
 # --------------------------------------------------------------------------- #
@@ -310,8 +308,7 @@ def is_source_asset(bucket: str, key: str) -> bool:
 # --------------------------------------------------------------------------- #
 # Bare tokens (not "/Overviews/"): the real noise folders are siblings like
 # KY_KYAPED_2014_6IN_Overviews/ and Metadata/, so match the token anywhere.
-_KY_EXCLUDE = ("Overviews", "Metadata", "TileGrid", "County-Mosaics",
-               "FlightInformationData")
+_KY_EXCLUDE = ("Overviews", "Metadata", "TileGrid", "County-Mosaics", "FlightInformationData")
 # Filename shapes vary across years/phases; anchor on the trailing
 # _<year>(_Season<N>)?_<res>_cog.tif and treat everything before as the tile id
 # (non-greedy), so multi-segment prefixes are absorbed:
@@ -319,9 +316,7 @@ _KY_EXCLUDE = ("Overviews", "Metadata", "TileGrid", "County-Mosaics",
 #   N011E284_2024_Season1_3IN_cog.tif          -> tile N011E284, season 1
 #   Ky_LOJIC_N059E244_2021_3IN_cog.tif         -> tile Ky_LOJIC_N059E244 (Louisville/LOJIC)
 # Season may also live only in the product-folder name (older Phase-3 products).
-_KY_FILENAME = re.compile(
-    r"^(?P<tile>.+?)_(?P<year>\d{4})(?:_Season(?P<season>\d))?_(?P<res>[0-9A-Za-z]+)_cog\.tif$"
-)
+_KY_FILENAME = re.compile(r"^(?P<tile>.+?)_(?P<year>\d{4})(?:_Season(?P<season>\d))?_(?P<res>[0-9A-Za-z]+)_cog\.tif$")
 
 
 def ky_cog_filter(key: str) -> bool:
@@ -334,7 +329,7 @@ def ky_key_parser(key: str) -> KeyFields | None:
         return None
     parts = key.split("/")
     season = m["season"]  # filename season (newer products)
-    if season is None:    # else fall back to the product-folder name
+    if season is None:  # else fall back to the product-folder name
         fm = re.search(r"Season(\d)", parts[3] if len(parts) > 3 else "")
         season = fm.group(1) if fm else None
     return KeyFields(

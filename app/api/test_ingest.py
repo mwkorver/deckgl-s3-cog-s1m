@@ -22,14 +22,8 @@ def test_derive_product():
 
 def test_reconcile_completeness_ok():
     """Verify that matching manifest and payload counts logs successfully."""
-    manifest = {
-        "key1": {"state": "nj", "naip_year": "2020"},
-        "key2": {"state": "nj", "naip_year": "2020"}
-    }
-    payloads = [
-        {"state": "nj", "naip_year": "2020"},
-        {"state": "nj", "naip_year": "2020"}
-    ]
+    manifest = {"key1": {"state": "nj", "naip_year": "2020"}, "key2": {"state": "nj", "naip_year": "2020"}}
+    payloads = [{"state": "nj", "naip_year": "2020"}, {"state": "nj", "naip_year": "2020"}]
     with patch("sys.stdout", new=io.StringIO()) as fake_out:
         ingest.reconcile_completeness(manifest, payloads, strict=True)
         output = fake_out.getvalue()
@@ -38,13 +32,8 @@ def test_reconcile_completeness_ok():
 
 def test_reconcile_completeness_shortfall_warning():
     """Verify that a shortfall warning is logged when strict=False."""
-    manifest = {
-        "key1": {"state": "nj", "naip_year": "2020"},
-        "key2": {"state": "nj", "naip_year": "2020"}
-    }
-    payloads = [
-        {"state": "nj", "naip_year": "2020"}
-    ]
+    manifest = {"key1": {"state": "nj", "naip_year": "2020"}, "key2": {"state": "nj", "naip_year": "2020"}}
+    payloads = [{"state": "nj", "naip_year": "2020"}]
     with patch("sys.stdout", new=io.StringIO()) as fake_out:
         ingest.reconcile_completeness(manifest, payloads, strict=False)
         output = fake_out.getvalue()
@@ -54,13 +43,8 @@ def test_reconcile_completeness_shortfall_warning():
 
 def test_reconcile_completeness_shortfall_strict():
     """Verify that a shortfall aborts execution when strict=True."""
-    manifest = {
-        "key1": {"state": "nj", "naip_year": "2020"},
-        "key2": {"state": "nj", "naip_year": "2020"}
-    }
-    payloads = [
-        {"state": "nj", "naip_year": "2020"}
-    ]
+    manifest = {"key1": {"state": "nj", "naip_year": "2020"}, "key2": {"state": "nj", "naip_year": "2020"}}
+    payloads = [{"state": "nj", "naip_year": "2020"}]
     with pytest.raises(SystemExit, match="aborting before write"):
         ingest.reconcile_completeness(manifest, payloads, strict=True)
 
@@ -86,7 +70,7 @@ def test_payloads_to_arrow_naip():
             "gsd": 0.6,
             "proj_epsg": 3857,
             "proj_shape": [1000, 1000],
-            "proj_transform": [1.0, 0.0, 0.0, 0.0, -1.0, 0.0]
+            "proj_transform": [1.0, 0.0, 0.0, 0.0, -1.0, 0.0],
         }
     ]
 
@@ -122,7 +106,7 @@ def test_payloads_to_arrow_generic():
             "gsd": 0.1,
             "proj_epsg": 3089,
             "proj_shape": [2000, 2000],
-            "proj_transform": [1.0, 0.0, 0.0, 0.0, -1.0, 0.0]
+            "proj_transform": [1.0, 0.0, 0.0, 0.0, -1.0, 0.0],
         }
     ]
 
@@ -142,7 +126,7 @@ if __name__ == "__main__":
         test_reconcile_completeness_shortfall_warning,
         test_reconcile_completeness_shortfall_strict,
         test_payloads_to_arrow_naip,
-        test_payloads_to_arrow_generic
+        test_payloads_to_arrow_generic,
     ]
     failed = 0
     for t in tests:
@@ -153,6 +137,7 @@ if __name__ == "__main__":
             failed += 1
             print(f"FAIL {t.__name__}: {e}")
             import traceback
+
             traceback.print_exc()
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     sys.exit(1 if failed else 0)

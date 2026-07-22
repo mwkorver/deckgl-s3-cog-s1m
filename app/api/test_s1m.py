@@ -73,9 +73,7 @@ def test_cover_dataset_queries_bbox_and_checks_geometry():
     ):
         result = s1m.cover_dataset(0.25, 0.5)
 
-    assert result == (
-        "s3://prd-tnm/StagedProducts/Elevation/S1M/covering.tif"
-    )
+    assert result == ("s3://prd-tnm/StagedProducts/Elevation/S1M/covering.tif")
     assert "read_parquet" in con.sql
     assert "bbox_xmin <= ?" in con.sql
     assert con.parameters == [0.25, 0.25, 0.5, 0.5]

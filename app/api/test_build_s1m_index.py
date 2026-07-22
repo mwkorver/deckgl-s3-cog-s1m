@@ -17,13 +17,9 @@ def test_convert_writes_reader_columns(tmp_path):
     output = tmp_path / "S1M_Products.parquet"
     con = sqlite3.connect(source)
     try:
+        con.execute("CREATE TABLE S1M_Products (fid INTEGER PRIMARY KEY, dataset TEXT, geom BLOB)")
         con.execute(
-            "CREATE TABLE S1M_Products "
-            "(fid INTEGER PRIMARY KEY, dataset TEXT, geom BLOB)"
-        )
-        con.execute(
-            "CREATE TABLE rtree_S1M_Products_geom "
-            "(id INTEGER PRIMARY KEY, minx REAL, maxx REAL, miny REAL, maxy REAL)"
+            "CREATE TABLE rtree_S1M_Products_geom (id INTEGER PRIMARY KEY, minx REAL, maxx REAL, miny REAL, maxy REAL)"
         )
         geometry_wkb = b"\x01test-wkb"
         con.execute(

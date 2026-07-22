@@ -43,9 +43,7 @@ def test_signing_requester_pays_keeps_request_payer_param(monkeypatch):
     monkeypatch.setattr(aws_s3, "_cached_creds", ("AKIA_TEST", "SECRET", "TOKEN", time.time() + 600))
     monkeypatch.setattr(aws_s3, "get_s3_client", lambda: FakeClient())
 
-    signed, headers = aws_s3._sign_s3_href_uncached(
-        "s3://naip-analytic/ri/2021/60cm/rgbir_cog/41071/item.tif"
-    )
+    signed, headers = aws_s3._sign_s3_href_uncached("s3://naip-analytic/ri/2021/60cm/rgbir_cog/41071/item.tif")
 
     assert signed.startswith("https://s3.amazonaws.com/naip-analytic/")
     assert headers == {}

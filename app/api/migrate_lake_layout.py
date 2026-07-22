@@ -54,9 +54,7 @@ def main():
     con.execute("INSTALL json; LOAD json;")
 
     old_glob = _old_glob(root)
-    old_count = con.execute(
-        f"select count(*) from read_parquet('{old_glob}', hive_partitioning=true)"
-    ).fetchone()[0]
+    old_count = con.execute(f"select count(*) from read_parquet('{old_glob}', hive_partitioning=true)").fetchone()[0]
     print(f"old layout rows: {old_count:,}  ({old_glob})", flush=True)
     if old_count == 0:
         raise SystemExit("no old-layout (state=/naip_year=/product=) data found; nothing to migrate")
@@ -98,24 +96,20 @@ def main():
     )
 
     new_glob = _new_glob(root, args.collection)
-    new_count = con.execute(
-        f"select count(*) from read_parquet('{new_glob}', hive_partitioning=true)"
-    ).fetchone()[0]
+    new_count = con.execute(f"select count(*) from read_parquet('{new_glob}', hive_partitioning=true)").fetchone()[0]
     con.close()
 
     elapsed = perf_counter() - started
     print(f"new layout rows: {new_count:,}  ({new_glob})", flush=True)
     print(f"elapsed: {elapsed:.1f}s", flush=True)
     if new_count != old_count:
-        raise SystemExit(
-            f"ROW COUNT MISMATCH: old={old_count:,} new={new_count:,} -- do NOT delete the old tree"
-        )
+        raise SystemExit(f"ROW COUNT MISMATCH: old={old_count:,} new={new_count:,} -- do NOT delete the old tree")
 
     print("\nOK: new == old row count. New layout written alongside the old.", flush=True)
     print("Once the redeployed API verifies reads of the new layout, delete the old tree:", flush=True)
     if root.startswith("s3://"):
-        bucket = root[len("s3://"):].split("/", 1)[0]
-        prefix = root[len("s3://"):].split("/", 1)[1] if "/" in root[len("s3://"):] else ""
+        bucket = root[len("s3://") :].split("/", 1)[0]
+        prefix = root[len("s3://") :].split("/", 1)[1] if "/" in root[len("s3://") :] else ""
         print(f"  aws s3 rm s3://{bucket}/{prefix}/ --recursive --exclude '*' --include 'state=*'", flush=True)
         print("  (or per-state:  aws s3 rm s3://.../state=<st>/ --recursive)", flush=True)
     else:
