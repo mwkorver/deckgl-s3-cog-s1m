@@ -7,6 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGION="${REGION:-us-west-2}"
 STACK="${INGEST_STACK:-deckgl-s3-cog-s1m-ingest}"
+# Fixed FunctionName in ingest-template.yaml; the token is read back from
+# this function's environment across redeploys.
+INGEST_FUNCTION="${INGEST_FUNCTION:-deckgl-s3-cog-s1m-ingest-worker}"
 FOUNDATION_STACK="${FOUNDATION_STACK:-deckgl-s3-cog-s1m-foundation}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -43,20 +46,23 @@ echo "==> Deploy ingest stack ($STACK)"
 
 # Resolve the ingest token, in priority order:
 #   1. S3_COG_INGEST_TOKEN in the environment (explicit override),
-#   2. the value already stored in SSM from a previous deploy (so redeploying
-#      does not invalidate the token pasted into a running browser session),
+#   2. the value already on the deployed function (so redeploying does not
+#      invalidate a token already pasted into a running browser session),
 #   3. a freshly generated one.
-# It is stored as a SecureString rather than only living in the Lambda env so it
-# can be retrieved later without a redeploy, and so retrieving it requires IAM --
-# which is the same gate that should protect the write endpoints.
-TOKEN_PARAM="${S3_COG_INGEST_TOKEN_PARAM:-/${STACK}/ingest-token}"
+# The function's own environment is the storage: the token has to live there for
+# require_ingest_token to work at all, so keeping a second copy anywhere else
+# would just be another thing to leak, rotate and drift. Reading it back needs
+# lambda:GetFunctionConfiguration -- IAM, the same gate that should protect the
+# write endpoints.
 INGEST_TOKEN="${S3_COG_INGEST_TOKEN:-}"
-TOKEN_ORIGIN="environment"
+TOKEN_ORIGIN="environment override"
 
 if [[ -z "$INGEST_TOKEN" ]]; then
-  INGEST_TOKEN="$(aws ssm get-parameter --name "$TOKEN_PARAM" --with-decryption \
-    --region "$REGION" --query Parameter.Value --output text 2>/dev/null || true)"
-  TOKEN_ORIGIN="existing SSM parameter"
+  # Absent on the very first deploy, when the function does not exist yet.
+  INGEST_TOKEN="$(aws lambda get-function-configuration \
+    --function-name "$INGEST_FUNCTION" --region "$REGION" \
+    --query 'Environment.Variables.S3_COG_INGEST_TOKEN' --output text 2>/dev/null || true)"
+  TOKEN_ORIGIN="reused from the deployed function"
 fi
 if [[ -z "$INGEST_TOKEN" || "$INGEST_TOKEN" == "None" ]]; then
   command -v openssl >/dev/null 2>&1 || die "openssl not found (needed to generate an ingest token)"
@@ -64,11 +70,7 @@ if [[ -z "$INGEST_TOKEN" || "$INGEST_TOKEN" == "None" ]]; then
   TOKEN_ORIGIN="newly generated"
 fi
 
-aws ssm put-parameter --name "$TOKEN_PARAM" --value "$INGEST_TOKEN" \
-  --type SecureString --overwrite --region "$REGION" >/dev/null || \
-  die "could not write $TOKEN_PARAM to SSM"
-
-PARAMETER_OVERRIDES=("IngestToken=$INGEST_TOKEN" "IngestTokenParam=$TOKEN_PARAM")
+PARAMETER_OVERRIDES=("IngestToken=$INGEST_TOKEN")
 DEPLOY_ARGS=()
 if [[ ${#PARAMETER_OVERRIDES[@]} -gt 0 ]]; then
   DEPLOY_ARGS+=(--parameter-overrides "${PARAMETER_OVERRIDES[@]}")
@@ -94,10 +96,10 @@ INGEST_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" \
 
 echo
 echo "Ingest ready: $INGEST_URL"
-echo "Ingest token: $TOKEN_ORIGIN, stored at $TOKEN_PARAM (not shown here)"
+echo "Ingest token: $TOKEN_ORIGIN (not shown here)"
 echo "  The viewer does NOT ship the token -- paste it into the ingest panel's"
 echo "  \"Ingest token\" field once per browser session. Retrieve it with:"
 echo
-echo "    aws ssm get-parameter --name $TOKEN_PARAM --with-decryption \\"
-echo "      --region $REGION --query Parameter.Value --output text"
+echo "    aws lambda get-function-configuration --function-name $INGEST_FUNCTION \\"
+echo "      --region $REGION --query 'Environment.Variables.S3_COG_INGEST_TOKEN' --output text"
 echo

@@ -76,21 +76,24 @@ enforce deployment in `us-west-2`.
 The viewer contract is unchanged: it calls the read API's `/environment`
 endpoint, which returns the configured ingest URL.
 
-The ingest Lambda requires a shared token for write endpoints. Set it when
-deploying the ingest stack:
+The ingest Lambda requires a shared token for write endpoints. You do not need to
+supply one — `./deploy.sh --ingest-only` generates it if the function does not
+already have one. To pin a specific value instead:
 
 ```bash
-export S3_COG_INGEST_TOKEN="$(openssl rand -base64 32)"
+export S3_COG_INGEST_TOKEN="$(openssl rand -base64 32)"   # optional override
 ./deploy.sh --ingest-only
 ```
 
 Callers must send that value as `x-ingest-token` or `Authorization: Bearer ...`.
 
-`deploy-ingest.sh` handles the token for you: it reuses the value already in SSM,
-or generates one (`openssl rand -hex 32`) on first deploy, stores it as a
-SecureString at `/<stack>/ingest-token`, and prints the retrieval command. Reusing
-the stored value means redeploying does not invalidate a token already pasted into
-a browser session.
+`deploy-ingest.sh` handles the token for you: it reads back whatever is already
+on the deployed function, or generates one (`openssl rand -hex 32`) on the first
+deploy, and prints the retrieval command. Reusing the deployed value means a
+redeploy does not invalidate a token already pasted into a browser session. The
+function's own environment is the only place the token is kept -- it has to live
+there for the API to check it, and a second copy elsewhere would just be another
+thing to leak, rotate and let drift.
 
 The token is **not** shipped with the viewer. The viewer bucket is a public
 website origin, so anything in `config.js` is world-readable — a static bundle
@@ -99,13 +102,14 @@ there is a public client and cannot hold a secret. Instead the ingest panel has 
 `sessionStorage`, gone when the tab closes). Retrieve it with:
 
 ```bash
-aws ssm get-parameter --name /deckgl-s3-cog-s1m-ingest/ingest-token \
-  --with-decryption --region us-west-2 --query Parameter.Value --output text
+aws lambda get-function-configuration --function-name deckgl-s3-cog-s1m-ingest-worker \
+  --region us-west-2 --query 'Environment.Variables.S3_COG_INGEST_TOKEN' --output text
 ```
 
-That command is also shown in the viewer under **Environment → ingest token**, so
-the running system tells you where its own key lives. Reading it requires IAM,
-which is the same gate that protects the write endpoints. `window.S3_COG_INGEST_TOKEN`
+That exact command is also shown in the viewer under **Environment → ingest
+token** — the function knows its own name at runtime, so the hint cannot drift.
+Reading it requires `lambda:GetFunctionConfiguration`, the same IAM gate that
+should protect the write endpoints. `window.S3_COG_INGEST_TOKEN`
 is still honoured for local development, where `config.js` is generated on your
 own machine and never published.
 

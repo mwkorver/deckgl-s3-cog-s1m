@@ -5141,11 +5141,7 @@ async function refreshEnvironment() {
         // ship the token, so this is how an operator finds it without digging
         // through the deploy scripts.
         data.ingest_token_required
-          ? [
-              "ingest token",
-              data.ingest_token_hint ||
-                `required · stored at ${data.ingest_token_param || "unknown"}`,
-            ]
+          ? ["ingest token", data.ingest_token_hint || "required"]
           : null,
       ].filter(Boolean),
     );

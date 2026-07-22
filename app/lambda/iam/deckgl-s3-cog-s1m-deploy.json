@@ -196,12 +196,6 @@
       "Effect": "Allow",
       "Action": ["ssm:GetParameter", "ssm:GetParameters"],
       "Resource": "arn:aws:ssm:us-west-2:__ACCOUNT_ID__:parameter/aws-sam-cli-managed-default*"
-    },
-    {
-      "Sid": "IngestTokenParam",
-      "Effect": "Allow",
-      "Action": ["ssm:GetParameter", "ssm:PutParameter"],
-      "Resource": "arn:aws:ssm:us-west-2:__ACCOUNT_ID__:parameter/deckgl-s3-cog-s1m-*/ingest-token"
     }
   ]
 }

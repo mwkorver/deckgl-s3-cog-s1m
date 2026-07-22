@@ -14,7 +14,6 @@ from config import (
     EARTHSEARCH_PAGE_SIZE,
     INGEST_MODE,
     INGEST_TOKEN,
-    INGEST_TOKEN_PARAM,
     INGEST_URL,
     LAKE_ROOT,
     MANIFEST_INDEX,
@@ -160,6 +159,23 @@ def probe_manifest_freshness() -> dict[str, Any]:
     return out
 
 
+def ingest_token_hint() -> str | None:
+    """The command an operator runs to read the ingest token back.
+
+    Only meaningful on Lambda, where AWS_LAMBDA_FUNCTION_NAME names the function
+    whose environment holds the token. Locally there is nothing to retrieve --
+    require_ingest_token skips auth entirely when no token is configured.
+    """
+    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_name:
+        return None
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-west-2"
+    return (
+        f"aws lambda get-function-configuration --function-name {function_name} "
+        f"--region {region} --query 'Environment.Variables.S3_COG_INGEST_TOKEN' --output text"
+    )
+
+
 def build_environment_payload():
     db_status = {"ok": False}
     auth_identity: dict[str, Any] | None = None
@@ -192,17 +208,14 @@ def build_environment_payload():
         "earthsearch": probe_earthsearch(),
         "ingest_mode": INGEST_MODE,
         "ingest_url": INGEST_URL or None,
-        # Where the write token lives, never the token itself. The viewer does
-        # not ship it (a public bucket cannot hold a secret), so the operator
-        # needs a way to find it -- this makes the running system say where,
-        # and reading it requires IAM.
+        # How to retrieve the write token -- never the token itself. The viewer
+        # does not ship it (a public bucket cannot hold a secret), so an operator
+        # needs some way to find it. It lives in this function's own environment,
+        # the one place it must exist anyway, and the runtime hands us our own
+        # name, so this hint needs no configuration to stay correct. Reading it
+        # back requires lambda:GetFunctionConfiguration -- IAM.
         "ingest_token_required": bool(INGEST_TOKEN),
-        "ingest_token_param": INGEST_TOKEN_PARAM or None,
-        "ingest_token_hint": (
-            f"aws ssm get-parameter --name {INGEST_TOKEN_PARAM} --with-decryption --query Parameter.Value --output text"
-            if INGEST_TOKEN_PARAM
-            else None
-        ),
+        "ingest_token_hint": ingest_token_hint(),
         "effective_config": {
             "collection_id": COLLECTION_ID,
             "aws_region": os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION"),
