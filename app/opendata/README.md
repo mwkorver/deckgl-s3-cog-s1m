@@ -74,6 +74,9 @@ INSTALL httpfs; LOAD httpfs;
 INSTALL aws; LOAD aws;
 CREATE SECRET (TYPE s3, PROVIDER credential_chain, REGION 'us-west-2');
 SET s3_requester_pays=true;
+-- If that CREATE SECRET fails with "Secret Validation Failure ... Credential
+-- Chain: 'config'", see the note below -- it means your credentials are not
+-- visible to the chain, not that they are missing.
 
 SELECT source_key, acq_date, quad
 FROM read_parquet('s3://naip-geoparquet-index/manifest-index/**/*.parquet',
@@ -87,6 +90,22 @@ FROM read_parquet('s3://naip-geoparquet-index/manifest-index/**/*.parquet',
                   hive_partitioning=true)
 GROUP BY state, naip_year ORDER BY state, naip_year;
 ```
+
+> [!NOTE]
+> **`credential_chain` does not see `aws login` sessions.** If `~/.aws/config`
+> has a `login_session = arn:aws:iam::...` entry, the AWS CLI works but botocore
+> resolves nothing (`Session().get_credentials()` returns `None`), so the
+> `CREATE SECRET` above fails with *"Secret Validation Failure ... Credential
+> Chain: 'config'"*. Verified on botocore 1.40.13 / DuckDB 1.5.3 with a freshly
+> refreshed login — it is not token expiry. Put the credentials in the
+> environment first and the query above works unchanged:
+>
+> ```bash
+> eval "$(aws configure export-credentials --format env)"
+> ```
+>
+> The API handles this itself: `api/duckdb_s3.py` falls back to reading
+> `~/.aws/login/cache/*.json` directly when boto3 comes back empty.
 
 Browse it (authenticated; `--no-sign-request` fails while Requester Pays is on):
 
