@@ -1,5 +1,6 @@
 import json
 import os
+from math import isfinite
 from pathlib import Path
 from secrets import compare_digest
 from threading import Thread
@@ -725,9 +726,22 @@ def _lake_read_path(collection: str, safe_region: str | None, year: int | None) 
     return f"{base}/**/*.parquet"
 
 
-def _build_lake_inner_sql(body: dict[str, Any]) -> str:
-    """Build the GeoParquet lake read query for /search. Every interpolated value
-    is sanitized because DuckDB takes a SQL literal here, not bind params."""
+def _build_lake_inner_sql(body: dict[str, Any]) -> tuple[str, list[Any]]:
+    """Build the GeoParquet lake read query for /search.
+
+    Returns `(sql, params)` for a parameterized `execute(sql, params)`. Request
+    values are bound, never interpolated -- DuckDB binds scalars, the LIMIT, and
+    the `read_parquet()` path alike.
+
+    `collection` and `region` are *additionally* allowlisted to alphanumerics,
+    because they also build the partition-glob path handed to `_lake_read_path`.
+    That is path construction, not SQL, so binding does not protect it; the
+    allowlist is what keeps a request from escaping its partition subtree.
+
+    Params are appended in the order their `?` appear in the final statement --
+    read_path (FROM), then each filter, then the limit -- since DuckDB binds
+    positionally.
+    """
     # collection: accept the request's collection (sanitized), default to naip.
     # A single value drives both the partition scope and the WHERE prune.
     requested = body.get("collections", [COLLECTION_ID])
@@ -742,17 +756,33 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> str:
         xmin, ymin, xmax, ymax = (float(v) for v in bbox)
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="bbox values must be numeric") from None
-    limit = min(int(body.get("limit", 1000)), 18000)
+    # float() accepts "nan"/"inf"; those compare false against every row and
+    # would silently return nothing rather than reporting a bad request.
+    if not all(isfinite(v) for v in (xmin, ymin, xmax, ymax)):
+        raise HTTPException(status_code=400, detail="bbox values must be finite")
 
-    filters = [
-        f"bbox_xmin <= {xmax} and bbox_xmax >= {xmin}",
-        f"bbox_ymin <= {ymax} and bbox_ymax >= {ymin}",
-        f"ST_Intersects(geometry, ST_MakeEnvelope({xmin}, {ymin}, {xmax}, {ymax}))",
+    try:
+        limit = int(body.get("limit", 1000))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="limit must be an integer") from None
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be >= 1")
+    limit = min(limit, 18000)
+
+    # (fragment, params) pairs so the bind order stays tied to the SQL text.
+    filters: list[tuple[str, list[Any]]] = [
+        ("bbox_xmin <= ? and bbox_xmax >= ?", [xmax, xmin]),
+        ("bbox_ymin <= ? and bbox_ymax >= ?", [ymax, ymin]),
+        ("ST_Intersects(geometry, ST_MakeEnvelope(?, ?, ?, ?))", [xmin, ymin, xmax, ymax]),
+        ("collection = ?", [collection]),
     ]
-    filters.append(f"collection = '{collection}'")
+
     # year (request key stays naip:year for viewer back-compat) -> the `year` col
     year = body.get("year", body.get("naip:year"))
-    year_int = int(year) if year is not None else None
+    try:
+        year_int = int(year) if year is not None else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"invalid year: {year!r}") from None
 
     # region (request key stays naip:state for viewer back-compat) -> `region` col
     safe_region = None
@@ -766,20 +796,25 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> str:
     read_path = _lake_read_path(collection, safe_region, year_int)
 
     if year_int is not None:
-        filters.append(f"year = {year_int}")
+        filters.append(("year = ?", [year_int]))
     else:
         # If no year constraint was requested ("Latest available"), filter to only
         # return the most recent year for each state/region in the query scope.
-        filters.append(f"""
+        filters.append(
+            (
+                """
             (region, year) in (
                 select region, max(year)
-                from read_parquet('{read_path}', hive_partitioning=true)
+                from read_parquet(?, hive_partitioning=true)
                 group by region
             )
-        """)
+        """,
+                [read_path],
+            )
+        )
 
     if safe_region:
-        filters.append(f"region = '{safe_region}'")
+        filters.append(("region = ?", [safe_region]))
 
     order_terms = [
         "year desc",
@@ -788,8 +823,13 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> str:
         "source_key asc",
     ]
 
+    params: list[Any] = [read_path]
+    for _, filter_params in filters:
+        params.extend(filter_params)
+    params.append(limit)
+
     # Column order matches make_stac_feature().
-    return f"""
+    sql = f"""
       select
         source_bucket, source_key,
         ST_AsGeoJSON(geometry) as geom_json,
@@ -797,11 +837,12 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> str:
         acquisition_date, gsd, collection, region, year, properties,
         proj_epsg, proj_shape, proj_transform,
         asset_href
-      from read_parquet('{read_path}', hive_partitioning=true)
-      where {" and ".join(filters)}
+      from read_parquet(?, hive_partitioning=true)
+      where {" and ".join(fragment for fragment, _ in filters)}
       order by {", ".join(order_terms)}
-      limit {limit}
+      limit ?
     """
+    return sql, params
 
 
 def _finalize_lake_result(rows, response, request_started_at, sql_seconds, engine_label):
@@ -859,11 +900,11 @@ def search(body: dict[str, Any], response: Response):
     ST_Intersects refine) -- no database server. This is the Lambda read profile.
     Returns a STAC FeatureCollection with the same shape the viewer expects."""
     request_started_at = monotonic()
-    inner = _build_lake_inner_sql(body)
+    inner, inner_params = _build_lake_inner_sql(body)
 
     sql_started_at = monotonic()
     try:
-        rows = lake_query(lambda cur: cur.execute(inner).fetchall())
+        rows = lake_query(lambda cur: cur.execute(inner, inner_params).fetchall())
     except Exception as exc:
         # A partition-scoped read_parquet glob (collection=/region=/year=) that
         # matches no files raises an IO error rather than returning empty. For a

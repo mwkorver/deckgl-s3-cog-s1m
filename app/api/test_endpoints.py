@@ -261,3 +261,43 @@ def test_make_stac_feature_datetime_fallbacks():
     gridded = make_stac_feature(row(None, 2022, properties=_json.dumps({"naip:quad": "40074"})))
     assert gridded["properties"]["grid:code"] == "DOQQ-40074"
     assert "https://stac-extensions.github.io/grid/v1.1.0/schema.json" in gridded["stac_extensions"]
+
+
+def test_build_lake_inner_sql_is_parameterized():
+    """/search binds request values instead of interpolating them. DuckDB binds
+    positionally, so the placeholder count must match the param count exactly --
+    a mismatch silently shifts every value one slot."""
+    from app import _build_lake_inner_sql
+
+    bodies = [
+        {"bbox": [-75.0, 39.0, -74.0, 40.0]},
+        {"bbox": [-75.0, 39.0, -74.0, 40.0], "year": 2022},
+        {"bbox": [-75.0, 39.0, -74.0, 40.0], "region": "nj"},
+        {"bbox": [-75.0, 39.0, -74.0, 40.0], "year": 2020, "region": "nj", "limit": 5},
+        {"bbox": [-75.0, 39.0, -74.0, 40.0], "collections": ["kyfromabove"]},
+    ]
+    for body in bodies:
+        sql, params = _build_lake_inner_sql(body)
+        assert sql.count("?") == len(params), f"{sql.count('?')} placeholders vs {len(params)} params for {body}"
+        # No request value should appear as a literal in the SQL text.
+        assert "'" not in sql, f"unexpected SQL literal in: {sql}"
+        # The partition glob is bound first (it is the FROM), the limit last.
+        assert params[0].endswith(".parquet") or "*" in params[0]
+        assert isinstance(params[-1], int)
+
+
+def test_search_rejects_bad_scalars():
+    """Malformed scalars are client errors, not 500s."""
+    bbox = [-75.0, 39.0, -74.0, 40.0]
+    for body, expected in [
+        ({"bbox": bbox, "limit": "abc"}, "limit must be an integer"),
+        ({"bbox": bbox, "limit": 0}, "limit must be >= 1"),
+        ({"bbox": bbox, "limit": -5}, "limit must be >= 1"),
+        ({"bbox": bbox, "year": "not-a-year"}, "invalid year"),
+        ({"bbox": ["nan", 39.0, -74.0, 40.0]}, "bbox values must be finite"),
+        ({"bbox": ["inf", 39.0, -74.0, 40.0]}, "bbox values must be finite"),
+        ({"bbox": ["x", 39.0, -74.0, 40.0]}, "bbox values must be numeric"),
+    ]:
+        response = client.post("/search", json=body)
+        assert response.status_code == 400, f"{body} -> {response.status_code}"
+        assert expected in response.json()["detail"], f"{body} -> {response.json()['detail']}"
