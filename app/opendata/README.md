@@ -142,8 +142,15 @@ aws s3api put-bucket-request-payment --bucket $B --region $REGION \
   --request-payment-configuration Payer=Requester
 ```
 
-Refreshing the index as new NAIP is published is currently undocumented: the
-`build_manifest_index.py` that the rest of the docs cite was removed in
-`7818de7` (Phase 4a) and no replacement entry point was added. Resolve that
-before publishing the registry record — a RODA dataset nobody can rebuild is
-worse than no listing.
+Refresh the index as new NAIP is published (`api/refresh_manifest_index.py`).
+AWS froze `s3://naip-analytic/manifest.txt` at 2023-03-09, so a plain rebuild
+from the manifest misses everything newer; the refresh lists recent-year
+prefixes off the live bucket and merges only those `(state, naip_year)`
+partitions, leaving the frozen history untouched.
+
+```bash
+cd ../api
+python refresh_manifest_index.py --years-from 2022 --dry-run   # discover only
+python refresh_manifest_index.py --years-from 2022 \
+    --index s3://naip-geoparquet-index/manifest-index
+```

@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # All read + ingest source. app.py is the handler; ingest_duckdb/ingest_manifest
 # carry the pyarrow/pyproj/pillow ingest pipeline; duckdb_s3 wires DuckDB-on-S3.
 COPY app.py aws_s3.py config.py lake.py probes.py ingest_jobs.py ingest_options.py ./
-COPY ingest_duckdb.py ingest_manifest.py descriptors.py duckdb_s3.py ./
+COPY ingest_duckdb.py ingest_manifest.py descriptors.py duckdb_s3.py build_manifest_index.py ./
 RUN mkdir -p viewer
 
 # Mangum handler (app.handler) -- the Lambda container base image's entrypoint

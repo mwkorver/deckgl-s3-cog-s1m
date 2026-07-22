@@ -265,9 +265,22 @@ docker-compose run --rm api python build_manifest_index.py
 ```
 
 This produces a Hive-partitioned GeoParquet-style tree at
-`cache/manifest_index/state=<st>/naip_year=<yr>/` (~15 MB total, ~1.23M keys,
-columns: `source_key, state, naip_year, resolution, quad, filename, product,
-acq_date`). An ingest job/chunk then does a millisecond pushdown read of one
+`cache/manifest_index/state=<st>/naip_year=<yr>/` (columns: `source_key, state,
+naip_year, resolution, quad, filename, product, acq_date`). For scale, the
+published copy at `s3://naip-geoparquet-index/manifest-index` is 17.7 MB across
+328 partition files, 1,449,485 keys.
+
+> [!NOTE]
+> AWS froze `s3://naip-analytic/manifest.txt` at 2023-03-09, so a build from the
+> manifest alone cannot see anything published since. `refresh_manifest_index.py`
+> covers the gap: it lists recent-year prefixes off the live bucket and merges
+> only those `(state, naip_year)` partitions, leaving the frozen history intact.
+>
+> ```bash
+> docker-compose run --rm api python refresh_manifest_index.py --years-from 2022 --dry-run
+> ```
+
+An ingest job/chunk then does a millisecond pushdown read of one
 partition (e.g. `manifest_index/state=tx/naip_year=2020/`) instead of
 re-streaming the 404 MB text file.
 

@@ -61,9 +61,9 @@ along in `properties`. (Partition **order** is an open decision — see
 | **header → footprint** | `ingest_manifest.py:558` `fetch_cog_metadata` | generic (reads GeoTIFF tags) | unchanged; strip the `naip:` labels out of the payload into `properties` |
 | **source bucket** | `ingest_manifest.py:299,301,565` literal `naip-analytic` | hardcoded | `descriptor.bucket` |
 | **bucket access mode** | `ingest_manifest.py:565` `S3File(… request_payer="requester")` | hardcoded requester‑pays | `descriptor.access`: `requester-pays` (NAIP) \| `public` (unsigned, KyFromAbove) \| `private` |
-| **key/filename parse** | `build_manifest_index.py:93‑104`, `parse_filename()` | NAIP key layout + DOQQ filename | `descriptor.key_parser` → `{region, year, properties}` |
+| **key/filename parse** | `build_manifest_index.py:99‑110` (the key→columns select), `parse_filename()` | NAIP key layout + DOQQ filename | `descriptor.key_parser` → `{region, year, properties}` |
 | **discovery** | `build_manifest_inventory_from_index` `:219` | reads NAIP manifest index | `DiscoveryAdapter` (prefix‑listing for new collections) |
-| **partition columns** | `ingest_duckdb.py:315,343‑358` (`partition_by`, Hilbert group), `:160` (reconcile keys), `build_manifest_index.py:108` | `state, naip_year, product` | `collection, region, year` (+ `properties`) |
+| **partition columns** | `ingest_duckdb.py:315,343‑358` (`partition_by`, Hilbert group), `:160` (reconcile keys), `build_manifest_index.py:114` (`partition_by`) | `state, naip_year, product` | `collection, region, year` (+ `properties`) |
 | **read API / viewer** | `app.py` lake reads, viewer ingest panel | `state` / `naip_year` filters | `collection` selector → `region` / `year` |
 
 The header reader is the hard part and it's done. Everything else is **naming and
@@ -541,7 +541,7 @@ The latency reasoning, kept here so it isn't re-derived later:
 
 Mechanical rename across four files:
 
-1. `build_manifest_index.py:108` — `partition_by (state, naip_year)` →
+1. `build_manifest_index.py:114` — `partition_by (state, naip_year)` →
    `(collection, region, year)`; the SQL that splits the key (`:93‑104`) moves
    into `key_parser`.
 2. `ingest_duckdb.py` — `partition_by (state, naip_year, product)` →
