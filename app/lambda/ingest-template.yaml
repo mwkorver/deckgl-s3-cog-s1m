@@ -17,9 +17,18 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: >
-      Shared token required by POST /ingest/run-sync. Set from
-      S3_COG_INGEST_TOKEN during deploy. Empty leaves the Lambda endpoint
-      fail-closed with 503.
+      Shared token required by POST /ingest/run-sync. deploy-ingest.sh generates
+      one and stores it in SSM, reusing the existing value across redeploys.
+      Empty leaves the Lambda endpoint fail-closed with 503. It is deliberately
+      NOT shipped to the viewer -- a static bundle on a public bucket cannot hold
+      a secret, so the panel prompts for it per session.
+  IngestTokenParam:
+    Type: String
+    Default: ""
+    Description: >
+      SSM SecureString path the token is stored at. Reported by /environment
+      (path only, never the value) so an operator can find it without reading
+      the deploy scripts.
 
 Resources:
   # The legacy combined stack used the physical name deckgl-s3-cog-s1m-ingest. Use a new
@@ -43,6 +52,7 @@ Resources:
           S3_COG_REQUEST_PAYER: requester
           S3_COG_SIGN_ASSET_URLS: "1"
           S3_COG_INGEST_TOKEN: !Ref IngestToken
+          S3_COG_INGEST_TOKEN_PARAM: !Ref IngestTokenParam
           # Extensions are baked into the image by Dockerfile.ingest.
           DUCKDB_EXT_DIR: /opt/duckdb_extensions
       Policies:

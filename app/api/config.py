@@ -47,6 +47,10 @@ INGEST_URL = (os.environ.get("S3_COG_INGEST_URL") or "").rstrip("/")
 # Shared token required by public write ingest endpoints. Local dev may leave
 # this unset; Lambda write endpoints fail closed when it is missing.
 INGEST_TOKEN = os.environ.get("S3_COG_INGEST_TOKEN", "")
+# SSM SecureString path the deploy stores the token at. Reported by
+# /environment (path only, never the value) so an operator can find the
+# token without reading the deploy scripts; retrieving it needs IAM.
+INGEST_TOKEN_PARAM = os.environ.get("S3_COG_INGEST_TOKEN_PARAM", "")
 MODULE_DIR = Path(__file__).resolve().parent
 # In the container the viewer is COPYed to api/viewer; running from a checkout it
 # lives at app/viewer. Probe for index.html rather than the directory: an empty

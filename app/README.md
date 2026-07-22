@@ -85,9 +85,29 @@ export S3_COG_INGEST_TOKEN="$(openssl rand -base64 32)"
 ```
 
 Callers must send that value as `x-ingest-token` or `Authorization: Bearer ...`.
-For a private demo viewer, keeping `S3_COG_INGEST_TOKEN` set while running
-`deploy-viewer.sh` also writes `window.S3_COG_INGEST_TOKEN` into `config.js` so
-the browser ingest panel sends the token. Do not do this for a public viewer.
+
+`deploy-ingest.sh` handles the token for you: it reuses the value already in SSM,
+or generates one (`openssl rand -hex 32`) on first deploy, stores it as a
+SecureString at `/<stack>/ingest-token`, and prints the retrieval command. Reusing
+the stored value means redeploying does not invalidate a token already pasted into
+a browser session.
+
+The token is **not** shipped with the viewer. The viewer bucket is a public
+website origin, so anything in `config.js` is world-readable — a static bundle
+there is a public client and cannot hold a secret. Instead the ingest panel has an
+**Ingest token** field: paste it once per browser session (held in
+`sessionStorage`, gone when the tab closes). Retrieve it with:
+
+```bash
+aws ssm get-parameter --name /deckgl-s3-cog-s1m-ingest/ingest-token \
+  --with-decryption --region us-west-2 --query Parameter.Value --output text
+```
+
+That command is also shown in the viewer under **Environment → ingest token**, so
+the running system tells you where its own key lives. Reading it requires IAM,
+which is the same gate that protects the write endpoints. `window.S3_COG_INGEST_TOKEN`
+is still honoured for local development, where `config.js` is generated on your
+own machine and never published.
 
 > The shared, author-published catalog (`s3://naip-geoparquet-index/manifest-index`,
 > read-only) is consumed cross-account; deployers never write to it.

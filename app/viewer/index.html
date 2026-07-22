@@ -773,6 +773,16 @@
                 </div>
               </div>
 
+              <div id="ingest-token-field" class="field" style="display: none; flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 8px;">
+                <label for="ingest-token" class="field-group-label" style="margin-top: 0;">Ingest token</label>
+                <input id="ingest-token" type="password" autocomplete="off" spellcheck="false" placeholder="paste to enable writes" style="width:100%; box-sizing:border-box;" />
+                <span class="field-hint">
+                  Kept in this tab only (<code>sessionStorage</code>) — never
+                  deployed with the viewer. Retrieve it with the command shown
+                  under <strong>Environment → ingest</strong>.
+                </span>
+              </div>
+
               <button id="run-ingest" class="search-active" style="width:100%;">Run ingest</button>
               <div class="small muted" style="margin-top: 8px;">
                 Running locally: the ingest runs as a background job with no time

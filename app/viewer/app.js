@@ -17,7 +17,32 @@ const S1M_API_BASE = (window.S3_COG_S1M_API_BASE || API_BASE).replace(
   "",
 );
 const S1M_DEMO_TOKEN = window.S3_COG_S1M_DEMO_TOKEN || "";
-const INGEST_TOKEN = window.S3_COG_INGEST_TOKEN || "";
+// The ingest token gates the write endpoints, and is deliberately NOT shipped
+// with the viewer. A static bundle on a public bucket is a public client: it
+// cannot hold a secret, so baking the token in published it to everyone who
+// could load the page. It is pasted per browser session and kept in
+// sessionStorage, so it never enters the deployed assets and dies with the tab.
+// window.S3_COG_INGEST_TOKEN is still honoured for local dev, where config.js is
+// generated on the developer's own machine and never published.
+const INGEST_TOKEN_STORAGE_KEY = "s3cog.ingestToken";
+
+function storedIngestToken() {
+  try {
+    return sessionStorage.getItem(INGEST_TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return ""; // storage blocked (private mode, strict cookie policy)
+  }
+}
+
+// Holds the typed value when sessionStorage is unavailable, so a blocked-storage
+// browser still works for the current page load.
+let ingestTokenMemory = "";
+
+function ingestToken() {
+  return (
+    ingestTokenMemory || storedIngestToken() || window.S3_COG_INGEST_TOKEN || ""
+  );
+}
 
 // STAC projection extension v2.0 replaced the numeric `proj:epsg` with the
 // string `proj:code` ("EPSG:26918"), and its schema rejects Items that
@@ -257,6 +282,8 @@ const INGEST_LIMIT_MAX = 20000; // panel hard ceiling (0 still = unlimited)
 const runIngestBtn = document.getElementById("run-ingest");
 const ingestSummaryEl = document.getElementById("ingest-summary");
 const ingestLogsEl = document.getElementById("ingest-logs");
+const ingestTokenEl = document.getElementById("ingest-token");
+const ingestTokenFieldEl = document.getElementById("ingest-token-field");
 let deckOverlay = null;
 let MVTLayerClass = null;
 let MosaicLayerClass = null;
@@ -5110,6 +5137,16 @@ async function refreshEnvironment() {
             ? `${data.auth_identity?.arn || "unknown"}`
             : data.auth_identity?.error || "unavailable",
         ],
+        // Where the write token lives (never the value). The viewer does not
+        // ship the token, so this is how an operator finds it without digging
+        // through the deploy scripts.
+        data.ingest_token_required
+          ? [
+              "ingest token",
+              data.ingest_token_hint ||
+                `required · stored at ${data.ingest_token_param || "unknown"}`,
+            ]
+          : null,
       ].filter(Boolean),
     );
     renderKeyValue(
@@ -5293,8 +5330,9 @@ function ingestLimitPerPartition() {
 
 function ingestRequestHeaders() {
   const headers = { "content-type": "application/json" };
-  if (INGEST_TOKEN) {
-    headers["x-ingest-token"] = INGEST_TOKEN;
+  const token = ingestToken();
+  if (token) {
+    headers["x-ingest-token"] = token;
   }
   return headers;
 }
@@ -6213,6 +6251,30 @@ tabButtons.forEach((button) => {
 });
 refreshEnvironmentBtn.addEventListener("click", refreshEnvironment);
 runIngestBtn.addEventListener("click", runIngest);
+
+// Show the token field on deployed viewers (no baked-in token). Local dev keeps
+// its config.js fallback, and a local API with no token configured skips auth
+// entirely, so there is nothing to paste there.
+if (ingestTokenFieldEl && !window.S3_COG_INGEST_TOKEN) {
+  ingestTokenFieldEl.style.display = "flex";
+}
+if (ingestTokenEl) {
+  ingestTokenEl.value = storedIngestToken();
+  ingestTokenEl.addEventListener("input", () => {
+    const value = ingestTokenEl.value.trim();
+    ingestTokenMemory = value;
+    try {
+      if (value) {
+        sessionStorage.setItem(INGEST_TOKEN_STORAGE_KEY, value);
+      } else {
+        sessionStorage.removeItem(INGEST_TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      // Storage blocked; ingestTokenMemory still authorizes this page load, the
+      // value just will not survive a reload.
+    }
+  });
+}
 
 let ingestMode = "catalog"; // or "custom"
 let ingestCatalogMetadata = null;

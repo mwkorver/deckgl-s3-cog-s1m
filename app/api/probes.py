@@ -13,6 +13,8 @@ from config import (
     EARTHSEARCH_API,
     EARTHSEARCH_PAGE_SIZE,
     INGEST_MODE,
+    INGEST_TOKEN,
+    INGEST_TOKEN_PARAM,
     INGEST_URL,
     LAKE_ROOT,
     MANIFEST_INDEX,
@@ -190,6 +192,17 @@ def build_environment_payload():
         "earthsearch": probe_earthsearch(),
         "ingest_mode": INGEST_MODE,
         "ingest_url": INGEST_URL or None,
+        # Where the write token lives, never the token itself. The viewer does
+        # not ship it (a public bucket cannot hold a secret), so the operator
+        # needs a way to find it -- this makes the running system say where,
+        # and reading it requires IAM.
+        "ingest_token_required": bool(INGEST_TOKEN),
+        "ingest_token_param": INGEST_TOKEN_PARAM or None,
+        "ingest_token_hint": (
+            f"aws ssm get-parameter --name {INGEST_TOKEN_PARAM} --with-decryption --query Parameter.Value --output text"
+            if INGEST_TOKEN_PARAM
+            else None
+        ),
         "effective_config": {
             "collection_id": COLLECTION_ID,
             "aws_region": os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION"),

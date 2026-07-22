@@ -67,15 +67,18 @@ cp -R "$VIEWER_DIR/." "$STAGE/"
 find "$STAGE" -name ".DS_Store" -type f -delete
 find "$STAGE" -name "__pycache__" -type d -prune -exec rm -rf {} +
 find "$STAGE" -name "*.pyc" -type f -delete
-python3 - "$STAGE/config.js" "$API_BASE" "${S3_COG_INGEST_TOKEN:-}" <<'PY'
+# NOTE: the ingest token is deliberately NOT written here. This bucket is a
+# public website origin, so anything in config.js is world-readable -- baking the
+# token in published the key to the write endpoints. The viewer now prompts for
+# it per session (see the "Ingest token" field in the ingest panel); retrieve it
+# with the SSM command deploy-ingest.sh prints.
+python3 - "$STAGE/config.js" "$API_BASE" <<'PY'
 import json
 import sys
 
-path, api_base, ingest_token = sys.argv[1:4]
+path, api_base = sys.argv[1:3]
 with open(path, "w", encoding="utf-8") as f:
     f.write(f"window.S3_COG_API_BASE = {json.dumps(api_base)};\n")
-    if ingest_token:
-        f.write(f"window.S3_COG_INGEST_TOKEN = {json.dumps(ingest_token)};\n")
 PY
 
 # 2. Built JS packages -> /local-modules/<name>/ (matches the importmap paths).

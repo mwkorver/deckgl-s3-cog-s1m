@@ -40,12 +40,35 @@ sam build --template-file ingest-template.yaml
 
 echo
 echo "==> Deploy ingest stack ($STACK)"
-PARAMETER_OVERRIDES=()
-if [[ -n "${S3_COG_INGEST_TOKEN:-}" ]]; then
-  PARAMETER_OVERRIDES+=("IngestToken=$S3_COG_INGEST_TOKEN")
-else
-  echo "WARN: S3_COG_INGEST_TOKEN is not set; public ingest writes will fail closed with 503." >&2
+
+# Resolve the ingest token, in priority order:
+#   1. S3_COG_INGEST_TOKEN in the environment (explicit override),
+#   2. the value already stored in SSM from a previous deploy (so redeploying
+#      does not invalidate the token pasted into a running browser session),
+#   3. a freshly generated one.
+# It is stored as a SecureString rather than only living in the Lambda env so it
+# can be retrieved later without a redeploy, and so retrieving it requires IAM --
+# which is the same gate that should protect the write endpoints.
+TOKEN_PARAM="${S3_COG_INGEST_TOKEN_PARAM:-/${STACK}/ingest-token}"
+INGEST_TOKEN="${S3_COG_INGEST_TOKEN:-}"
+TOKEN_ORIGIN="environment"
+
+if [[ -z "$INGEST_TOKEN" ]]; then
+  INGEST_TOKEN="$(aws ssm get-parameter --name "$TOKEN_PARAM" --with-decryption \
+    --region "$REGION" --query Parameter.Value --output text 2>/dev/null || true)"
+  TOKEN_ORIGIN="existing SSM parameter"
 fi
+if [[ -z "$INGEST_TOKEN" || "$INGEST_TOKEN" == "None" ]]; then
+  command -v openssl >/dev/null 2>&1 || die "openssl not found (needed to generate an ingest token)"
+  INGEST_TOKEN="$(openssl rand -hex 32)"
+  TOKEN_ORIGIN="newly generated"
+fi
+
+aws ssm put-parameter --name "$TOKEN_PARAM" --value "$INGEST_TOKEN" \
+  --type SecureString --overwrite --region "$REGION" >/dev/null || \
+  die "could not write $TOKEN_PARAM to SSM"
+
+PARAMETER_OVERRIDES=("IngestToken=$INGEST_TOKEN" "IngestTokenParam=$TOKEN_PARAM")
 DEPLOY_ARGS=()
 if [[ ${#PARAMETER_OVERRIDES[@]} -gt 0 ]]; then
   DEPLOY_ARGS+=(--parameter-overrides "${PARAMETER_OVERRIDES[@]}")
@@ -71,3 +94,10 @@ INGEST_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" \
 
 echo
 echo "Ingest ready: $INGEST_URL"
+echo "Ingest token: $TOKEN_ORIGIN, stored at $TOKEN_PARAM (not shown here)"
+echo "  The viewer does NOT ship the token -- paste it into the ingest panel's"
+echo "  \"Ingest token\" field once per browser session. Retrieve it with:"
+echo
+echo "    aws ssm get-parameter --name $TOKEN_PARAM --with-decryption \\"
+echo "      --region $REGION --query Parameter.Value --output text"
+echo
