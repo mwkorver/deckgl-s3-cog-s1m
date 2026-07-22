@@ -52,7 +52,16 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
-app = FastAPI(title="Local ordered STAC")
+# STAC version the emitted Items and the root Catalog document declare, plus the
+# extension URIs for the namespaced fields make_stac_feature() sets. Items are
+# valid STAC; note that this API is NOT a conformant STAC API implementation --
+# /search takes a bespoke body and returns no conformance classes or paging
+# links. See the root() docstring.
+STAC_VERSION = "1.1.0"
+PROJECTION_EXTENSION = "https://stac-extensions.github.io/projection/v2.0.0/schema.json"
+GRID_EXTENSION = "https://stac-extensions.github.io/grid/v1.1.0/schema.json"
+
+app = FastAPI(title="COG STAC-item search over a GeoParquet lake")
 
 
 @app.on_event("startup")
@@ -105,12 +114,20 @@ def environment():
 
 @app.get("/")
 def root():
+    """Root Catalog document.
+
+    This is a STAC Catalog and /search returns valid STAC Items, but this is
+    deliberately NOT a conformant STAC API: /search takes a bespoke JSON body
+    (bbox + region/year partition keys), not STAC API Item Search parameters,
+    and returns neither conformance classes nor paging links. It advertises no
+    `conformsTo`, so clients cannot mistake it for one.
+    """
     return {
-        "stac_version": "1.0.0",
+        "stac_version": STAC_VERSION,
         "type": "Catalog",
         "id": "cog-local",
-        "title": "Local COG STAC catalog",
-        "description": "Local object-key-first STAC catalog serving COG collections",
+        "title": "COG catalog over a GeoParquet lake",
+        "description": "Object-key-first STAC Catalog serving COG collections indexed in a GeoParquet lake",
         "links": [
             {"rel": "self", "href": "/"},
             {"rel": "data", "href": "/collections"},
@@ -551,15 +568,40 @@ def make_stac_feature(row) -> dict[str, Any]:
         except (TypeError, ValueError):
             extra = {}
 
+    # `datetime` is required on every Item. It may be null, but only when
+    # start_datetime/end_datetime bound it instead -- so a row with no
+    # acquisition date falls back to the flight year (always present: it is a
+    # partition key) as a one-year interval, rather than dropping the field and
+    # emitting an invalid Item.
+    if acq_date:
+        temporal = {"datetime": f"{acq_date.isoformat()}T00:00:00Z"}
+    elif year is not None:
+        temporal = {
+            "datetime": None,
+            "start_datetime": f"{int(year)}-01-01T00:00:00Z",
+            "end_datetime": f"{int(year)}-12-31T23:59:59Z",
+        }
+    else:
+        # Unreachable from the lake: `year` is a Hive partition key and the
+        # ingest writes it as a non-null int. Kept explicit rather than
+        # fabricating an interval -- an Item with no temporal information at all
+        # cannot be expressed validly, and inventing one would be worse.
+        temporal = {"datetime": None}
+
     props = {
-        "datetime": f"{acq_date.isoformat()}T00:00:00Z" if acq_date else None,
+        **temporal,
         "gsd": gsd,
         "region": region,
         "year": year,
         # back-compat aliases the current (Phase-3) viewer still reads:
         "naip:state": region,
         "naip:year": year,
-        "proj:epsg": proj_epsg,
+        # proj:code replaced proj:epsg in projection-extension v2.0. proj:epsg
+        # cannot simply be kept alongside it as a back-compat alias: the v2.0
+        # schema constrains proj:-namespaced properties to the ones it defines
+        # (additionalProperties '^(?!proj:)'), so emitting it makes the Item
+        # fail validation. The viewer parses the EPSG number out of proj:code.
+        "proj:code": f"EPSG:{proj_epsg}" if proj_epsg is not None else None,
         "proj:shape": proj_shape,
         "proj:transform": proj_transform,
     }
@@ -570,15 +612,39 @@ def make_stac_feature(row) -> dict[str, Any]:
     if quad:
         props.setdefault("grid:code", f"DOQQ-{quad}")
 
+    # Drop unknowns, but never `datetime`: a null there is meaningful (see the
+    # temporal block above) and the field is required on every Item.
+    properties = {k: v for k, v in props.items() if v is not None or k == "datetime"}
+
+    # Declare the extensions whose fields we actually emit. Using proj:/grid:
+    # fields with an empty stac_extensions is what made these Items fail
+    # validation. Derived from the *filtered* properties, so a row with no
+    # projection metadata does not advertise an extension it never uses.
+    stac_extensions = []
+    if any(k.startswith("proj:") for k in properties):
+        stac_extensions.append(PROJECTION_EXTENSION)
+    if "grid:code" in properties:
+        stac_extensions.append(GRID_EXTENSION)
+
+    collection_id = collection or COLLECTION_ID
     feature = {
         "type": "Feature",
-        "stac_version": "1.0.0",
-        "stac_extensions": [],
+        "stac_version": STAC_VERSION,
+        "stac_extensions": stac_extensions,
         "id": f"{source_bucket}/{source_key}",
-        "collection": collection or COLLECTION_ID,
+        "collection": collection_id,
         "geometry": geometry,
         "bbox": [xmin, ymin, xmax, ymax],
-        "properties": {k: v for k, v in props.items() if v is not None},
+        "properties": properties,
+        # `links` is required on an Item, and an Item carrying `collection` must
+        # include a rel="collection" link. Relative hrefs, matching root().
+        "links": [
+            {
+                "rel": "collection",
+                "type": "application/json",
+                "href": f"/collections/{collection_id}",
+            }
+        ],
         "assets": {
             "image": {
                 "href": asset_href,

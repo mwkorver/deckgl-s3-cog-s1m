@@ -198,5 +198,66 @@ def test_search_success():
         feat = data["features"][0]
         assert feat["id"] == "naip-analytic/state/year/tile.tif"
         assert feat["collection"] == "naip"
-        assert feat["properties"]["proj:epsg"] == 3857
         assert feat["assets"]["image"]["href"] == "s3://naip-analytic/state/year/tile.tif"
+
+        # Structural STAC guarantees. These mirror what the published schemas
+        # enforce (checked out-of-band against schemas.stacspec.org and
+        # stac-extensions.github.io) without making the suite hit the network.
+        assert feat["stac_version"] == "1.1.0"
+        # projection v2.0 uses the string proj:code, and its schema rejects any
+        # other proj:-namespaced field -- so proj:epsg must NOT come back.
+        assert feat["properties"]["proj:code"] == "EPSG:3857"
+        assert "proj:epsg" not in feat["properties"]
+        # Namespaced fields require their extension to be declared.
+        assert "https://stac-extensions.github.io/projection/v2.0.0/schema.json" in feat["stac_extensions"]
+        # An Item carrying `collection` must have a rel="collection" link.
+        assert any(link["rel"] == "collection" for link in feat["links"])
+
+
+def test_make_stac_feature_datetime_fallbacks():
+    """`datetime` is required on every Item, so a row with no acquisition date
+    must fall back to the flight year as a bounded interval rather than drop the
+    field. See make_stac_feature()."""
+    import json as _json
+
+    from app import make_stac_feature
+
+    geom = _json.dumps({"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]})
+
+    def row(acq_date, year, proj_epsg=None, properties=None):
+        return (
+            "b",
+            "k",
+            geom,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            acq_date,
+            None,
+            "naip",
+            "nj",
+            year,
+            properties,
+            proj_epsg,
+            None,
+            None,
+            "s3://b/k",
+        )
+
+    dated = make_stac_feature(row(datetime.date(2022, 8, 3), 2022))
+    assert dated["properties"]["datetime"] == "2022-08-03T00:00:00Z"
+    assert "start_datetime" not in dated["properties"]
+
+    undated = make_stac_feature(row(None, 2022))
+    assert undated["properties"]["datetime"] is None
+    assert undated["properties"]["start_datetime"] == "2022-01-01T00:00:00Z"
+    assert undated["properties"]["end_datetime"] == "2022-12-31T23:59:59Z"
+
+    # Extensions are declared only when their fields are actually emitted.
+    assert undated["stac_extensions"] == []
+    projected = make_stac_feature(row(None, 2022, proj_epsg=3857))
+    assert projected["stac_extensions"] == ["https://stac-extensions.github.io/projection/v2.0.0/schema.json"]
+    gridded = make_stac_feature(row(None, 2022, properties=_json.dumps({"naip:quad": "40074"})))
+    assert gridded["properties"]["grid:code"] == "DOQQ-40074"
+    assert "https://stac-extensions.github.io/grid/v1.1.0/schema.json" in gridded["stac_extensions"]

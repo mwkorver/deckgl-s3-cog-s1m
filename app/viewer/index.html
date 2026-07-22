@@ -890,6 +890,23 @@
       const S1M_DEMO_TOKEN = window.S3_COG_S1M_DEMO_TOKEN || "";
       const INGEST_TOKEN = window.S3_COG_INGEST_TOKEN || "";
 
+      // STAC projection extension v2.0 replaced the numeric `proj:epsg` with the
+      // string `proj:code` ("EPSG:26918"), and its schema rejects Items that
+      // still carry proj:epsg -- so /search emits proj:code only. Pull the
+      // numeric EPSG back out of it, tolerating the old field on any response
+      // from a stale API deployment.
+      function parseEpsgCode(props) {
+        const code = props?.["proj:code"];
+        if (typeof code === "string") {
+          const match = /^EPSG:(\d+)$/i.exec(code.trim());
+          if (match) {
+            return Number(match[1]);
+          }
+        }
+        const legacy = props?.["proj:epsg"];
+        return Number.isFinite(legacy) ? Number(legacy) : undefined;
+      }
+
       // --- LIVE DEBUG CONSOLE RECORDER ---
       // Off by default: the on-page panel (#debug-overlay) is hidden and the
       // console overrides below are disabled so logging does no DOM work.
@@ -1750,7 +1767,7 @@
             jsStringBytes(props["naip:state"]) +
             jsStringBytes(props.datetime) +
             jsStringBytes(String(props.year ?? props["naip:year"] ?? "")) +
-            jsStringBytes(String(props["proj:epsg"] ?? ""));
+            jsStringBytes(String(props["proj:code"] ?? props["proj:epsg"] ?? ""));
         }
         const shallowBytes = hrefBytes + idBytes + bboxNumberBytes + selectedPropertyBytes;
         let serializedUtf16Bytes = null;
@@ -2360,7 +2377,7 @@
         if (signal?.aborted) {
           throw signal.reason ?? new DOMException("Aborted", "AbortError");
         }
-        const epsg = source?.properties?.["proj:epsg"];
+        const epsg = parseEpsgCode(source?.properties);
         if (Number.isFinite(epsg)) {
           const numericEpsg = Number(epsg);
           geotiff._crs = numericEpsg;

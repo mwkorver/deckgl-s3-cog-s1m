@@ -1,0 +1,71 @@
+## Draft Registry of Open Data on AWS record for the NAIP GeoParquet coverage index.
+## Submit as a PR to https://github.com/awslabs/open-data-registry
+## (datasets/naip-geoparquet-coverage-index.yaml).
+##
+## Naming note: this index is NOT a STAC catalog, and this record deliberately
+## no longer claims to be one. It is a purpose-built Hive-partitioned GeoParquet
+## dataset with its own column set (see Description). The S3 bucket is still
+## named `naip-stac-catalog` -- a bucket cannot be renamed in place, so the
+## record describes the artifact accurately rather than matching the name.
+##
+## If STAC interoperability is wanted later, the thing to adopt is
+## stac-geoparquet (https://github.com/stac-utils/stac-geoparquet), which
+## specifies how STAC Items are stored in GeoParquet. That is a schema change,
+## not a rename. Separately, the read API in this repo does serve valid STAC
+## Items built from this index (STAC 1.1.0, projection v2.0.0, grid v1.1.0) --
+## but the Parquet files themselves are not STAC.
+Name: NAIP GeoParquet Coverage Index
+Description: >-
+  A cloud-native, queryable coverage index over the USDA National Agriculture
+  Imagery Program (NAIP) 4-band COG tiles published in the public
+  `naip-analytic` bucket. It is a Hive-partitioned GeoParquet dataset
+  (partitioned by `state` and `naip_year`) with one row per quarter-quad COG,
+  carrying the S3 source key, footprint geometry and bbox, resolution,
+  acquisition date, USGS quad, product, and projection metadata (EPSG code,
+  raster shape, affine transform). It lets you discover and filter NAIP coverage
+  (which tiles exist for a state/year/area) with a single DuckDB / Athena /
+  Spark query — no 400 MB manifest scan, no per-object listing. It is kept
+  current against the live bucket (NAIP's published manifest.txt is frozen at
+  2023-03-09; this index includes post-2023 acquisitions). Note that this is a
+  purpose-built index schema — not STAC, and not stac-geoparquet.
+Documentation: https://github.com/mwkorver/deckgl-s3-cog-s1m#readme
+Contact: https://github.com/mwkorver/deckgl-s3-cog-s1m/issues
+ManagedBy: "[Mark Korver](https://github.com/mwkorver)"
+UpdateFrequency: >-
+  Refreshed as USDA publishes new NAIP to naip-analytic (a few states per year);
+  historical partitions are immutable.
+Collabs: {}
+Tags:
+  - aws-pds
+  - agriculture
+  - geospatial
+  - imagery
+  - aerial imagery
+  - parquet
+  - earth observation
+  - united states
+License: >-
+  The index (this GeoParquet dataset) is released into the public domain under
+  Creative Commons CC0 1.0. The underlying NAIP imagery it indexes is a work of
+  the U.S. Government (USDA-FPAC-BC-APFO) and is in the U.S. public domain.
+Resources:
+  - Description: >-
+      NAIP GeoParquet coverage index (Hive-partitioned by state, naip_year).
+      Requester-pays: callers must authenticate and send the request-payer
+      header, and are billed for requests and egress.
+    ARN: arn:aws:s3:::naip-stac-catalog/manifest-index
+    Region: us-west-2
+    Type: S3 Bucket
+    RequesterPays: True
+  - Description: Source NAIP 4-band COG imagery this index points at (requester-pays)
+    ARN: arn:aws:s3:::naip-analytic
+    Region: us-west-2
+    Type: S3 Bucket
+    RequesterPays: True
+DataAtWork:
+  Tutorials: []
+  Tools & Applications:
+    - Title: deckgl-s3-cog-s1m — browser COG rendering over this index
+      URL: https://github.com/mwkorver/deckgl-s3-cog-s1m
+      AuthorName: Mark Korver
+  Publications: []

@@ -567,9 +567,10 @@ lake, or a backfill that writes the new layout alongside and flips the read root
 - The viewer's ingest panel grows a **collection** dropdown above State/Year;
   selecting a collection repopulates the region/year options from that
   collection's partitions.
-- The imagery STAC catalog (`naip-stac-catalog/manifest-index`) is, by its name,
-  NAIP's. A multi‑collection world wants either a catalog‑per‑collection or a
-  shared `imagery-catalog` partitioned `collection/region/year` — decide when the
+- The imagery coverage index (`naip-stac-catalog/manifest-index` — a GeoParquet
+  index, not a STAC catalog, despite the historical bucket name) is, by that
+  name, NAIP's. A multi‑collection world wants either an index‑per‑collection or
+  a shared `imagery-index` partitioned `collection/region/year` — decide when the
   second collection actually lands.
 
 ---
