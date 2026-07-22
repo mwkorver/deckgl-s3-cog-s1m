@@ -14,14 +14,19 @@ Hive-partitioned **GeoParquet** dataset. Read-only, `us-west-2`.
 > specifies how STAC Items are stored in GeoParquet. That is a schema change, not
 > a rename.
 
-> [!WARNING]
-> **The bucket currently has Requester Pays enabled** (`get-bucket-request-payment`
-> returns `Payer: Requester`), which overrides the anonymous-read grants in
-> `bucket-policy.json`. Anonymous requests fail with *"Anonymous users cannot
-> invoke requests against Requester Pays buckets."* Every example below therefore
-> authenticates and passes the request-payer flag. This contradicts the public-read
-> intent the bucket policy encodes — decide which one is right before submitting
-> the registry record, since a Registry of Open Data listing implies open access.
+> [!NOTE]
+> **This bucket is requester-pays** (`Payer: Requester`), the same as the
+> `naip-analytic` imagery it indexes. That is the normal arrangement for a large
+> Registry of Open Data dataset: the data stays openly licensed and open to
+> everyone, and callers cover their own request and egress cost instead of the
+> publisher absorbing it. The registry record declares `RequesterPays: True`
+> accordingly.
+>
+> The practical consequence is that callers must authenticate and send the
+> request-payer header — anonymous requests fail with *"Anonymous users cannot
+> invoke requests against Requester Pays buckets."* Every example below does
+> that. The anonymous grants in `bucket-policy.json` are therefore inert; they
+> are harmless, but don't read them as the access model.
 
 This directory holds the artifacts to publish it on the
 [Registry of Open Data on AWS](https://registry.opendata.aws):
@@ -29,7 +34,7 @@ This directory holds the artifacts to publish it on the
 | File | What it is |
 |------|------------|
 | `naip-geoparquet-coverage-index.yaml` | the RODA registry record (PR it to `awslabs/open-data-registry`) |
-| `bucket-policy.json` | anonymous `GetObject` (manifest-index) + `ListBucket` + `GetBucketLocation` — currently overridden by Requester Pays |
+| `bucket-policy.json` | `GetObject` (manifest-index) + `ListBucket` + `GetBucketLocation` for `Principal: *` — inert while requester-pays is on (see above) |
 | `cors.json` | browser/DuckDB-wasm access (GET/HEAD from any origin) |
 
 ## Data layout
@@ -108,12 +113,12 @@ aws s3api put-public-access-block --bucket $B --region $REGION \
 aws s3api put-bucket-policy --bucket $B --region $REGION --policy file://bucket-policy.json
 aws s3api put-bucket-cors   --bucket $B --region $REGION --cors-configuration file://cors.json
 
-# 4. check who pays. Returns Payer: Requester today, which defeats step 2.
-#    To actually make it anonymously readable:
-#      aws s3api put-bucket-request-payment --bucket $B --region $REGION \
-#        --request-payment-configuration Payer=BucketOwner
-#    Note that then the bucket owner pays all request + egress cost.
-aws s3api get-bucket-request-payment --bucket $B --region $REGION
+# 4. requester-pays, matching naip-analytic: callers cover their own request +
+#    egress cost. This is the intended configuration -- keep it. Verify with:
+aws s3api get-bucket-request-payment --bucket $B --region $REGION   # -> Payer: Requester
+# (set it explicitly on a freshly created bucket, which defaults to BucketOwner)
+aws s3api put-bucket-request-payment --bucket $B --region $REGION \
+  --request-payment-configuration Payer=Requester
 ```
 
 Refreshing the index as new NAIP is published is currently undocumented: the
