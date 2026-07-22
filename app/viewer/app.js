@@ -1,5 +1,4 @@
 import * as affine from "@s3-cog/affine";
-import { xy_bounds } from "@s3-cog/morecantile";
 import { epsgResolver, parseWkt } from "@s3-cog/proj";
 import proj4 from "proj4";
 
@@ -7,9 +6,16 @@ import proj4 from "proj4";
 // a ?api= override, else "" = same origin (Lambda-served viewer). All API
 // calls go through apiFetch so the static S3 viewer can reach the API on
 // another origin. (CORS on the Function URL already allows "*".)
-const API_BASE = (window.S3_COG_API_BASE || new URLSearchParams(location.search).get("api") || "").replace(/\/$/, "");
+const API_BASE = (
+  window.S3_COG_API_BASE ||
+  new URLSearchParams(location.search).get("api") ||
+  ""
+).replace(/\/$/, "");
 const apiFetch = (path, opts) => fetch(`${API_BASE}${path}`, opts);
-const S1M_API_BASE = (window.S3_COG_S1M_API_BASE || API_BASE).replace(/\/$/, "");
+const S1M_API_BASE = (window.S3_COG_S1M_API_BASE || API_BASE).replace(
+  /\/$/,
+  "",
+);
 const S1M_DEMO_TOKEN = window.S3_COG_S1M_DEMO_TOKEN || "";
 const INGEST_TOKEN = window.S3_COG_INGEST_TOKEN || "";
 
@@ -39,15 +45,19 @@ const debugLogsEl = document.getElementById("debug-logs");
 const clearDebugBtn = document.getElementById("clear-debug-btn");
 
 clearDebugBtn.addEventListener("click", () => {
-  if (debugLogsEl) debugLogsEl.innerHTML = "";
+  if (debugLogsEl) {
+    debugLogsEl.innerHTML = "";
+  }
 });
 
 const DEBUG_LOG_MAX_LINES = 500;
 let _debugScrollQueued = false;
 function addDebugLog(msg, isErr = false) {
-  if (!DEBUG_CONSOLE_ENABLED || !debugLogsEl) return;
+  if (!DEBUG_CONSOLE_ENABLED || !debugLogsEl) {
+    return;
+  }
   const line = document.createElement("div");
-  line.className = "debug-log-line" + (isErr ? " debug-log-err" : "");
+  line.className = `debug-log-line${isErr ? " debug-log-err" : ""}`;
   const time = new Date().toLocaleTimeString();
   line.textContent = `[${time}] ${msg}`;
   debugLogsEl.appendChild(line);
@@ -70,11 +80,20 @@ const _origLog = console.log;
 const _origErr = console.error;
 console.log = (...args) => {
   _origLog(...args);
-  addDebugLog(args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" "));
+  addDebugLog(
+    args
+      .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
+      .join(" "),
+  );
 };
 console.error = (...args) => {
   _origErr(...args);
-  addDebugLog(args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" "), true);
+  addDebugLog(
+    args
+      .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
+      .join(" "),
+    true,
+  );
 };
 
 addDebugLog("Live Debug Console Initialized successfully.");
@@ -94,7 +113,9 @@ window.__map = map;
 
 const stateEl = document.getElementById("state");
 const yearEl = document.getElementById("year");
-const activeCollectionSummaryEl = document.getElementById("active-collection-summary");
+const activeCollectionSummaryEl = document.getElementById(
+  "active-collection-summary",
+);
 let activeSearchCollectionId = "naip";
 let searchableCollectionIds = new Set(["naip"]);
 const activeCollection = () => activeSearchCollectionId || "naip";
@@ -102,18 +123,21 @@ const activeCollection = () => activeSearchCollectionId || "naip";
 // tracks the selection (only one collection is "hot" at a time).
 function updateCogLayerLabel() {
   const id = activeCollection();
-  const title = (collectionById[id] && collectionById[id].title) || id.toUpperCase();
+  const title = collectionById[id]?.title || id.toUpperCase();
 
   const el = document.getElementById("cog-layer-label");
-  if (el) el.textContent = `${title} Imagery (COG Tiles)`;
+  if (el) {
+    el.textContent = `${title} Imagery (COG Tiles)`;
+  }
 }
 function renderActiveCollectionSummary() {
-  if (!activeCollectionSummaryEl) return;
+  if (!activeCollectionSummaryEl) {
+    return;
+  }
   const id = activeCollection();
   const p = collectionById[id];
-  const title = (p && p.title) || id.toUpperCase();
-  activeCollectionSummaryEl.innerHTML =
-    `Search collection: <strong>${title}</strong> <span class="muted">(${id})</span>`;
+  const title = p?.title || id.toUpperCase();
+  activeCollectionSummaryEl.innerHTML = `Search collection: <strong>${title}</strong> <span class="muted">(${id})</span>`;
 }
 const limitEl = document.getElementById("limit");
 // Default search `limit` (max footprints per /search). One source maps to
@@ -121,13 +145,22 @@ const limitEl = document.getElementById("limit");
 // that drives `maxCacheSize` below. The server hard-caps `limit` at 18000.
 const SEARCH_LIMIT_DEFAULT = 18000;
 limitEl.value = String(SEARCH_LIMIT_DEFAULT);
-const footprintLayerModeEls = Array.from(document.querySelectorAll('input[name="footprint-layer-mode"]'));
-const footprintLayerOffEl = document.getElementById("footprint-layer-off");
+const footprintLayerModeEls = Array.from(
+  document.querySelectorAll('input[name="footprint-layer-mode"]'),
+);
 const toggleCogEl = document.getElementById("toggle-cog-layer");
-const toggleUsgsNaipWmsLayerEl = document.getElementById("toggle-usgs-naip-wms-layer");
-const toggleNaipSearchFootprintsLayerEl = document.getElementById("toggle-naip-search-footprints-layer");
-const toggleS1MFootprintsLayerEl = document.getElementById("toggle-s1m-footprints-layer");
-const toggleNaipCoverageMvtLayerEl = document.getElementById("toggle-naip-coverage-mvt-layer");
+const toggleUsgsNaipWmsLayerEl = document.getElementById(
+  "toggle-usgs-naip-wms-layer",
+);
+const toggleNaipSearchFootprintsLayerEl = document.getElementById(
+  "toggle-naip-search-footprints-layer",
+);
+const toggleS1MFootprintsLayerEl = document.getElementById(
+  "toggle-s1m-footprints-layer",
+);
+const toggleNaipCoverageMvtLayerEl = document.getElementById(
+  "toggle-naip-coverage-mvt-layer",
+);
 
 const terBuildingsEl = document.getElementById("ter-buildings");
 const terBuildingsStatusEl = document.getElementById("ter-buildings-status");
@@ -143,12 +176,16 @@ const resetDisplayEl = document.getElementById("reset-display");
 // coverage MVT / S1M coverage footprints stay OFF; each can be toggled from
 // its control. The terrain mesh+drape is driven by s1mActive, independent
 // of these toggles.
-const footprintLayerSearchEl = document.getElementById("footprint-layer-search");
-if (footprintLayerSearchEl) footprintLayerSearchEl.checked = true; // 2D search-results footprints on
+const footprintLayerSearchEl = document.getElementById(
+  "footprint-layer-search",
+);
+if (footprintLayerSearchEl) {
+  footprintLayerSearchEl.checked = true; // 2D search-results footprints on
+}
 toggleNaipSearchFootprintsLayerEl.checked = true; // hidden checkbox the radio drives
-toggleCogEl.checked = true;            // background NAIP raster (COG tiles) on
+toggleCogEl.checked = true; // background NAIP raster (COG tiles) on
 toggleUsgsNaipWmsLayerEl.checked = false;
-toggleS1MFootprintsLayerEl.checked = false;   // coverage-footprint vector off
+toggleS1MFootprintsLayerEl.checked = false; // coverage-footprint vector off
 toggleNaipCoverageMvtLayerEl.checked = false; // NAIP coverage MVT vector off
 
 const summaryEl = document.getElementById("summary");
@@ -161,7 +198,9 @@ const resultsEl = document.getElementById("results");
 // .tab-button style but manage their own state (switchIngestMode); scoping to
 // [data-tab] keeps switchTab off them, or clicking a mode button would fire
 // switchTab(undefined) and blank every .tab-panel.
-const tabButtons = Array.from(document.querySelectorAll(".tab-button[data-tab]"));
+const tabButtons = Array.from(
+  document.querySelectorAll(".tab-button[data-tab]"),
+);
 const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
 const refreshEnvironmentBtn = document.getElementById("refresh-environment");
 const environmentChecksEl = document.getElementById("environment-checks");
@@ -169,21 +208,31 @@ const environmentConfigEl = document.getElementById("environment-config");
 // Dual-mode Ingest controls
 const ingestModeCatalogBtn = document.getElementById("ingest-mode-catalog");
 const ingestModeCustomBtn = document.getElementById("ingest-mode-custom");
-const ingestCatalogFieldsWrap = document.getElementById("ingest-catalog-fields");
+const ingestCatalogFieldsWrap = document.getElementById(
+  "ingest-catalog-fields",
+);
 const ingestCustomFieldsWrap = document.getElementById("ingest-custom-fields");
 
-const ingestCatalogCollectionEl = document.getElementById("ingest-catalog-collection");
+const ingestCatalogCollectionEl = document.getElementById(
+  "ingest-catalog-collection",
+);
 const ingestCatalogRegionEl = document.getElementById("ingest-catalog-region");
 const ingestCatalogYearEl = document.getElementById("ingest-catalog-year");
-const ingestCatalogStrategyEl = document.getElementById("ingest-catalog-strategy");
+const ingestCatalogStrategyEl = document.getElementById(
+  "ingest-catalog-strategy",
+);
 
 const ingestCustomBucketEl = document.getElementById("ingest-custom-bucket");
 const ingestCustomPrefixEl = document.getElementById("ingest-custom-prefix");
-const ingestCustomCollectionEl = document.getElementById("ingest-custom-collection");
+const ingestCustomCollectionEl = document.getElementById(
+  "ingest-custom-collection",
+);
 const ingestCustomRegionEl = document.getElementById("ingest-custom-region");
 const ingestCustomYearEl = document.getElementById("ingest-custom-year");
 const ingestCustomAccessEl = document.getElementById("ingest-custom-access");
-const ingestCustomStrategyEl = document.getElementById("ingest-custom-strategy");
+const ingestCustomStrategyEl = document.getElementById(
+  "ingest-custom-strategy",
+);
 
 const ingestLimitEl = document.getElementById("ingest-limit");
 const ingestWorkersEl = document.getElementById("ingest-workers");
@@ -203,13 +252,12 @@ ingestSecretKeyEl.addEventListener("input", () => {
 
 // Server-side sync ingest hard cap (S3_COG_SYNC_INGEST_MAX_LIMIT). Sending a
 // larger value is rejected; clamp here so the panel can't ask for more.
-const INGEST_SYNC_MAX_LIMIT = 500;   // empty-field default
-const INGEST_LIMIT_MAX = 20000;      // panel hard ceiling (0 still = unlimited)
+const INGEST_SYNC_MAX_LIMIT = 500; // empty-field default
+const INGEST_LIMIT_MAX = 20000; // panel hard ceiling (0 still = unlimited)
 const runIngestBtn = document.getElementById("run-ingest");
 const ingestSummaryEl = document.getElementById("ingest-summary");
 const ingestLogsEl = document.getElementById("ingest-logs");
 let deckOverlay = null;
-let MapboxOverlayClass = null;
 let MVTLayerClass = null;
 let MosaicLayerClass = null;
 let COGLayerClass = null;
@@ -227,7 +275,6 @@ let currentImageryHrefs = [];
 
 let mapReady = false;
 let autoSearchTimeoutId = null;
-let imageryRenderGeneration = 0;
 const geotiffSourceCache = new Map();
 const geotiffSourceResolved = new Map();
 const GEOTIFF_SOURCE_CACHE_MAX = 12;
@@ -237,7 +284,7 @@ let drapeProjectionCache = new WeakMap();
 // keys the signed URL by its s3:// href with an expiry; inflightSigns
 // coalesces concurrent requests for the same href into one fetch.
 const signedUrlCache = new Map(); // s3href -> { url, expiresAt }
-const inflightSigns = new Map();  // s3href -> Promise<string>
+const inflightSigns = new Map(); // s3href -> Promise<string>
 // Per-search counters so the timing panel can report client-side signing.
 let signCallCount = 0;
 let signTotalMs = 0;
@@ -258,7 +305,11 @@ function clearGeotiffSourceCache() {
 function isExpiredSignatureError(error) {
   for (let e = error; e; e = e.cause) {
     const msg = String(e?.message || "");
-    if (msg.includes("403") || /expired/i.test(msg) || /accessdenied/i.test(msg)) {
+    if (
+      msg.includes("403") ||
+      /expired/i.test(msg) ||
+      /accessdenied/i.test(msg)
+    ) {
       return true;
     }
   }
@@ -279,7 +330,9 @@ function isAllocationError(error) {
 // bucket), so imagery access follows the source: public buckets are read
 // directly (no presign), requester-pays (NAIP) is presigned via /sign.
 function collectionForHref(s3href) {
-  if (!s3href) return null;
+  if (!s3href) {
+    return null;
+  }
   let bucket = null;
   if (s3href.startsWith("s3://")) {
     const m = /^s3:\/\/([^/]+)\//.exec(s3href);
@@ -288,19 +341,27 @@ function collectionForHref(s3href) {
     const m = /^https:\/\/([^.]+)\.s3/.exec(s3href);
     bucket = m ? m[1] : null;
   }
-  if (!bucket) return null;
+  if (!bucket) {
+    return null;
+  }
   return collectionFeatures.find((p) => p.bucket === bucket) || null;
 }
 function publicHttpsUrl(s3href, region) {
   const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3href);
-  if (!m) return s3href;
+  if (!m) {
+    return s3href;
+  }
   // Region-specific virtual-hosted URL when known, else the global
   // endpoint (S3 redirects it to the bucket's region on first request).
-  const host = region ? `${m[1]}.s3.${region}.amazonaws.com` : `${m[1]}.s3.amazonaws.com`;
+  const host = region
+    ? `${m[1]}.s3.${region}.amazonaws.com`
+    : `${m[1]}.s3.amazonaws.com`;
   return `https://${host}/${m[2]}`;
 }
 function chunkCacheForHref(s3href) {
-  if (!s3href?.startsWith("s3://naip-analytic/")) return undefined;
+  if (!s3href?.startsWith("s3://naip-analytic/")) {
+    return undefined;
+  }
   return {
     cacheKey: s3href,
     chunkSize: 1024 * 1024,
@@ -310,7 +371,9 @@ function chunkCacheForHref(s3href) {
 }
 
 async function signHref(s3href) {
-  if (!s3href || !s3href.startsWith("s3://")) return s3href;
+  if (!s3href?.startsWith("s3://")) {
+    return s3href;
+  }
   // Public collection: the browser can range-read the object directly; no
   // presign (and no requester-pays header, which a public bucket rejects).
   const owner = collectionForHref(s3href);
@@ -322,7 +385,9 @@ async function signHref(s3href) {
   }
   const now = Date.now();
   const cached = signedUrlCache.get(s3href);
-  if (cached && cached.expiresAt > now) return cached.url;
+  if (cached && cached.expiresAt > now) {
+    return cached.url;
+  }
   let pending = inflightSigns.get(s3href);
   if (!pending) {
     const startedAt = performance.now();
@@ -348,7 +413,10 @@ async function signHref(s3href) {
         signTotalMs += performance.now() - startedAt;
         // Expire the client cache a minute before the server's window so we
         // re-sign before a tile's URL actually lapses.
-        const ttlMs = Math.max(0, (Number(data.expires_in) || 0) * 1000 - 60000);
+        const ttlMs = Math.max(
+          0,
+          (Number(data.expires_in) || 0) * 1000 - 60000,
+        );
         signedUrlCache.set(s3href, {
           url: data.signed,
           expiresAt: ttlMs ? now + ttlMs : now + 60000,
@@ -407,34 +475,84 @@ const s1mFillMetrics = {
 // pipeline. Cheap (performance.now deltas) and always on. Read/reset from
 // the console via window.__s1mBenchReport() / window.__s1mBenchReset().
 const s1mBench = {
-  cogHit: 0, cogMiss: 0,           // decoded-COG-tile cache effectiveness
-  drapeEvict: 0, cogEvict: 0, tiffEvict: 0, // bounded-cache pressure
-  cogFetchMs: 0, cogFetchN: 0,     // level.fetchTile (network/range reads)
-  decodeMs: 0, decodeN: 0,         // displayDrapeRgbaBytes (band -> rgba)
-  rasterMs: 0, rasterN: 0,         // per-output-pixel reproject+sample loop
-  drapeBuildMs: 0, drapeBuildN: 0, // summed per-subtile drape durations
-  terrainFetchMs: 0, terrainFetchN: 0, // /s1m/terrain fetch + json
-  meshMs: 0, meshN: 0,             // elevation decode + CPU mesh build
-  tiffSignMs: 0, tiffSignN: 0,     // TIFF S3 URL presigning
-  tiffResolveMs: 0, tiffResolveN: 0, // TIFF header reading (fromUrl)
+  cogHit: 0,
+  cogMiss: 0, // decoded-COG-tile cache effectiveness
+  drapeEvict: 0,
+  cogEvict: 0,
+  tiffEvict: 0, // bounded-cache pressure
+  cogFetchMs: 0,
+  cogFetchN: 0, // level.fetchTile (network/range reads)
+  decodeMs: 0,
+  decodeN: 0, // displayDrapeRgbaBytes (band -> rgba)
+  rasterMs: 0,
+  rasterN: 0, // per-output-pixel reproject+sample loop
+  drapeBuildMs: 0,
+  drapeBuildN: 0, // summed per-subtile drape durations
+  terrainFetchMs: 0,
+  terrainFetchN: 0, // /s1m/terrain fetch + json
+  meshMs: 0,
+  meshN: 0, // elevation decode + CPU mesh build
+  tiffSignMs: 0,
+  tiffSignN: 0, // TIFF S3 URL presigning
+  tiffResolveMs: 0,
+  tiffResolveN: 0, // TIFF header reading (fromUrl)
 };
-function s1mBenchReset() { for (const k in s1mBench) s1mBench[k] = 0; }
+function s1mBenchReset() {
+  for (const k in s1mBench) {
+    s1mBench[k] = 0;
+  }
+}
 function s1mBenchReport() {
   const avg = (ms, n) => (n ? +(ms / n).toFixed(1) : 0);
   const cogTotal = s1mBench.cogHit + s1mBench.cogMiss;
   return {
     cogTileCache: {
-      hits: s1mBench.cogHit, misses: s1mBench.cogMiss,
-      hitRatePct: cogTotal ? +((100 * s1mBench.cogHit) / cogTotal).toFixed(0) : 0,
+      hits: s1mBench.cogHit,
+      misses: s1mBench.cogMiss,
+      hitRatePct: cogTotal
+        ? +((100 * s1mBench.cogHit) / cogTotal).toFixed(0)
+        : 0,
     },
-    cogFetch: { tiles: s1mBench.cogFetchN, totalMs: +s1mBench.cogFetchMs.toFixed(0), avgMs: avg(s1mBench.cogFetchMs, s1mBench.cogFetchN) },
-    decode: { tiles: s1mBench.decodeN, totalMs: +s1mBench.decodeMs.toFixed(0), avgMs: avg(s1mBench.decodeMs, s1mBench.decodeN) },
-    rasterize: { passes: s1mBench.rasterN, totalMs: +s1mBench.rasterMs.toFixed(0), avgMs: avg(s1mBench.rasterMs, s1mBench.rasterN) },
-    drapeBuild: { subtiles: s1mBench.drapeBuildN, totalSubtileMs: +s1mBench.drapeBuildMs.toFixed(0), avgSubtileMs: avg(s1mBench.drapeBuildMs, s1mBench.drapeBuildN) },
-    terrainFetch: { tiles: s1mBench.terrainFetchN, totalMs: +s1mBench.terrainFetchMs.toFixed(0), avgMs: avg(s1mBench.terrainFetchMs, s1mBench.terrainFetchN) },
-    mesh: { tiles: s1mBench.meshN, totalMs: +s1mBench.meshMs.toFixed(0), avgMs: avg(s1mBench.meshMs, s1mBench.meshN) },
-    tiffSign: { calls: s1mBench.tiffSignN, totalMs: +s1mBench.tiffSignMs.toFixed(0), avgMs: avg(s1mBench.tiffSignMs, s1mBench.tiffSignN) },
-    tiffResolve: { sources: s1mBench.tiffResolveN, totalMs: +s1mBench.tiffResolveMs.toFixed(0), avgMs: avg(s1mBench.tiffResolveMs, s1mBench.tiffResolveN) },
+    cogFetch: {
+      tiles: s1mBench.cogFetchN,
+      totalMs: +s1mBench.cogFetchMs.toFixed(0),
+      avgMs: avg(s1mBench.cogFetchMs, s1mBench.cogFetchN),
+    },
+    decode: {
+      tiles: s1mBench.decodeN,
+      totalMs: +s1mBench.decodeMs.toFixed(0),
+      avgMs: avg(s1mBench.decodeMs, s1mBench.decodeN),
+    },
+    rasterize: {
+      passes: s1mBench.rasterN,
+      totalMs: +s1mBench.rasterMs.toFixed(0),
+      avgMs: avg(s1mBench.rasterMs, s1mBench.rasterN),
+    },
+    drapeBuild: {
+      subtiles: s1mBench.drapeBuildN,
+      totalSubtileMs: +s1mBench.drapeBuildMs.toFixed(0),
+      avgSubtileMs: avg(s1mBench.drapeBuildMs, s1mBench.drapeBuildN),
+    },
+    terrainFetch: {
+      tiles: s1mBench.terrainFetchN,
+      totalMs: +s1mBench.terrainFetchMs.toFixed(0),
+      avgMs: avg(s1mBench.terrainFetchMs, s1mBench.terrainFetchN),
+    },
+    mesh: {
+      tiles: s1mBench.meshN,
+      totalMs: +s1mBench.meshMs.toFixed(0),
+      avgMs: avg(s1mBench.meshMs, s1mBench.meshN),
+    },
+    tiffSign: {
+      calls: s1mBench.tiffSignN,
+      totalMs: +s1mBench.tiffSignMs.toFixed(0),
+      avgMs: avg(s1mBench.tiffSignMs, s1mBench.tiffSignN),
+    },
+    tiffResolve: {
+      sources: s1mBench.tiffResolveN,
+      totalMs: +s1mBench.tiffResolveMs.toFixed(0),
+      avgMs: avg(s1mBench.tiffResolveMs, s1mBench.tiffResolveN),
+    },
     sourceSearchMs: s1mDrapeMetrics.sourceSearchMs,
     cacheSizes: {
       drapeImages: s1mDrapeCache.size,
@@ -510,7 +628,9 @@ function s1mOpenStatsWindow() {
     </html>`);
   s1mStatsWindow.document.close();
   const render = () => {
-    if (!s1mStatsWindow || s1mStatsWindow.closed) return;
+    if (!s1mStatsWindow || s1mStatsWindow.closed) {
+      return;
+    }
     const payload = {
       generatedAt: new Date().toISOString(),
       bench: s1mBenchReport(),
@@ -526,7 +646,7 @@ function s1mOpenStatsWindow() {
         <div style="margin-top: 8px; padding-left: 15px; font-size: 11px; color: #8b949e;">
           <strong>Pending Sub-tiles:</strong>
           <ul style="margin: 4px 0; padding-left: 20px;">
-            ${payload.fill.drapePending.map(k => `<li>${k}</li>`).join("")}
+            ${payload.fill.drapePending.map((k) => `<li>${k}</li>`).join("")}
           </ul>
         </div>
       `;
@@ -536,7 +656,7 @@ function s1mOpenStatsWindow() {
         <div style="margin-top: 8px; padding-left: 15px; font-size: 11px; color: #8b949e;">
           <strong>Refreshing Sub-tiles:</strong>
           <ul style="margin: 4px 0; padding-left: 20px;">
-            ${payload.fill.drapeRefreshing.map(k => `<li>${k}</li>`).join("")}
+            ${payload.fill.drapeRefreshing.map((k) => `<li>${k}</li>`).join("")}
           </ul>
         </div>
       `;
@@ -546,7 +666,7 @@ function s1mOpenStatsWindow() {
         <div style="margin-top: 8px; padding-left: 15px; font-size: 11px; color: #f87171;">
           <strong>Failed Sub-tiles:</strong>
           <ul style="margin: 4px 0; padding-left: 20px;">
-            ${payload.fill.drapeFailed.map(item => `<li>${item.key}: ${item.error}</li>`).join("")}
+            ${payload.fill.drapeFailed.map((item) => `<li>${item.key}: ${item.error}</li>`).join("")}
           </ul>
         </div>
       `;
@@ -568,7 +688,7 @@ function s1mOpenStatsWindow() {
       </div>
       <div class="stat-line">
         <span class="stat-label">Refresh Age</span>
-        <span class="stat-value">${payload.fill.refreshAgeMs !== null ? payload.fill.refreshAgeMs + " ms" : "N/A"}</span>
+        <span class="stat-value">${payload.fill.refreshAgeMs !== null ? `${payload.fill.refreshAgeMs} ms` : "N/A"}</span>
         <span class="stat-desc">— Elapsed time since the last viewport refresh started</span>
       </div>
 
@@ -617,7 +737,7 @@ function s1mOpenStatsWindow() {
       </div>
       <div class="stat-line">
         <span class="stat-label">Textured Sub-tiles</span>
-        <span class="stat-value">${payload.fill.drape.textured} (${payload.fill.drape.subtiles ? Math.round(100 * payload.fill.drape.textured / payload.fill.drape.subtiles) : 0}%)</span>
+        <span class="stat-value">${payload.fill.drape.textured} (${payload.fill.drape.subtiles ? Math.round((100 * payload.fill.drape.textured) / payload.fill.drape.subtiles) : 0}%)</span>
         <span class="stat-desc">— Sub-tiles that finished loading and painting imagery textures</span>
       </div>
       <div class="stat-line">
@@ -632,7 +752,7 @@ function s1mOpenStatsWindow() {
       </div>
       <div class="stat-line">
         <span class="stat-label">Failed Textures</span>
-        <span class="stat-value" style="color: ${payload.fill.drape.failed > 0 ? '#f87171' : 'inherit'};">${payload.fill.drape.failed}</span>
+        <span class="stat-value" style="color: ${payload.fill.drape.failed > 0 ? "#f87171" : "inherit"};">${payload.fill.drape.failed}</span>
         <span class="stat-desc">— Sub-tiles that failed to acquire or paint textures</span>
       </div>
       ${drapeListsHtml}
@@ -742,19 +862,25 @@ function s1mOpenStatsWindow() {
       </div>
     `;
 
-    s1mStatsWindow.document.getElementById("stats-display").innerHTML = displayHtml;
+    s1mStatsWindow.document.getElementById("stats-display").innerHTML =
+      displayHtml;
     s1mStatsWindow.document.getElementById("stats").textContent = text;
-    s1mStatsWindow.document.getElementById("stamp").textContent = payload.generatedAt;
+    s1mStatsWindow.document.getElementById("stamp").textContent =
+      payload.generatedAt;
     s1mStatsWindow.__s1mStatsText = text;
   };
   s1mStatsWindow.document.getElementById("copy").onclick = () => {
-    s1mStatsWindow.navigator.clipboard?.writeText(s1mStatsWindow.__s1mStatsText || "");
+    s1mStatsWindow.navigator.clipboard?.writeText(
+      s1mStatsWindow.__s1mStatsText || "",
+    );
   };
   s1mStatsWindow.document.getElementById("reset").onclick = () => {
     s1mBenchReset();
     render();
   };
-  if (s1mStatsWindowTimer) clearInterval(s1mStatsWindowTimer);
+  if (s1mStatsWindowTimer) {
+    clearInterval(s1mStatsWindowTimer);
+  }
   render();
   s1mStatsWindowTimer = setInterval(() => {
     if (!s1mStatsWindow || s1mStatsWindow.closed) {
@@ -793,15 +919,23 @@ function getTerrainDrapeSources() {
   return s1mDrapeSourceKey ? s1mDrapeSources : getImagerySources();
 }
 function s1mDrapeSourceCacheStats() {
-  let pending = 0, ready = 0, failed = 0, sources = 0, rawSources = 0;
+  let pending = 0,
+    ready = 0,
+    failed = 0,
+    sources = 0,
+    rawSources = 0;
   for (const entry of s1mDrapeSourceCache.values()) {
-    if (entry.pending) pending += 1;
+    if (entry.pending) {
+      pending += 1;
+    }
     if (entry.sources) {
       ready += 1;
       sources += entry.sources.length;
       rawSources += entry.rawCount || entry.sources.length;
     }
-    if (entry.error) failed += 1;
+    if (entry.error) {
+      failed += 1;
+    }
   }
   return { pending, ready, failed, sources, rawSources };
 }
@@ -814,16 +948,26 @@ function clearS1MDrapeSourceCache() {
 }
 
 function formatBytes(bytes) {
-  if (!Number.isFinite(bytes)) return "unknown";
+  if (!Number.isFinite(bytes)) {
+    return "unknown";
+  }
   const abs = Math.abs(bytes);
-  if (abs >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  if (abs >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (abs >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (abs >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+  if (abs >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (abs >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
   return `${Math.round(bytes)} B`;
 }
 
 function byteReport(bytes) {
-  const safeBytes = Number.isFinite(bytes) ? Math.max(0, Math.round(bytes)) : null;
+  const safeBytes = Number.isFinite(bytes)
+    ? Math.max(0, Math.round(bytes))
+    : null;
   return {
     bytes: safeBytes,
     mb: safeBytes === null ? null : +(safeBytes / (1024 * 1024)).toFixed(2),
@@ -838,23 +982,36 @@ function jsStringBytes(value) {
 function sumNumberValues(map) {
   let total = 0;
   for (const value of map.values()) {
-    if (Number.isFinite(value)) total += value;
+    if (Number.isFinite(value)) {
+      total += value;
+    }
   }
   return total;
 }
 
 function typedArrayBytes(value, seen = null) {
-  if (!value || typeof value !== "object" || !Number.isFinite(value.byteLength)) return 0;
-  const token = value.buffer && typeof value.buffer === "object" ? value.buffer : value;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !Number.isFinite(value.byteLength)
+  ) {
+    return 0;
+  }
+  const token =
+    value.buffer && typeof value.buffer === "object" ? value.buffer : value;
   if (seen && token) {
-    if (seen.has(token)) return 0;
+    if (seen.has(token)) {
+      return 0;
+    }
     seen.add(token);
   }
   return value.byteLength;
 }
 
 function meshBytes(gpuMesh, seen = null) {
-  if (!gpuMesh) return 0;
+  if (!gpuMesh) {
+    return 0;
+  }
   const mesh = gpuMesh.mesh || gpuMesh;
   let bytes = typedArrayBytes(gpuMesh.positions64Low, seen);
   bytes += typedArrayBytes(mesh?.indices?.value || mesh?.indices, seen);
@@ -877,7 +1034,9 @@ function featureReferenceMemory(features, options = {}) {
   let imageRefs = 0;
   for (const feature of list) {
     idBytes += jsStringBytes(feature?.id);
-    if (Array.isArray(feature?.bbox)) bboxNumberBytes += feature.bbox.length * 8;
+    if (Array.isArray(feature?.bbox)) {
+      bboxNumberBytes += feature.bbox.length * 8;
+    }
     const href = feature?.assets?.image?.href;
     if (href) {
       imageRefs += 1;
@@ -892,7 +1051,8 @@ function featureReferenceMemory(features, options = {}) {
       jsStringBytes(String(props.year ?? props["naip:year"] ?? "")) +
       jsStringBytes(String(props["proj:code"] ?? props["proj:epsg"] ?? ""));
   }
-  const shallowBytes = hrefBytes + idBytes + bboxNumberBytes + selectedPropertyBytes;
+  const shallowBytes =
+    hrefBytes + idBytes + bboxNumberBytes + selectedPropertyBytes;
   let serializedUtf16Bytes = null;
   if (options.deep === true) {
     try {
@@ -910,9 +1070,10 @@ function featureReferenceMemory(features, options = {}) {
     bboxNumbers: byteReport(bboxNumberBytes),
     selectedProperties: byteReport(selectedPropertyBytes),
     serializedUtf16: byteReport(serializedUtf16Bytes),
-    note: options.deep === true
-      ? "Serialized UTF-16 is a measurement of a temporary JSON string, not exact live heap."
-      : "Default estimate includes href/id strings, bbox numbers, and selected scalar properties; pass {deep: true} to include temporary serialized JSON size.",
+    note:
+      options.deep === true
+        ? "Serialized UTF-16 is a measurement of a temporary JSON string, not exact live heap."
+        : "Default estimate includes href/id strings, bbox numbers, and selected scalar properties; pass {deep: true} to include temporary serialized JSON size.",
   };
 }
 
@@ -924,7 +1085,9 @@ function signedUrlCacheMemoryReport() {
   for (const [href, entry] of signedUrlCache.entries()) {
     keyBytes += jsStringBytes(href);
     urlBytes += jsStringBytes(entry?.url);
-    if (Number(entry?.expiresAt) <= now) expired += 1;
+    if (Number(entry?.expiresAt) <= now) {
+      expired += 1;
+    }
   }
   return {
     entries: signedUrlCache.size,
@@ -939,7 +1102,10 @@ function signedUrlCacheMemoryReport() {
 
 function imageryReferenceMemoryReport(options = {}) {
   const imagerySources = getImagerySources();
-  const hrefBytes = currentImageryHrefs.reduce((sum, href) => sum + jsStringBytes(href), 0);
+  const hrefBytes = currentImageryHrefs.reduce(
+    (sum, href) => sum + jsStringBytes(href),
+    0,
+  );
   return {
     currentImageryHrefs: {
       count: currentImageryHrefs.length,
@@ -959,7 +1125,9 @@ function imageryReferenceMemoryReport(options = {}) {
 
 function chunkStatsForGeotiff(geotiff) {
   const source = geotiff?.dataSource;
-  if (!source) return null;
+  if (!source) {
+    return null;
+  }
   let stats = null;
   try {
     stats = typeof source.stats === "function" ? source.stats() : null;
@@ -1007,7 +1175,9 @@ function aggregateChunkStats(resolvedGeotiffs) {
   };
   for (const geotiff of resolvedGeotiffs.values()) {
     const stats = chunkStatsForGeotiff(geotiff);
-    if (!stats) continue;
+    if (!stats) {
+      continue;
+    }
     totals.chunkCacheSources += 1;
     totals.memoryBytes += stats.memoryBytes;
     totals.memoryMaxBytes += stats.memoryMaxBytes;
@@ -1030,7 +1200,9 @@ function aggregateChunkStats(resolvedGeotiffs) {
 
 function geotiffHandleCacheMemoryReport(cache, resolved, maxEntries = null) {
   let keyBytes = 0;
-  for (const key of cache.keys()) keyBytes += jsStringBytes(key);
+  for (const key of cache.keys()) {
+    keyBytes += jsStringBytes(key);
+  }
   return {
     entries: cache.size,
     maxEntries,
@@ -1058,13 +1230,19 @@ function s1mTerrainCacheMemoryReport() {
     rootMeshBytes += meshBytes(cache?.gpuMesh, seen);
     for (const sub of cache?.subtiles?.values?.() || []) {
       subtiles += 1;
-      if (sub.drapeImage) texturedSubtiles += 1;
+      if (sub.drapeImage) {
+        texturedSubtiles += 1;
+      }
       subtileElevationBytes += typedArrayBytes(sub.elev, seen);
       subtileMeshBytes += meshBytes(sub.gpuMesh, seen);
       attachedDrapeBytes += imageDataBytes(sub.drapeImage, seen);
     }
   }
-  const meshAndElevationBytes = rootElevationBytes + rootMeshBytes + subtileElevationBytes + subtileMeshBytes;
+  const meshAndElevationBytes =
+    rootElevationBytes +
+    rootMeshBytes +
+    subtileElevationBytes +
+    subtileMeshBytes;
   return {
     entries: s1mTileCache.size,
     activeTiles: s1mActiveTiles.size,
@@ -1077,13 +1255,16 @@ function s1mTerrainCacheMemoryReport() {
     subtileMeshes: byteReport(subtileMeshBytes),
     meshAndElevation: byteReport(meshAndElevationBytes),
     attachedDrapeImages: byteReport(attachedDrapeBytes),
-    totalIncludingAttachedDrapes: byteReport(meshAndElevationBytes + attachedDrapeBytes),
+    totalIncludingAttachedDrapes: byteReport(
+      meshAndElevationBytes + attachedDrapeBytes,
+    ),
     note: "Mesh/elevation bytes are typed-array payloads retained by the JS objects; deck.gl/WebGL buffer copies are not exposed.",
   };
 }
 
 function s1mDrapeImageCacheMemoryReport() {
-  const configuredMaxBytes = S1M_DRAPE_CACHE_MAX * S1M_SUBTILE_DRAPE_SIZE * S1M_SUBTILE_DRAPE_SIZE * 4;
+  const configuredMaxBytes =
+    S1M_DRAPE_CACHE_MAX * S1M_SUBTILE_DRAPE_SIZE * S1M_SUBTILE_DRAPE_SIZE * 4;
   return {
     entries: s1mDrapeCache.size,
     maxEntries: S1M_DRAPE_CACHE_MAX,
@@ -1114,13 +1295,17 @@ function s1mDrapeSourceQueryMemoryReport() {
   let sourceRefs = 0;
   for (const [key, entry] of s1mDrapeSourceCache.entries()) {
     keyBytes += jsStringBytes(key);
-    if (Array.isArray(entry?.bbox)) bboxBytes += entry.bbox.length * 8;
+    if (Array.isArray(entry?.bbox)) {
+      bboxBytes += entry.bbox.length * 8;
+    }
     errorBytes += jsStringBytes(entry?.error);
     for (const source of entry?.sources || []) {
       sourceRefs += 1;
       hrefBytes += jsStringBytes(source?.assets?.image?.href);
       idBytes += jsStringBytes(source?.id);
-      if (Array.isArray(source?.bbox)) bboxBytes += source.bbox.length * 8;
+      if (Array.isArray(source?.bbox)) {
+        bboxBytes += source.bbox.length * 8;
+      }
     }
   }
   const sourceStats = s1mDrapeSourceCacheStats();
@@ -1132,7 +1317,9 @@ function s1mDrapeSourceQueryMemoryReport() {
     failed: sourceStats.failed,
     sourceRefs,
     rawSources: sourceStats.rawSources,
-    shallowEstimate: byteReport(keyBytes + bboxBytes + hrefBytes + idBytes + errorBytes),
+    shallowEstimate: byteReport(
+      keyBytes + bboxBytes + hrefBytes + idBytes + errorBytes,
+    ),
     keyStrings: byteReport(keyBytes),
     hrefStrings: byteReport(hrefBytes),
     idStrings: byteReport(idBytes),
@@ -1167,7 +1354,11 @@ function cacheMemoryReport(options = {}) {
     geotiffSourceResolved,
     GEOTIFF_SOURCE_CACHE_MAX,
   );
-  const s1mGeotiffs = geotiffHandleCacheMemoryReport(s1mGeotiffCache, s1mGeotiffResolved, null);
+  const s1mGeotiffs = geotiffHandleCacheMemoryReport(
+    s1mGeotiffCache,
+    s1mGeotiffResolved,
+    null,
+  );
   const s1mTerrain = s1mTerrainCacheMemoryReport();
   const s1mDrapeImages = s1mDrapeImageCacheMemoryReport();
   const s1mDecodedCogTiles = s1mDecodedCogTileCacheMemoryReport();
@@ -1231,21 +1422,27 @@ function resetS1MDrapeMetrics() {
   renderS1MDrapeMetrics();
 }
 function fmtMs(value) {
-  return Number.isFinite(value) ? `${value.toFixed(value >= 100 ? 0 : 1)} ms` : "-";
+  return Number.isFinite(value)
+    ? `${value.toFixed(value >= 100 ? 0 : 1)} ms`
+    : "-";
 }
 function fmtPct(value, max) {
   return max ? `${Math.round((100 * value) / max)}%` : "-";
 }
 function renderS1MDrapeMetrics() {
   const el = document.getElementById("ter-metrics");
-  if (!el) return;
+  if (!el) {
+    return;
+  }
   const avgTileMs = s1mDrapeMetrics.tilesCompleted
     ? s1mDrapeMetrics.totalTileMs / s1mDrapeMetrics.tilesCompleted
     : null;
   const avgRefs = s1mDrapeMetrics.tilesStarted
     ? s1mDrapeMetrics.tileSourceRefs / s1mDrapeMetrics.tilesStarted
     : null;
-  const errorText = s1mDrapeMetrics.sourceError ? ` · source error: ${s1mDrapeMetrics.sourceError}` : "";
+  const errorText = s1mDrapeMetrics.sourceError
+    ? ` · source error: ${s1mDrapeMetrics.sourceError}`
+    : "";
   const bucketText = ` · analytic refs ${s1mDrapeMetrics.analyticRefs}`;
   const sourceStats = s1mDrapeSourceCacheStats();
   const sourceQueryText = ` · source bboxes ${sourceStats.ready}/${s1mDrapeSourceCache.size} ready (${sourceStats.pending} pending, ${sourceStats.failed} failed)`;
@@ -1255,11 +1452,21 @@ function renderS1MDrapeMetrics() {
     ` · COG ${s1mCogTileCache.size} tiles (${(s1mCogTileCacheByteTotal / (1024 * 1024)).toFixed(0)}/${S1M_COG_TILE_CACHE_MAX_BYTES / (1024 * 1024)} MB)` +
     ` · TIFF ${geotiffSourceCache.size}/${GEOTIFF_SOURCE_CACHE_MAX} (${fmtPct(geotiffSourceCache.size, GEOTIFF_SOURCE_CACHE_MAX)})` +
     ` · evict d/c/t ${s1mBench.drapeEvict}/${s1mBench.cogEvict}/${s1mBench.tiffEvict}`;
-  const avgSignMs = s1mBench.tiffSignN ? s1mBench.tiffSignMs / s1mBench.tiffSignN : null;
-  const avgResolveMs = s1mBench.tiffResolveN ? s1mBench.tiffResolveMs / s1mBench.tiffResolveN : null;
-  const avgCogFetchMs = s1mBench.cogFetchN ? s1mBench.cogFetchMs / s1mBench.cogFetchN : null;
-  const avgDecodeMs = s1mBench.decodeN ? s1mBench.decodeMs / s1mBench.decodeN : null;
-  const avgRasterMs = s1mBench.rasterN ? s1mBench.rasterMs / s1mBench.rasterN : null;
+  const avgSignMs = s1mBench.tiffSignN
+    ? s1mBench.tiffSignMs / s1mBench.tiffSignN
+    : null;
+  const avgResolveMs = s1mBench.tiffResolveN
+    ? s1mBench.tiffResolveMs / s1mBench.tiffResolveN
+    : null;
+  const avgCogFetchMs = s1mBench.cogFetchN
+    ? s1mBench.cogFetchMs / s1mBench.cogFetchN
+    : null;
+  const avgDecodeMs = s1mBench.decodeN
+    ? s1mBench.decodeMs / s1mBench.decodeN
+    : null;
+  const avgRasterMs = s1mBench.rasterN
+    ? s1mBench.rasterMs / s1mBench.rasterN
+    : null;
 
   const breakdownText =
     ` · avg sign ${fmtMs(avgSignMs)} (${s1mBench.tiffSignN} calls)` +
@@ -1268,7 +1475,9 @@ function renderS1MDrapeMetrics() {
     ` · avg decode ${fmtMs(avgDecodeMs)}` +
     ` · avg raster ${fmtMs(avgRasterMs)}`;
 
-  const hrefText = s1mDrapeMetrics.lastHref ? ` · last ${s1mDrapeMetrics.lastHref}` : "";
+  const hrefText = s1mDrapeMetrics.lastHref
+    ? ` · last ${s1mDrapeMetrics.lastHref}`
+    : "";
   el.textContent =
     `Drape ${s1mDrapeMetrics.mode} · source search ${fmtMs(s1mDrapeMetrics.sourceSearchMs)}` +
     ` · sources ${s1mDrapeMetrics.sourceCount}/${s1mDrapeMetrics.sourceRawCount}` +
@@ -1288,7 +1497,6 @@ function renderS1MDrapeMetrics() {
     errorText;
 }
 let imageryInitErrorMessage = null;
-let imageryInitAttempted = false;
 const SetAlpha1Module = {
   name: "set-alpha-1",
   inject: {
@@ -1337,25 +1545,27 @@ function getDisplayAdjustments() {
 }
 
 map.addControl(new maplibregl.NavigationControl(), "top-right");
-map.addControl({
-  onAdd() {
-    layerNumberControlEl = document.createElement("div");
-    layerNumberControlEl.className = "maplibregl-ctrl layer-number-control";
-    updateLayerNumberControl();
-    return layerNumberControlEl;
+map.addControl(
+  {
+    onAdd() {
+      layerNumberControlEl = document.createElement("div");
+      layerNumberControlEl.className = "maplibregl-ctrl layer-number-control";
+      updateLayerNumberControl();
+      return layerNumberControlEl;
+    },
+    onRemove() {
+      layerNumberControlEl?.remove();
+      layerNumberControlEl = null;
+    },
   },
-  onRemove() {
-    layerNumberControlEl?.remove();
-    layerNumberControlEl = null;
-  },
-}, "top-right");
+  "top-right",
+);
 
 function mapMetersPerPixel() {
   const center = map.getCenter();
   const zoom = map.getZoom();
   return (
-    (156543.03392804097 * Math.cos((center.lat * Math.PI) / 180)) /
-    2 ** zoom
+    (156543.03392804097 * Math.cos((center.lat * Math.PI) / 180)) / 2 ** zoom
   );
 }
 
@@ -1370,13 +1580,15 @@ function currentViewerTileLayerNumber() {
 function currentDominantCartoCanonicalZ() {
   const counts = new Map();
   for (const [, sourceCache] of getBasemapSourceCacheEntries()) {
-    const ids = typeof sourceCache.getRenderableIds === "function"
-      ? sourceCache.getRenderableIds()
-      : Object.keys(sourceCache._tiles || {});
+    const ids =
+      typeof sourceCache.getRenderableIds === "function"
+        ? sourceCache.getRenderableIds()
+        : Object.keys(sourceCache._tiles || {});
     for (const id of ids) {
-      const tile = typeof sourceCache.getTileByID === "function"
-        ? sourceCache.getTileByID(id)
-        : sourceCache._tiles?.[id];
+      const tile =
+        typeof sourceCache.getTileByID === "function"
+          ? sourceCache.getTileByID(id)
+          : sourceCache._tiles?.[id];
       const canonicalZ = tile?.tileID?.canonical?.z;
       if (!Number.isFinite(canonicalZ)) {
         continue;
@@ -1407,8 +1619,6 @@ function updateLayerNumberControl() {
   `;
 }
 
-
-
 /**
  * Check whether the current viewport is fully covered by the bounding
  * box union of the given STAC features.  Uses the envelope (bounding box
@@ -1417,12 +1627,18 @@ function updateLayerNumberControl() {
  * feature's extent, so a new search would not add coverage.
  */
 function footprintsCoverViewport(features) {
-  if (!lastSearchBbox || !features || features.length === 0) return false;
+  if (!lastSearchBbox || !features || features.length === 0) {
+    return false;
+  }
   const viewBbox = currentBbox(); // [west, south, east, north]
 
   // The current viewport must be fully contained within the bounding box of the last successful search
-  return lastSearchBbox[0] <= viewBbox[0] && lastSearchBbox[1] <= viewBbox[1] &&
-         lastSearchBbox[2] >= viewBbox[2] && lastSearchBbox[3] >= viewBbox[3];
+  return (
+    lastSearchBbox[0] <= viewBbox[0] &&
+    lastSearchBbox[1] <= viewBbox[1] &&
+    lastSearchBbox[2] >= viewBbox[2] &&
+    lastSearchBbox[3] >= viewBbox[3]
+  );
 }
 
 // An aborted in-flight tile fetch (pan/zoom cancels deck.gl requests) is
@@ -1444,7 +1660,9 @@ async function resolveGeotiffSource(source, opts = {}) {
   // tiles deck.gl actually loads get presigned. Cache the decoded GeoTIFF
   // by the stable s3:// key (not the signed URL, which rotates).
   const s3href = source?.assets?.image?.href;
-  if (!s3href) return null;
+  if (!s3href) {
+    return null;
+  }
   // Cache the in-flight promise, not just the resolved value: when many
   // drape sub-tiles hit a cold source in the same paint, they share one
   // sign + one header (IFD) read instead of each issuing its own (those
@@ -1472,21 +1690,23 @@ async function resolveGeotiffSource(source, opts = {}) {
       s1mBench.tiffResolveN += 1;
 
       return geotiff;
-    })().then((geotiff) => {
-      if (geotiffSourceCache.get(s3href) === pending) {
-        geotiffSourceResolved.set(s3href, geotiff);
-      }
-      return geotiff;
-    }).catch((error) => {
-      deleteGeotiffSourceCacheEntry(s3href);   // never cache a failed resolve
-      // A 403/expired signed URL: drop the cached signature so the next
-      // resolve re-signs from scratch.
-      if (isExpiredSignatureError(error)) {
-        signedUrlCache.delete(s3href);
-      }
-      console.error("Failed to resolve GeoTIFF source:", source.id, error);
-      throw error;
-    });
+    })()
+      .then((geotiff) => {
+        if (geotiffSourceCache.get(s3href) === pending) {
+          geotiffSourceResolved.set(s3href, geotiff);
+        }
+        return geotiff;
+      })
+      .catch((error) => {
+        deleteGeotiffSourceCacheEntry(s3href); // never cache a failed resolve
+        // A 403/expired signed URL: drop the cached signature so the next
+        // resolve re-signs from scratch.
+        if (isExpiredSignatureError(error)) {
+          signedUrlCache.delete(s3href);
+        }
+        console.error("Failed to resolve GeoTIFF source:", source.id, error);
+        throw error;
+      });
     geotiffSourceCache.set(s3href, pending);
     while (geotiffSourceCache.size > GEOTIFF_SOURCE_CACHE_MAX) {
       deleteGeotiffSourceCacheEntry(geotiffSourceCache.keys().next().value);
@@ -1525,8 +1745,18 @@ function supportsNormalized16BitTextures() {
   return normalized16BitTexturesSupported;
 }
 
-function buildCogSourceLayer({ source, data, signal, id, extent, clipBounds = null, revision = null }) {
-  if (!source || !data) return null;
+function buildCogSourceLayer({
+  source,
+  data,
+  signal,
+  id,
+  extent,
+  clipBounds = null,
+  revision = null,
+}) {
+  if (!source || !data) {
+    return null;
+  }
 
   const activeSignal = signal && !signal.aborted ? signal : undefined;
 
@@ -1591,7 +1821,9 @@ function buildCogSourceLayer({ source, data, signal, id, extent, clipBounds = nu
         const displayData = new Uint8Array(textureData.length);
         for (let i = 0; i < textureData.length; i++) {
           const normalized = (textureData[i] - domainMin) / range;
-          displayData[i] = Math.round(Math.max(0, Math.min(1, normalized)) * 255);
+          displayData[i] = Math.round(
+            Math.max(0, Math.min(1, normalized)) * 255,
+          );
         }
         textureData = displayData;
         format = "rgba8unorm";
@@ -1611,12 +1843,18 @@ function buildCogSourceLayer({ source, data, signal, id, extent, clipBounds = nu
     },
     renderTile: (tileData) => {
       const pipeline = [
-        { module: CreateTextureModule, props: { textureName: tileData.texture } },
+        {
+          module: CreateTextureModule,
+          props: { textureName: tileData.texture },
+        },
         { module: SetAlpha1Module },
       ];
       // Clip rendering to the TMS tile bounds via GPU fragment discard
       if (cutlineBboxCommon) {
-        pipeline.push({ module: CutlineBboxModule, props: { bbox: cutlineBboxCommon } });
+        pipeline.push({
+          module: CutlineBboxModule,
+          props: { bbox: cutlineBboxCommon },
+        });
       }
       pipeline.push({
         module: DisplayAdjustmentsModule,
@@ -1637,15 +1875,15 @@ function buildCogSourceLayer({ source, data, signal, id, extent, clipBounds = nu
 // mesh (GPU TerrainMeshLayer, or CPU SimpleMeshLayer) anchored at the tile
 // centre (METER_OFFSETS) so tiles abut. Drawn as 3D terrain, never imagery.
 let SimpleMeshLayerClass = null;
-let TerrainMeshLayerClass = null;   // package GPU-displacement terrain (option B)
+let TerrainMeshLayerClass = null; // package GPU-displacement terrain (option B)
 let PathLayerClass = null;
 let s1mActiveTiles = new Map();
 let S1M_COORD = null;
 let s1mDrapeConcurrencyLimiter = null;
-let s1mActive = false;              // terrain mode on (refreshes on pan/zoom)
-let s1mLayers = [];                 // tile layers currently pushed to deck
-const s1mTileCache = new Map();     // `${dataset}@${size}` -> {data, elevations, gpuMesh, layer}
-const s1mDrapeCache = new Map();    // drape key -> Promise<ImageData>
+let s1mActive = false; // terrain mode on (refreshes on pan/zoom)
+let s1mLayers = []; // tile layers currently pushed to deck
+const s1mTileCache = new Map(); // `${dataset}@${size}` -> {data, elevations, gpuMesh, layer}
+const s1mDrapeCache = new Map(); // drape key -> Promise<ImageData>
 const s1mDrapeCacheBytes = new Map(); // drape key -> resolved ImageData.data.byteLength
 const s1mDrapedSubdivByDataset = new Map(); // dataset -> finest subdiv actually draped; the drape resolution only ratchets up (zoom-out keeps the finer drape, never re-drapes coarser)
 window.__s1mDrapeRatchet = s1mDrapedSubdivByDataset; // debug handle (like window.__map) for scripted checks
@@ -1656,15 +1894,14 @@ let s1mFootprintPendingKey = "";
 let s1mFootprintSeq = 0;
 const NAIP_COVERAGE_MVT_MIN_Z = 3;
 const NAIP_COVERAGE_MVT_MAX_SOURCE_Z = 15;
-const NAIP_COVERAGE_MVT_MAX_RENDER_Z = 24;
+const _NAIP_COVERAGE_MVT_MAX_RENDER_Z = 24;
 const NAIP_COVERAGE_MVT_SOURCE_ID = "naip-coverage-mvt";
 const NAIP_COVERAGE_MVT_LAYER_ID = "naip-coverage-mvt-footprints";
 const NAIP_COVERAGE_MVT_LINE_LAYER_ID = "naip-coverage-mvt-footprint-lines";
 const NAIP_COVERAGE_MVT_VERSION = "footprints-v2";
 const NAIP_COVERAGE_FOOTPRINT_RGBA = [251, 146, 60]; // matches the old search-result outline orange
 const SEARCH_RESULT_FOOTPRINT_COLOR = "#22c55e";
-let naipCoverageMvtKey = "";
-const S1M_MAX_TILES = 96;           // enough to cover wide/pitched views; LOD keeps edge tiles cheap
+const S1M_MAX_TILES = 96; // enough to cover wide/pitched views; LOD keeps edge tiles cheap
 // Collections whose source COGs are small (~1-2 km) relative to a ~12 km
 // S1M tile. One drape sub-tile can span dozens of them, so they need finer
 // sub-tiling (s1mSubdiv) AND a higher per-sub-tile source cap; otherwise a
@@ -1679,7 +1916,7 @@ function s1mMaxDrapeSourcesPerTile() {
   return isSmallCogCollection() ? 48 : 12;
 }
 const S1M_SUBTILE_DRAPE_SIZE = 384; // per imagery drape sub-tile; effective res = subdiv × this
-const S1M_SUBDIV_MAX_HI = 32;       // ceiling when few S1M tiles fill the view (very zoomed in): sub-tile ~12km/32 ~= 375m -> 384px tex ~= 1 m/px (vs ~5 m/px at subdiv 6)
+const S1M_SUBDIV_MAX_HI = 32; // ceiling when few S1M tiles fill the view (very zoomed in): sub-tile ~12km/32 ~= 375m -> 384px tex ~= 1 m/px (vs ~5 m/px at subdiv 6)
 // Per-tile N×N drape sub-tiling cap, RESPONSIVE to how many S1M tiles fill the
 // viewport. Zoomed in, few tiles -> spare texture budget, so allow finer
 // sub-tiling (each sub-tile reads a finer COG overview -> sharper imagery)
@@ -1690,12 +1927,18 @@ const S1M_SUBDIV_MAX_HI = 32;       // ceiling when few S1M tiles fill the view 
 // s1mBuildTileLayers) so a deep zoom-in can't leave runaway fine subdivision.
 function s1mSubdivMax() {
   const t = s1mActiveTiles.size || 1;
-  if (t <= 2) return S1M_SUBDIV_MAX_HI;
-  if (t <= 6) return 16;
-  if (t <= 16) return 8;
+  if (t <= 2) {
+    return S1M_SUBDIV_MAX_HI;
+  }
+  if (t <= 6) {
+    return 16;
+  }
+  if (t <= 16) {
+    return 8;
+  }
   return 6;
 }
-const S1M_DRAPE_CACHE_MAX = 96;     // 384px RGBA ImageData ~= 0.56 MB each (~54 MB); roomy enough that finer small-COG sub-tiling (NJ/KY, subdiv>=2) doesn't thrash on pan
+const S1M_DRAPE_CACHE_MAX = 96; // 384px RGBA ImageData ~= 0.56 MB each (~54 MB); roomy enough that finer small-COG sub-tiling (NJ/KY, subdiv>=2) doesn't thrash on pan
 // NJ/KY imagery is many small COGs (~1.5 km) vs a ~12 km S1M DEM tile, so at
 // low zoom one tile would need dozens of COGs to drape -- slow and gap-prone.
 // Defer the imagery drape for small-COG collections until this zoom; below it
@@ -1706,22 +1949,31 @@ const S1M_SMALL_COG_DRAPE_MIN_ZOOM = 13;
 // now": the surface control must be "imagery", and small-COG collections also
 // require zoom >= the threshold. Used at every drape-decision point.
 function drapeImageryActive() {
-  if (document.getElementById("ter-surface")?.value !== "imagery") return false;
-  if (isSmallCogCollection() && (map.getZoom() || 0) < S1M_SMALL_COG_DRAPE_MIN_ZOOM) return false;
+  if (document.getElementById("ter-surface")?.value !== "imagery") {
+    return false;
+  }
+  if (
+    isSmallCogCollection() &&
+    (map.getZoom() || 0) < S1M_SMALL_COG_DRAPE_MIN_ZOOM
+  ) {
+    return false;
+  }
   return true;
 }
 const S1M_DRAPE_SOURCE_CACHE_MAX = 192; // one small /search result per rendered S1M bbox
-const s1mTerrainPending = new Map();  // tile key -> {seq, dataset, size, startedAt}
+const s1mTerrainPending = new Map(); // tile key -> {seq, dataset, size, startedAt}
 const s1mTerrainFailures = new Map(); // tile key -> {seq, dataset, size, message, at}
 let s1mMoveHandler = null;
-let s1mRefreshSeq = 0;              // guards against stale async refreshes
+let s1mRefreshSeq = 0; // guards against stale async refreshes
 let buildingFootprintSeq = 0;
 let buildingFootprintKey = "";
-let buildingFeatureData = null;     // raw lon/lat FC from the API, pre terrain-seating
-const BUILDING_MAX_FEATURES = 12000;  // viewport-scoped, so this is only a safety cap
+let buildingFeatureData = null; // raw lon/lat FC from the API, pre terrain-seating
+const BUILDING_MAX_FEATURES = 12000; // viewport-scoped, so this is only a safety cap
 
 function deleteS1MDrapeCacheEntry(key) {
-  if (!key) return;
+  if (!key) {
+    return;
+  }
   s1mDrapeCache.delete(key);
   s1mDrapeCacheBytes.delete(key);
 }
@@ -1748,9 +2000,11 @@ function moveMapLibreVectorLayersToTop() {
 
 function s1mCachedForDesired(key, tile) {
   const exact = s1mTileCache.get(key);
-  if (exact) return { cacheKey: key, cache: exact, exact: true };
+  if (exact) {
+    return { cacheKey: key, cache: exact, exact: true };
+  }
   for (const cacheKey of s1mTileCache.keys()) {
-    if (cacheKey.startsWith(tile.dataset + "@")) {
+    if (cacheKey.startsWith(`${tile.dataset}@`)) {
       return { cacheKey, cache: s1mTileCache.get(cacheKey), exact: false };
     }
   }
@@ -1761,8 +2015,14 @@ function s1mFillReport() {
   const now = performance.now();
   const notFilled = [];
   const staleLod = [];
-  let exactCached = 0, fallbackCached = 0, missing = 0;
-  let drapeTotal = 0, drapeTextured = 0, drapePending = 0, drapeRefreshing = 0, drapeFailed = 0;
+  let exactCached = 0,
+    fallbackCached = 0,
+    missing = 0;
+  let drapeTotal = 0,
+    drapeTextured = 0,
+    drapePending = 0,
+    drapeRefreshing = 0,
+    drapeFailed = 0;
   const drapePendingSamples = [];
   const drapeRefreshingSamples = [];
   const drapeFailedSamples = [];
@@ -1791,13 +2051,17 @@ function s1mFillReport() {
           if (sub.drapePending && sub.drapePending !== sub.drapeKey) {
             drapeRefreshing += 1;
             if (drapeRefreshingSamples.length < 12) {
-              drapeRefreshingSamples.push(`${tile.dataset}@sub${sub.N}:${sub.ix},${sub.iy}`);
+              drapeRefreshingSamples.push(
+                `${tile.dataset}@sub${sub.N}:${sub.ix},${sub.iy}`,
+              );
             }
           }
         } else if (sub.drapePending) {
           drapePending += 1;
           if (drapePendingSamples.length < 12) {
-            drapePendingSamples.push(`${tile.dataset}@sub${sub.N}:${sub.ix},${sub.iy}`);
+            drapePendingSamples.push(
+              `${tile.dataset}@sub${sub.N}:${sub.ix},${sub.iy}`,
+            );
           }
         } else if (sub.drapeError) {
           drapeFailed += 1;
@@ -1815,7 +2079,9 @@ function s1mFillReport() {
   return {
     active: s1mActive,
     refreshSeq: s1mRefreshSeq,
-    refreshAgeMs: s1mFillMetrics.refreshStartedAt ? +(now - s1mFillMetrics.refreshStartedAt).toFixed(0) : null,
+    refreshAgeMs: s1mFillMetrics.refreshStartedAt
+      ? +(now - s1mFillMetrics.refreshStartedAt).toFixed(0)
+      : null,
     desired: s1mActiveTiles.size,
     terrain: {
       exactCached,
@@ -1866,63 +2132,73 @@ function updateImageryLayers() {
     // tile-layer resets on pan-only updateImageryLayers calls).
     const imagerySources = getImagerySources();
     if (imagerySources.length > 0) {
-      layers.push(new MosaicLayerClass({
-        id: "naip-imagery",
-        sources: imagerySources,
-        revision: imageryRevision,
-        // Keep the default per-origin concurrency limiter (6 requests).
-        // It's what queues the COG range fetches so MosaicLayer's
-        // getPriority (distance to viewport center) can pull central
-        // tiles ahead of edge tiles -- i.e. fill from the middle out.
-        // An unbounded limit (the old maxRequests: 9999) fired every
-        // fetch at once, so they painted in random network-completion
-        // order. forwarded below via resolveGeotiffSource.
-        // Keep all rendered COGs cached so panning back is instant and
-        // new searches only trigger rendering for new sources. Sized at
-        // 2x the default search limit: comfortable headroom so a typical
-        // result set (plus a pan or an overlapping re-search) never evicts
-        // an on-screen tile. A custom limit above this (up to the server's
-        // 10000 cap) can still exceed it and evict the least-recently-used,
-        // off-center tiles -- intentional, so memory stays bounded.
-        maxCacheSize: SEARCH_LIMIT_DEFAULT * 2,
-        getSource: (source, opts) => resolveGeotiffSource(source, opts),
-        onSourceError: (source, { error }) => {
-          if (isAbortLikeError(error)) {
-            return;
-          }
-          // A lazily-signed URL can lapse if a tile sits cached past its
-          // expiry and deck.gl issues a fresh Range request. Evict the
-          // stale signature + decoded source and re-resolve once so the
-          // next pass re-signs; the guard set avoids a retry loop.
-          const s3href = source?.assets?.image?.href;
-          if (s3href && isExpiredSignatureError(error) && !resignAttempted.has(s3href)) {
-            resignAttempted.add(s3href);
-            signedUrlCache.delete(s3href);
-            deleteGeotiffSourceCacheEntry(s3href);
-            imageryRevision += 1;
-            updateImageryLayers();
-            return;
-          }
-          console.error("Imagery source error", source?.id, error);
-          imageryStatusEl.textContent = `Imagery source error for ${source?.id ?? "unknown"}: ${error?.message ?? error}`;
-          imageryStatusEl.className = "small status-warn";
-        },
-        renderSource: (source, { data, signal }) => {
-          if (!source) return null;
-          return buildCogSourceLayer({
-            source,
-            data,
-            signal,
-            id: `cog-${source.id}`,
-            extent: undefined,
-            revision: imageryRevision,
-          });
-        },
-      }));
+      layers.push(
+        new MosaicLayerClass({
+          id: "naip-imagery",
+          sources: imagerySources,
+          revision: imageryRevision,
+          // Keep the default per-origin concurrency limiter (6 requests).
+          // It's what queues the COG range fetches so MosaicLayer's
+          // getPriority (distance to viewport center) can pull central
+          // tiles ahead of edge tiles -- i.e. fill from the middle out.
+          // An unbounded limit (the old maxRequests: 9999) fired every
+          // fetch at once, so they painted in random network-completion
+          // order. forwarded below via resolveGeotiffSource.
+          // Keep all rendered COGs cached so panning back is instant and
+          // new searches only trigger rendering for new sources. Sized at
+          // 2x the default search limit: comfortable headroom so a typical
+          // result set (plus a pan or an overlapping re-search) never evicts
+          // an on-screen tile. A custom limit above this (up to the server's
+          // 10000 cap) can still exceed it and evict the least-recently-used,
+          // off-center tiles -- intentional, so memory stays bounded.
+          maxCacheSize: SEARCH_LIMIT_DEFAULT * 2,
+          getSource: (source, opts) => resolveGeotiffSource(source, opts),
+          onSourceError: (source, { error }) => {
+            if (isAbortLikeError(error)) {
+              return;
+            }
+            // A lazily-signed URL can lapse if a tile sits cached past its
+            // expiry and deck.gl issues a fresh Range request. Evict the
+            // stale signature + decoded source and re-resolve once so the
+            // next pass re-signs; the guard set avoids a retry loop.
+            const s3href = source?.assets?.image?.href;
+            if (
+              s3href &&
+              isExpiredSignatureError(error) &&
+              !resignAttempted.has(s3href)
+            ) {
+              resignAttempted.add(s3href);
+              signedUrlCache.delete(s3href);
+              deleteGeotiffSourceCacheEntry(s3href);
+              imageryRevision += 1;
+              updateImageryLayers();
+              return;
+            }
+            console.error("Imagery source error", source?.id, error);
+            imageryStatusEl.textContent = `Imagery source error for ${source?.id ?? "unknown"}: ${error?.message ?? error}`;
+            imageryStatusEl.className = "small status-warn";
+          },
+          renderSource: (source, { data, signal }) => {
+            if (!source) {
+              return null;
+            }
+            return buildCogSourceLayer({
+              source,
+              data,
+              signal,
+              id: `cog-${source.id}`,
+              extent: undefined,
+              revision: imageryRevision,
+            });
+          },
+        }),
+      );
     }
   }
 
-  for (const l of s1mLayers) layers.push(l);
+  for (const l of s1mLayers) {
+    layers.push(l);
+  }
 
   if (
     toggleS1MFootprintsLayerEl?.checked &&
@@ -1932,44 +2208,46 @@ function updateImageryLayers() {
   ) {
     const paths = s1mFootprintTiles.flatMap((tile) => s1mFootprintPaths(tile));
     if (paths.length > 0) {
-      layers.push(new PathLayerClass({
-        id: "s1m-footprints-layer",
-        data: paths,
-        getPath: (path) => path,
-        getColor: [14, 165, 233, 120],
-        getWidth: 2,
-        widthMinPixels: 1,
+      layers.push(
+        new PathLayerClass({
+          id: "s1m-footprints-layer",
+          data: paths,
+          getPath: (path) => path,
+          getColor: [14, 165, 233, 120],
+          getWidth: 2,
+          widthMinPixels: 1,
+          parameters: {
+            depthWriteEnabled: false,
+            depthCompare: "always",
+          },
+          pickable: false,
+        }),
+      );
+    }
+  }
+
+  if (toggleNaipCoverageMvtLayerEl?.checked && MVTLayerClass) {
+    layers.push(
+      new MVTLayerClass({
+        id: "naip-coverage-mvt-deck",
+        data: naipCoverageMvtUrl(),
+        minZoom: NAIP_COVERAGE_MVT_MIN_Z,
+        maxZoom: NAIP_COVERAGE_MVT_MAX_SOURCE_Z,
+        maxCacheSize: 64,
+        filled: true,
+        stroked: true,
+        getFillColor: [...NAIP_COVERAGE_FOOTPRINT_RGBA, 0],
+        getLineColor: [...NAIP_COVERAGE_FOOTPRINT_RGBA, 128],
+        getLineWidth: 1,
+        lineWidthUnits: "pixels",
+        lineWidthMinPixels: 1,
+        pickable: false,
         parameters: {
           depthWriteEnabled: false,
           depthCompare: "always",
         },
-        pickable: false,
-      }));
-    }
-  }
-
-
-
-  if (toggleNaipCoverageMvtLayerEl?.checked && MVTLayerClass) {
-    layers.push(new MVTLayerClass({
-      id: "naip-coverage-mvt-deck",
-      data: naipCoverageMvtUrl(),
-      minZoom: NAIP_COVERAGE_MVT_MIN_Z,
-      maxZoom: NAIP_COVERAGE_MVT_MAX_SOURCE_Z,
-      maxCacheSize: 64,
-      filled: true,
-      stroked: true,
-      getFillColor: [...NAIP_COVERAGE_FOOTPRINT_RGBA, 0],
-      getLineColor: [...NAIP_COVERAGE_FOOTPRINT_RGBA, 128],
-      getLineWidth: 1,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 1,
-      pickable: false,
-      parameters: {
-        depthWriteEnabled: false,
-        depthCompare: "always",
-      },
-    }));
+      }),
+    );
   }
 
   deckOverlay.setProps({ layers });
@@ -1979,7 +2257,9 @@ function updateImageryLayers() {
 function s1mB64ToFloat32(b64) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
   return new Float32Array(bytes.buffer);
 }
 
@@ -1990,10 +2270,10 @@ function s1mB64ToFloat32(b64) {
 // read_terrain() from app/api/s1m.py: pick the overview nearest above the
 // target size, resample to size x size, and return the same payload shape
 // the pipeline already consumes (the decoded Float32 grid as `elev`).
-const S1M_EPSG = 6350;                 // NAD83(2011) CONUS Albers
+const S1M_EPSG = 6350; // NAD83(2011) CONUS Albers
 const S1M_CLIENT_NODATA = -999999.0;
-const s1mGeotiffCache = new Map();     // s3 href -> Promise<geotiff>
-const s1mGeotiffResolved = new Map();  // s3 href -> resolved geotiff
+const s1mGeotiffCache = new Map(); // s3 href -> Promise<geotiff>
+const s1mGeotiffResolved = new Map(); // s3 href -> resolved geotiff
 let _s1mAlbersToWgs = null;
 
 function deleteS1MGeotiffCacheEntry(href) {
@@ -2009,28 +2289,30 @@ function s1mCogHttpUrl(href) {
 function resolveS1MGeotiff(href) {
   let pending = s1mGeotiffCache.get(href);
   if (!pending) {
-    pending = window.GeoTIFFCoreClass
-      .fromUrl(s1mCogHttpUrl(href), {
-        concurrencyLimiter: s1mDrapeConcurrencyLimiter,
-        // Cache overview tile-data reads in Cache Storage so they survive
-        // reloads/revisits (header/IFD reads keep their own small path).
-        // 256 KiB chunks: big enough to coalesce the file-contiguous
-        // overview tiles, small enough to avoid the cold over-fetch a
-        // 1 MiB chunk causes for S1M's small overview tiles.
-        chunkCache: {
-          cacheKey: href,
-          chunkSize: 256 * 1024,
-          cacheName: "s1m-dem-cog-chunks-v1",
-          memoryMaxBytes: 16 * 1024 * 1024,
-        },
-      })
+    pending = window.GeoTIFFCoreClass.fromUrl(s1mCogHttpUrl(href), {
+      concurrencyLimiter: s1mDrapeConcurrencyLimiter,
+      // Cache overview tile-data reads in Cache Storage so they survive
+      // reloads/revisits (header/IFD reads keep their own small path).
+      // 256 KiB chunks: big enough to coalesce the file-contiguous
+      // overview tiles, small enough to avoid the cold over-fetch a
+      // 1 MiB chunk causes for S1M's small overview tiles.
+      chunkCache: {
+        cacheKey: href,
+        chunkSize: 256 * 1024,
+        cacheName: "s1m-dem-cog-chunks-v1",
+        memoryMaxBytes: 16 * 1024 * 1024,
+      },
+    })
       .then((geotiff) => {
         if (s1mGeotiffCache.get(href) === pending) {
           s1mGeotiffResolved.set(href, geotiff);
         }
         return geotiff;
       })
-      .catch((error) => { deleteS1MGeotiffCacheEntry(href); throw error; });
+      .catch((error) => {
+        deleteS1MGeotiffCacheEntry(href);
+        throw error;
+      });
     s1mGeotiffCache.set(href, pending);
   }
   return pending;
@@ -2040,7 +2322,7 @@ async function s1mAlbersToWgs() {
   if (!_s1mAlbersToWgs) {
     const def = await epsgResolver(S1M_EPSG);
     const conv = proj4(def, "EPSG:4326");
-    _s1mAlbersToWgs = (x, y) => conv.forward([x, y]);   // Albers -> [lon, lat]
+    _s1mAlbersToWgs = (x, y) => conv.forward([x, y]); // Albers -> [lon, lat]
   }
   return _s1mAlbersToWgs;
 }
@@ -2050,38 +2332,53 @@ async function s1mAlbersToWgs() {
 // pyproj Geod.inv the server uses to turn an Albers metre step into true
 // ground metres so adjacent tiles abut.
 function s1mGroundDist(lon1, lat1, lon2, lat2) {
-  const a = 6378137.0, f = 1 / 298.257222101, e2 = f * (2 - f);
+  const a = 6378137.0,
+    f = 1 / 298.257222101,
+    e2 = f * (2 - f);
   const phi = (lat1 * Math.PI) / 180;
-  const s = Math.sin(phi), denom = 1 - e2 * s * s;
-  const M = (a * (1 - e2)) / Math.pow(denom, 1.5);
+  const s = Math.sin(phi),
+    denom = 1 - e2 * s * s;
+  const M = (a * (1 - e2)) / denom ** 1.5;
   const N = a / Math.sqrt(denom);
-  const dN = ((lat2 - lat1) * Math.PI / 180) * M;
-  const dE = ((lon2 - lon1) * Math.PI / 180) * N * Math.cos(phi);
+  const dN = (((lat2 - lat1) * Math.PI) / 180) * M;
+  const dE = (((lon2 - lon1) * Math.PI) / 180) * N * Math.cos(phi);
   return Math.hypot(dN, dE);
 }
 
 // Read one COG overview fully into a row-major NW-origin Float32 grid.
 async function s1mReadLevelFull(level) {
-  const W = level.width, H = level.height;
+  const W = level.width,
+    H = level.height;
   const out = new Float32Array(W * H);
-  const tw = level.tileWidth, th = level.tileHeight;
+  const tw = level.tileWidth,
+    th = level.tileHeight;
   const tasks = [];
   for (let ty = 0; ty < level.tileCount.y; ty++) {
     for (let tx = 0; tx < level.tileCount.x; tx++) {
-      tasks.push(level.fetchTile(tx, ty, { boundless: false }).then((td) => {
-        const arr = td.array;
-        const band = arr.bands ? arr.bands[0] : arr.data;
-        const sw = arr.width, sh = arr.height;
-        const ox = tx * tw, oy = ty * th;
-        for (let r = 0; r < sh; r++) {
-          const gy = oy + r; if (gy >= H) break;
-          const srow = r * sw, drow = gy * W + ox;
-          for (let c = 0; c < sw; c++) {
-            if (ox + c >= W) break;
-            out[drow + c] = band[srow + c];
+      tasks.push(
+        level.fetchTile(tx, ty, { boundless: false }).then((td) => {
+          const arr = td.array;
+          const band = arr.bands ? arr.bands[0] : arr.data;
+          const sw = arr.width,
+            sh = arr.height;
+          const ox = tx * tw,
+            oy = ty * th;
+          for (let r = 0; r < sh; r++) {
+            const gy = oy + r;
+            if (gy >= H) {
+              break;
+            }
+            const srow = r * sw,
+              drow = gy * W + ox;
+            for (let c = 0; c < sw; c++) {
+              if (ox + c >= W) {
+                break;
+              }
+              out[drow + c] = band[srow + c];
+            }
           }
-        }
-      }));
+        }),
+      );
     }
   }
   await Promise.all(tasks);
@@ -2096,20 +2393,41 @@ function s1mResampleGrid(src, sw, sh, dw, dh, nd) {
   const ok = (v) => v > -9000 && Number.isFinite(v) && v !== nd;
   for (let y = 0; y < dh; y++) {
     const fy = dh > 1 ? (y * (sh - 1)) / (dh - 1) : 0;
-    const y0 = Math.floor(fy), y1 = Math.min(sh - 1, y0 + 1), wy = fy - y0;
+    const y0 = Math.floor(fy),
+      y1 = Math.min(sh - 1, y0 + 1),
+      wy = fy - y0;
     for (let x = 0; x < dw; x++) {
       const fx = dw > 1 ? (x * (sw - 1)) / (dw - 1) : 0;
-      const x0 = Math.floor(fx), x1 = Math.min(sw - 1, x0 + 1), wx = fx - x0;
-      const v00 = src[y0 * sw + x0], v01 = src[y0 * sw + x1];
-      const v10 = src[y1 * sw + x0], v11 = src[y1 * sw + x1];
+      const x0 = Math.floor(fx),
+        x1 = Math.min(sw - 1, x0 + 1),
+        wx = fx - x0;
+      const v00 = src[y0 * sw + x0],
+        v01 = src[y0 * sw + x1];
+      const v10 = src[y1 * sw + x0],
+        v11 = src[y1 * sw + x1];
       if (ok(v00) && ok(v01) && ok(v10) && ok(v11)) {
         const top = v00 * (1 - wx) + v01 * wx;
         const bot = v10 * (1 - wx) + v11 * wx;
         out[y * dw + x] = top * (1 - wy) + bot * wy;
       } else {
-        let sum = 0, n = 0;
-        if (ok(v00)) { sum += v00; n++; } if (ok(v01)) { sum += v01; n++; }
-        if (ok(v10)) { sum += v10; n++; } if (ok(v11)) { sum += v11; n++; }
+        let sum = 0,
+          n = 0;
+        if (ok(v00)) {
+          sum += v00;
+          n++;
+        }
+        if (ok(v01)) {
+          sum += v01;
+          n++;
+        }
+        if (ok(v10)) {
+          sum += v10;
+          n++;
+        }
+        if (ok(v11)) {
+          sum += v11;
+          n++;
+        }
         out[y * dw + x] = n ? sum / n : nd;
       }
     }
@@ -2126,18 +2444,26 @@ async function readS1MTerrainClient(href, size) {
   // Smallest overview at least `size` wide, so we downsample (never upsample).
   const sorted = levels.slice().sort((a, b) => a.width - b.width);
   let level = sorted[sorted.length - 1];
-  for (const lv of sorted) { if (lv.width >= size) { level = lv; break; } }
+  for (const lv of sorted) {
+    if (lv.width >= size) {
+      level = lv;
+      break;
+    }
+  }
 
   const { data: raw, width: rw, height: rh } = await s1mReadLevelFull(level);
   const ndRaw = g.cachedTags?.nodata;
-  const srcNd = ndRaw != null && ndRaw !== "" ? Number(ndRaw) : S1M_CLIENT_NODATA;
+  const srcNd =
+    ndRaw != null && ndRaw !== "" ? Number(ndRaw) : S1M_CLIENT_NODATA;
   const grid = s1mResampleGrid(raw, rw, rh, size, size, srcNd);
 
   // Full-tile Albers extent + centre from the base level's transform.
   const [ax0, ay0] = affine.apply(g.transform, 0, 0);
   const [ax1, ay1] = affine.apply(g.transform, g.width, g.height);
-  const extEast = Math.abs(ax1 - ax0), extNorth = Math.abs(ay1 - ay0);
-  const cxA = (ax0 + ax1) / 2, cyA = (ay0 + ay1) / 2;
+  const extEast = Math.abs(ax1 - ax0),
+    extNorth = Math.abs(ay1 - ay0);
+  const cxA = (ax0 + ax1) / 2,
+    cyA = (ay0 + ay1) / 2;
 
   const to4326 = await s1mAlbersToWgs();
   const [clon, clat] = to4326(cxA, cyA);
@@ -2149,22 +2475,30 @@ async function readS1MTerrainClient(href, size) {
   const dyA = extNorth / Math.max(size - 1, 1);
 
   // Normalise voids to the viewer sentinel and collect the valid range.
-  let zmin = Infinity, zmax = -Infinity;
+  let zmin = Infinity,
+    zmax = -Infinity;
   for (let i = 0; i < grid.length; i++) {
     const v = grid[i];
     if (v > -9000 && Number.isFinite(v) && v !== srcNd) {
-      if (v < zmin) zmin = v;
-      if (v > zmax) zmax = v;
+      if (v < zmin) {
+        zmin = v;
+      }
+      if (v > zmax) {
+        zmax = v;
+      }
     } else {
       grid[i] = S1M_CLIENT_NODATA;
     }
   }
-  if (!Number.isFinite(zmin)) { zmin = 0; zmax = 0; }
+  if (!Number.isFinite(zmin)) {
+    zmin = 0;
+    zmax = 0;
+  }
 
   return {
     width: size,
     height: size,
-    step: [dxA * scaleEast, dyA * scaleNorth],   // true ground metres/cell (east, north)
+    step: [dxA * scaleEast, dyA * scaleNorth], // true ground metres/cell (east, north)
     center_lnglat: [clon, clat],
     nodata: S1M_CLIENT_NODATA,
     z_range: [zmin, zmax],
@@ -2177,12 +2511,16 @@ async function readS1MTerrainClient(href, size) {
 // Simple hypsometric ramp (low=green -> mid=tan -> high=white), t in [0,1].
 function s1mHypso(t) {
   const stops = [
-    [0.0, [60, 120, 60]], [0.4, [120, 150, 80]],
-    [0.7, [170, 140, 100]], [0.9, [190, 175, 160]], [1.0, [245, 245, 245]],
+    [0.0, [60, 120, 60]],
+    [0.4, [120, 150, 80]],
+    [0.7, [170, 140, 100]],
+    [0.9, [190, 175, 160]],
+    [1.0, [245, 245, 245]],
   ];
   for (let i = 1; i < stops.length; i++) {
     if (t <= stops[i][0]) {
-      const [t0, c0] = stops[i - 1], [t1, c1] = stops[i];
+      const [t0, c0] = stops[i - 1],
+        [t1, c1] = stops[i];
       const f = (t - t0) / Math.max(1e-6, t1 - t0);
       return [0, 1, 2].map((k) => Math.round(c0[k] + f * (c1[k] - c0[k])));
     }
@@ -2195,11 +2533,12 @@ function s1mHypso(t) {
 // x east, y north, z = (elevation - tileMin) * exaggeration. Nodata voids
 // are dropped (alpha 0) and any triangle touching one is skipped.
 function buildS1MTerrainLayer(data, exag, wireframe, range) {
-  const W = data.width, H = data.height;
-  const [sx, sy] = data.step;          // metres per cell (east, north)
+  const W = data.width,
+    H = data.height;
+  const [sx, sy] = data.step; // metres per cell (east, north)
   const elev = data.elev || s1mB64ToFloat32(data.elev_b64);
   const nd = data.nodata;
-  const [zmin, zmax] = range || data.z_range;   // shared view range, not per-tile
+  const [zmin, zmax] = range || data.z_range; // shared view range, not per-tile
   const zspan = Math.max(1e-6, zmax - zmin);
   const N = W * H;
   const positions = new Float32Array(N * 3);
@@ -2207,7 +2546,8 @@ function buildS1MTerrainLayer(data, exag, wireframe, range) {
   // Rotate the Albers grid offsets into true ENU so tiles abut (see
   // s1mConvergenceRad / the GPU mesh builder).
   const gconv = s1mConvergenceRad(data.center_lnglat[0]);
-  const cosG = Math.cos(gconv), sinG = Math.sin(gconv);
+  const cosG = Math.cos(gconv),
+    sinG = Math.sin(gconv);
 
   for (let r = 0; r < H; r++) {
     for (let c = 0; c < W; c++) {
@@ -2222,7 +2562,9 @@ function buildS1MTerrainLayer(data, exag, wireframe, range) {
       positions[i * 3 + 2] = (z - zmin) * exag;
       const t = isVoid ? 0 : (z - zmin) / zspan;
       const [cr, cg, cb] = s1mHypso(t);
-      colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb;
+      colors[i * 4] = cr;
+      colors[i * 4 + 1] = cg;
+      colors[i * 4 + 2] = cb;
       colors[i * 4 + 3] = isVoid ? 0 : 255;
     }
   }
@@ -2232,14 +2574,18 @@ function buildS1MTerrainLayer(data, exag, wireframe, range) {
   const zAt = (r, c) => positions[(r * W + c) * 3 + 2];
   for (let r = 0; r < H; r++) {
     for (let c = 0; c < W; c++) {
-      const l = zAt(r, Math.max(0, c - 1)), rt = zAt(r, Math.min(W - 1, c + 1));
-      const up = zAt(Math.max(0, r - 1), c), dn = zAt(Math.min(H - 1, r + 1), c);
+      const l = zAt(r, Math.max(0, c - 1)),
+        rt = zAt(r, Math.min(W - 1, c + 1));
+      const up = zAt(Math.max(0, r - 1), c),
+        dn = zAt(Math.min(H - 1, r + 1), c);
       const nx = -(rt - l) / (2 * sx);
-      const ny = (up - dn) / (2 * sy);   // up == smaller r == more north
+      const ny = (up - dn) / (2 * sy); // up == smaller r == more north
       const nz = 1.0;
       const inv = 1 / Math.hypot(nx, ny, nz);
       const i = (r * W + c) * 3;
-      normals[i] = nx * inv; normals[i + 1] = ny * inv; normals[i + 2] = nz * inv;
+      normals[i] = nx * inv;
+      normals[i + 1] = ny * inv;
+      normals[i + 2] = nz * inv;
     }
   }
 
@@ -2247,15 +2593,22 @@ function buildS1MTerrainLayer(data, exag, wireframe, range) {
   const idx = [];
   for (let r = 0; r < H - 1; r++) {
     for (let c = 0; c < W - 1; c++) {
-      const a = r * W + c, b = r * W + c + 1, d = (r + 1) * W + c, e = (r + 1) * W + c + 1;
-      if (ok(a) && ok(d) && ok(b)) idx.push(a, d, b);
-      if (ok(b) && ok(d) && ok(e)) idx.push(b, d, e);
+      const a = r * W + c,
+        b = r * W + c + 1,
+        d = (r + 1) * W + c,
+        e = (r + 1) * W + c + 1;
+      if (ok(a) && ok(d) && ok(b)) {
+        idx.push(a, d, b);
+      }
+      if (ok(b) && ok(d) && ok(e)) {
+        idx.push(b, d, e);
+      }
     }
   }
 
   const [clon, clat] = data.center_lnglat;
   return new SimpleMeshLayerClass({
-    id: "s1m-terrain-" + data.dataset,
+    id: `s1m-terrain-${data.dataset}`,
     data: [{ position: [0, 0, 0] }],
     coordinateSystem: S1M_COORD.METER_OFFSETS,
     coordinateOrigin: [clon, clat, 0],
@@ -2270,7 +2623,12 @@ function buildS1MTerrainLayer(data, exag, wireframe, range) {
       },
       indices: { value: new Uint32Array(idx), size: 1 },
     },
-    material: { ambient: 0.5, diffuse: 0.6, shininess: 16, specularColor: [40, 40, 40] },
+    material: {
+      ambient: 0.5,
+      diffuse: 0.6,
+      shininess: 16,
+      specularColor: [40, 40, 40],
+    },
     wireframe: !!wireframe,
     parameters: { cullMode: "none" },
     pickable: false,
@@ -2288,21 +2646,23 @@ function buildS1MTerrainLayer(data, exag, wireframe, range) {
 // Albers grid, so each mesh must be rotated by this angle (about its centre)
 // or north-up squares on a rotated grid leave a lattice of gaps.
 function s1mConvergenceRad(lon) {
-  return ((lon + 96) * 0.602835) * Math.PI / 180;
+  return ((lon + 96) * 0.602835 * Math.PI) / 180;
 }
 
 function s1mGpuMesh(W, H, sx, sy, lon) {
   const N = W * H;
-  const positions = new Float32Array(N * 3);   // z stays 0; displaced on GPU
+  const positions = new Float32Array(N * 3); // z stays 0; displaced on GPU
   const texCoords = new Float32Array(N * 2);
-  const g = s1mConvergenceRad(lon), cg = Math.cos(g), sg = Math.sin(g);
+  const g = s1mConvergenceRad(lon),
+    cg = Math.cos(g),
+    sg = Math.sin(g);
   for (let r = 0; r < H; r++) {
     for (let c = 0; c < W; c++) {
       const i = r * W + c;
-      const ex = (c - (W - 1) / 2) * sx;          // Albers easting offset
-      const ny = ((H - 1) / 2 - r) * sy;          // Albers northing offset
-      positions[i * 3] = ex * cg + ny * sg;       // -> true ENU east
-      positions[i * 3 + 1] = -ex * sg + ny * cg;  // -> true ENU north
+      const ex = (c - (W - 1) / 2) * sx; // Albers easting offset
+      const ny = ((H - 1) / 2 - r) * sy; // Albers northing offset
+      positions[i * 3] = ex * cg + ny * sg; // -> true ENU east
+      positions[i * 3 + 1] = -ex * sg + ny * cg; // -> true ENU north
       texCoords[i * 2] = W > 1 ? c / (W - 1) : 0;
       texCoords[i * 2 + 1] = H > 1 ? r / (H - 1) : 0;
     }
@@ -2310,7 +2670,10 @@ function s1mGpuMesh(W, H, sx, sy, lon) {
   const idx = [];
   for (let r = 0; r < H - 1; r++) {
     for (let c = 0; c < W - 1; c++) {
-      const a = r * W + c, b = a + 1, d = a + W, e = d + 1;
+      const a = r * W + c,
+        b = a + 1,
+        d = a + W,
+        e = d + 1;
       idx.push(a, d, b, b, d, e);
     }
   }
@@ -2322,24 +2685,31 @@ function s1mGpuMesh(W, H, sx, sy, lon) {
         TEXCOORD_0: { value: texCoords, size: 2 },
       },
     },
-    positions64Low: new Float32Array(N * 3),  // ENU metres are fp32-exact at tile scale
+    positions64Low: new Float32Array(N * 3), // ENU metres are fp32-exact at tile scale
   };
 }
 
 function bboxIntersects(a, b) {
-  return Array.isArray(a) && Array.isArray(b) &&
-    !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
+  return (
+    Array.isArray(a) &&
+    Array.isArray(b) &&
+    !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3])
+  );
 }
 
 function bboxIntersectionArea(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+  if (!Array.isArray(a) || !Array.isArray(b)) {
+    return 0;
+  }
   const w = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
   const h = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
   return w * h;
 }
 
 function bboxArea(bbox) {
-  if (!Array.isArray(bbox)) return 0;
+  if (!Array.isArray(bbox)) {
+    return 0;
+  }
   return Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1]);
 }
 
@@ -2350,54 +2720,80 @@ function bboxOverlapFraction(a, b) {
 
 function bboxCombinedOverlapFraction(target, candidates) {
   const area = bboxArea(target);
-  if (!area) return 0;
+  if (!area) {
+    return 0;
+  }
   let covered = 0;
-  for (const candidate of candidates) covered += bboxIntersectionArea(target, candidate);
+  for (const candidate of candidates) {
+    covered += bboxIntersectionArea(target, candidate);
+  }
   return Math.min(1, covered / area);
 }
 
 function drapeSourcesForTile(tile, sources = getTerrainDrapeSources()) {
   const bbox = tile?.bbox;
-  if (!Array.isArray(bbox)) return [];
+  if (!Array.isArray(bbox)) {
+    return [];
+  }
   return sources
     .filter((source) => bboxIntersects(source.bbox, bbox))
-    .sort((a, b) => bboxIntersectionArea(b.bbox, bbox) - bboxIntersectionArea(a.bbox, bbox));
+    .sort(
+      (a, b) =>
+        bboxIntersectionArea(b.bbox, bbox) - bboxIntersectionArea(a.bbox, bbox),
+    );
 }
 
 function imagerySourceYear(source) {
   const props = source?.properties || {};
-  const value = props["naip:year"] ?? props.year ?? props["datetime"] ?? props.date;
-  if (typeof value === "number") return value;
+  const value =
+    props["naip:year"] ?? props.year ?? props.datetime ?? props.date;
+  if (typeof value === "number") {
+    return value;
+  }
   const match = String(value || "").match(/\b(20\d{2}|19\d{2})\b/);
   return match ? Number(match[1]) : null;
 }
 
 function imagerySourceRegion(source) {
   const props = source?.properties || {};
-  return String(props.region || props.state || props["naip:state"] || "default").toLowerCase();
+  return String(
+    props.region || props.state || props["naip:state"] || "default",
+  ).toLowerCase();
 }
 
 function mostRecentImagerySources(sources) {
   const latestByRegion = new Map();
   for (const source of sources) {
     const year = imagerySourceYear(source);
-    if (!Number.isFinite(year)) continue;
+    if (!Number.isFinite(year)) {
+      continue;
+    }
     const region = imagerySourceRegion(source);
-    latestByRegion.set(region, Math.max(latestByRegion.get(region) ?? -Infinity, year));
+    latestByRegion.set(
+      region,
+      Math.max(latestByRegion.get(region) ?? -Infinity, year),
+    );
   }
-  if (!latestByRegion.size) return sources;
+  if (!latestByRegion.size) {
+    return sources;
+  }
   return sources.filter((source) => {
     const year = imagerySourceYear(source);
-    if (!Number.isFinite(year)) return true;
+    if (!Number.isFinite(year)) {
+      return true;
+    }
     return year === latestByRegion.get(imagerySourceRegion(source));
   });
 }
 
 function s1mDrapeSearchBody(bbox) {
-  const limit = Math.min(10000, Math.max(5000, Number(limitEl.value || SEARCH_LIMIT_DEFAULT)));
+  const limit = Math.min(
+    10000,
+    Math.max(5000, Number(limitEl.value || SEARCH_LIMIT_DEFAULT)),
+  );
   const body = { collections: [activeCollection()], bbox, limit };
   if (stateEl.value) {
-    body["region"] = stateEl.value;
+    body.region = stateEl.value;
   } else {
     // Scope to the collection's region ONLY when that region_code names a
     // single lake partition. NAIP's region_code is the multi-state sentinel
@@ -2406,12 +2802,12 @@ function s1mDrapeSearchBody(bbox) {
     // matches nothing (0 sources -> no drape). For CONUS, send no region and
     // let the bbox select across state partitions, mirroring the main search.
     const col = collectionById[activeCollection()];
-    if (col && col.region_code && col.region_code.toUpperCase() !== "CONUS") {
-      body["region"] = col.region_code;
+    if (col?.region_code && col.region_code.toUpperCase() !== "CONUS") {
+      body.region = col.region_code;
     }
   }
   if (yearEl.value) {
-    body["year"] = Number(yearEl.value);
+    body.year = Number(yearEl.value);
   }
   return body;
 }
@@ -2428,7 +2824,7 @@ function emptyFeatureCollection() {
 }
 
 function ensureBuildingFootprintLayers() {
-  if (!map.isStyleLoaded || !map.isStyleLoaded()) {
+  if (!map.isStyleLoaded?.()) {
     map.once("idle", ensureBuildingFootprintLayers);
     return;
   }
@@ -2449,11 +2845,15 @@ function ensureBuildingFootprintLayers() {
       source: "overture-buildings",
       paint: {
         "fill-extrusion-color": [
-          "interpolate", ["linear"],
+          "interpolate",
+          ["linear"],
           ["-", ["get", "top_z"], ["get", "base_z"]],
-          0, "#0e7490",
-          15, "#22d3ee",
-          60, "#a5f3fc",
+          0,
+          "#0e7490",
+          15,
+          "#22d3ee",
+          60,
+          "#a5f3fc",
         ],
         "fill-extrusion-height": ["get", "top_z"],
         "fill-extrusion-base": ["get", "base_z"],
@@ -2470,7 +2870,9 @@ function ensureBuildingFootprintLayers() {
 function setBuildingFootprints(fc) {
   ensureBuildingFootprintLayers();
   const source = map.getSource("overture-buildings");
-  if (source) source.setData(fc || emptyFeatureCollection());
+  if (source) {
+    source.setData(fc || emptyFeatureCollection());
+  }
   moveMapLibreVectorLayersToTop();
 }
 
@@ -2479,12 +2881,15 @@ function clearBuildingFootprints() {
   buildingFeatureData = null;
   setBuildingFootprints(emptyFeatureCollection());
   if (terBuildingsStatusEl) {
-    terBuildingsStatusEl.textContent = "— Overture, footprints in the current view";
+    terBuildingsStatusEl.textContent =
+      "— Overture, footprints in the current view";
   }
 }
 
 function buildingBboxKey(bboxes) {
-  return JSON.stringify(bboxes.map((bbox) => bbox.map((value) => Number(value.toFixed(5)))));
+  return JSON.stringify(
+    bboxes.map((bbox) => bbox.map((value) => Number(value.toFixed(5)))),
+  );
 }
 
 // Bilinearly sample the loaded S1M elevation grids at a lon/lat, returning
@@ -2495,36 +2900,53 @@ function buildingBboxKey(bboxes) {
 function sampleS1MGroundElevation(lng, lat) {
   for (const c of s1mTileCache.values()) {
     const d = c.data;
-    if (!d) continue;
+    if (!d) {
+      continue;
+    }
     const [clon, clat] = d.center_lnglat;
-    const W = d.width, H = d.height;
+    const W = d.width,
+      H = d.height;
     const [sx, sy] = d.step;
     const mPerDegLat = 111320;
     const mPerDegLon = 111320 * Math.cos((clat * Math.PI) / 180);
     const east = (lng - clon) * mPerDegLon;
     const north = (lat - clat) * mPerDegLat;
     const g = s1mConvergenceRad(clon);
-    const cosG = Math.cos(g), sinG = Math.sin(g);
+    const cosG = Math.cos(g),
+      sinG = Math.sin(g);
     // Invert px = ex*cosG + ny*sinG, py = -ex*sinG + ny*cosG (px=east, py=north).
     const ex = cosG * east - sinG * north;
     const ny = sinG * east + cosG * north;
     const col = ex / sx + (W - 1) / 2;
     const row = (H - 1) / 2 - ny / sy;
-    if (col < 0 || col > W - 1 || row < 0 || row > H - 1) continue;
-    if (!c._elev) c._elev = c.elevations || s1mB64ToFloat32(d.elev_b64);
-    const elev = c._elev, nd = d.nodata;
-    const c0 = Math.floor(col), r0 = Math.floor(row);
-    const c1 = Math.min(W - 1, c0 + 1), r1 = Math.min(H - 1, r0 + 1);
-    const fc2 = col - c0, fr = row - r0;
+    if (col < 0 || col > W - 1 || row < 0 || row > H - 1) {
+      continue;
+    }
+    if (!c._elev) {
+      c._elev = c.elevations || s1mB64ToFloat32(d.elev_b64);
+    }
+    const elev = c._elev,
+      nd = d.nodata;
+    const c0 = Math.floor(col),
+      r0 = Math.floor(row);
+    const c1 = Math.min(W - 1, c0 + 1),
+      r1 = Math.min(H - 1, r0 + 1);
+    const fc2 = col - c0,
+      fr = row - r0;
     const val = (rr, cc) => {
       const z = elev[rr * W + cc];
-      return (z === nd || !Number.isFinite(z)) ? null : z;
+      return z === nd || !Number.isFinite(z) ? null : z;
     };
-    const v00 = val(r0, c0), v01 = val(r0, c1), v10 = val(r1, c0), v11 = val(r1, c1);
+    const v00 = val(r0, c0),
+      v01 = val(r0, c1),
+      v10 = val(r1, c0),
+      v11 = val(r1, c1);
     const present = [v00, v01, v10, v11].filter((z) => z !== null);
-    if (!present.length) continue;
+    if (!present.length) {
+      continue;
+    }
     if (v00 === null || v01 === null || v10 === null || v11 === null) {
-      return present.reduce((a, b) => a + b, 0) / present.length;  // partial void: nearest-ish
+      return present.reduce((a, b) => a + b, 0) / present.length; // partial void: nearest-ish
     }
     const top = v00 * (1 - fc2) + v01 * fc2;
     const bot = v10 * (1 - fc2) + v11 * fc2;
@@ -2539,7 +2961,9 @@ function sampleS1MGroundElevation(lng, lat) {
 // building height/min_height ride on top so buildings sit on the relief.
 // Returns how many footprints were seated on sampled terrain.
 function applyBuildingExtrusionZ() {
-  if (!buildingFeatureData) return 0;
+  if (!buildingFeatureData) {
+    return 0;
+  }
   const exag = Number(document.getElementById("ter-exag")?.value) || 1;
   const zmin = s1mColorRange()[0];
   const haveTerrain = s1mTileCache.size > 0;
@@ -2549,14 +2973,25 @@ function applyBuildingExtrusionZ() {
     const rawH = Number(p.height);
     const height = Number.isFinite(rawH)
       ? rawH
-      : (Number(p.num_floors) ? Number(p.num_floors) * 3.2 : 4);
+      : Number(p.num_floors)
+        ? Number(p.num_floors) * 3.2
+        : 4;
     const minH = Number(p.min_height) || 0;
     let ground = 0;
     if (haveTerrain && Array.isArray(f.bbox) && f.bbox.length === 4) {
-      const e = sampleS1MGroundElevation((f.bbox[0] + f.bbox[2]) / 2, (f.bbox[1] + f.bbox[3]) / 2);
-      if (e !== null) { ground = (e - zmin) * exag; seated++; }
+      const e = sampleS1MGroundElevation(
+        (f.bbox[0] + f.bbox[2]) / 2,
+        (f.bbox[1] + f.bbox[3]) / 2,
+      );
+      if (e !== null) {
+        ground = (e - zmin) * exag;
+        seated++;
+      }
     }
-    return { ...f, properties: { ...p, base_z: ground + minH, top_z: ground + height } };
+    return {
+      ...f,
+      properties: { ...p, base_z: ground + minH, top_z: ground + height },
+    };
   });
   setBuildingFootprints({ type: "FeatureCollection", features });
   return seated;
@@ -2571,16 +3006,22 @@ async function refreshBuildingFootprints() {
     buildingFeatureData = null;
     buildingFootprintKey = "";
     setBuildingFootprints(emptyFeatureCollection());
-    if (terBuildingsStatusEl) terBuildingsStatusEl.textContent = "— enable terrain first";
+    if (terBuildingsStatusEl) {
+      terBuildingsStatusEl.textContent = "— enable terrain first";
+    }
     return;
   }
   const b = map.getBounds();
   const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
   const key = buildingBboxKey([bbox]);
-  if (key === buildingFootprintKey) return;
+  if (key === buildingFootprintKey) {
+    return;
+  }
   buildingFootprintKey = key;
   const seq = ++buildingFootprintSeq;
-  if (terBuildingsStatusEl) terBuildingsStatusEl.textContent = "— loading footprints in view...";
+  if (terBuildingsStatusEl) {
+    terBuildingsStatusEl.textContent = "— loading footprints in view...";
+  }
   try {
     const response = await apiFetch("/buildings/overture", {
       method: "POST",
@@ -2589,24 +3030,33 @@ async function refreshBuildingFootprints() {
     });
     if (!response.ok) {
       let detail = `${response.status}`;
-      try { detail += ` ${await response.text()}`; } catch (_) { /* ignore */ }
+      try {
+        detail += ` ${await response.text()}`;
+      } catch (_) {
+        /* ignore */
+      }
       throw new Error(detail);
     }
     const fc = await response.json();
-    if (seq !== buildingFootprintSeq) return;
+    if (seq !== buildingFootprintSeq) {
+      return;
+    }
     buildingFeatureData = fc;
     const seated = applyBuildingExtrusionZ();
     const count = (fc.features || []).length;
     if (terBuildingsStatusEl) {
       const capped = count >= BUILDING_MAX_FEATURES ? "+" : "";
-      terBuildingsStatusEl.textContent =
-        `— ${count.toLocaleString()}${capped} in view${seated ? `, ${seated.toLocaleString()} on terrain` : ""}`;
+      terBuildingsStatusEl.textContent = `— ${count.toLocaleString()}${capped} in view${seated ? `, ${seated.toLocaleString()} on terrain` : ""}`;
     }
   } catch (error) {
-    if (seq !== buildingFootprintSeq) return;
+    if (seq !== buildingFootprintSeq) {
+      return;
+    }
     buildingFeatureData = null;
     setBuildingFootprints(emptyFeatureCollection());
-    if (terBuildingsStatusEl) terBuildingsStatusEl.textContent = `— failed: ${error?.message || error}`;
+    if (terBuildingsStatusEl) {
+      terBuildingsStatusEl.textContent = `— failed: ${error?.message || error}`;
+    }
     console.error("Building footprints failed:", error);
   }
 }
@@ -2615,17 +3065,28 @@ function pruneS1MDrapeSourceCache() {
   while (s1mDrapeSourceCache.size > S1M_DRAPE_SOURCE_CACHE_MAX) {
     let deleteKey = null;
     for (const [key, entry] of s1mDrapeSourceCache.entries()) {
-      if (!entry.pending) { deleteKey = key; break; }
+      if (!entry.pending) {
+        deleteKey = key;
+        break;
+      }
     }
-    if (!deleteKey) deleteKey = s1mDrapeSourceCache.keys().next().value;
-    if (!deleteKey) break;
+    if (!deleteKey) {
+      deleteKey = s1mDrapeSourceCache.keys().next().value;
+    }
+    if (!deleteKey) {
+      break;
+    }
     s1mDrapeSourceCache.delete(deleteKey);
   }
 }
 
 function s1mDrapeSourcesForBbox(bbox, seq, schedulePaint) {
-  if (!drapeImageryActive()) return getTerrainDrapeSources();
-  if (!Array.isArray(bbox)) return [];
+  if (!drapeImageryActive()) {
+    return getTerrainDrapeSources();
+  }
+  if (!Array.isArray(bbox)) {
+    return [];
+  }
   const body = s1mDrapeSearchBody(bbox);
   const key = s1mDrapeSearchKey(body);
   let entry = s1mDrapeSourceCache.get(key);
@@ -2633,18 +3094,25 @@ function s1mDrapeSourcesForBbox(bbox, seq, schedulePaint) {
     s1mDrapeSourceCache.delete(key);
     entry = null;
   }
-  if (entry?.sources) return entry.sources;
+  if (entry?.sources) {
+    return entry.sources;
+  }
   if (entry?.pending) {
     if (entry.notifySeq !== seq) {
       entry.notifySeq = seq;
       entry.pending.then(() => {
-        if (seq === s1mRefreshSeq) schedulePaint?.();
+        if (seq === s1mRefreshSeq) {
+          schedulePaint?.();
+        }
       });
     }
     return null;
   }
 
-  const fallbackSources = drapeSourcesForTile({ bbox }, mostRecentImagerySources(getImagerySources()));
+  const fallbackSources = drapeSourcesForTile(
+    { bbox },
+    mostRecentImagerySources(getImagerySources()),
+  );
   entry = {
     key,
     bbox,
@@ -2664,60 +3132,68 @@ function s1mDrapeSourcesForBbox(bbox, seq, schedulePaint) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  }).then(async (response) => {
-    if (!response.ok) {
-      let detail = "";
-      try {
-        detail = await response.text();
-      } catch (_) {
-        detail = "";
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        let detail = "";
+        try {
+          detail = await response.text();
+        } catch (_) {
+          detail = "";
+        }
+        throw new Error(
+          `terrain drape search failed: ${response.status}${detail ? ` ${detail.slice(0, 180)}` : ""}`,
+        );
       }
-      throw new Error(`terrain drape search failed: ${response.status}${detail ? ` ${detail.slice(0, 180)}` : ""}`);
-    }
-    const data = await response.json();
-    const rawSources = (data.features || []).filter(
-      (feature) => feature?.assets?.image?.href && Array.isArray(feature?.bbox),
-    );
-    const sources = mostRecentImagerySources(rawSources);
-    entry.sources = sources;
-    entry.rawCount = rawSources.length;
-    entry.error = null;
-    entry.failedSeq = null;
-    s1mDrapeSourceKey = key;
-    s1mDrapeSources = sources;
-    s1mDrapeSourceError = null;
-    s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
-    s1mDrapeMetrics.sourceRawCount = rawSources.length;
-    s1mDrapeMetrics.sourceCount = sources.length;
-    s1mDrapeMetrics.sourceError = null;
-    renderS1MDrapeMetrics();
-    if (seq === s1mRefreshSeq) {
-      schedulePaint?.();
-    }
-    return sources;
-  }).catch((error) => {
-    const message = error?.message || String(error);
-    entry.sources = fallbackSources;
-    entry.rawCount = fallbackSources.length;
-    entry.error = fallbackSources.length ? null : message;
-    entry.failedSeq = entry.error ? seq : null;
-    s1mDrapeSourceKey = key;
-    s1mDrapeSources = fallbackSources;
-    s1mDrapeSourceError = entry.error;
-    s1mDrapeMetrics.sourceSearchMs = performance.now() - sourceSearchStartedAt;
-    s1mDrapeMetrics.sourceError = entry.error;
-    s1mDrapeMetrics.sourceRawCount = fallbackSources.length;
-    s1mDrapeMetrics.sourceCount = fallbackSources.length;
-    renderS1MDrapeMetrics();
-    if (seq === s1mRefreshSeq) {
-      schedulePaint?.();
-    }
-    return fallbackSources;
-  }).finally(() => {
-    entry.pending = null;
-    pruneS1MDrapeSourceCache();
-    renderS1MDrapeMetrics();
-  });
+      const data = await response.json();
+      const rawSources = (data.features || []).filter(
+        (feature) =>
+          feature?.assets?.image?.href && Array.isArray(feature?.bbox),
+      );
+      const sources = mostRecentImagerySources(rawSources);
+      entry.sources = sources;
+      entry.rawCount = rawSources.length;
+      entry.error = null;
+      entry.failedSeq = null;
+      s1mDrapeSourceKey = key;
+      s1mDrapeSources = sources;
+      s1mDrapeSourceError = null;
+      s1mDrapeMetrics.sourceSearchMs =
+        performance.now() - sourceSearchStartedAt;
+      s1mDrapeMetrics.sourceRawCount = rawSources.length;
+      s1mDrapeMetrics.sourceCount = sources.length;
+      s1mDrapeMetrics.sourceError = null;
+      renderS1MDrapeMetrics();
+      if (seq === s1mRefreshSeq) {
+        schedulePaint?.();
+      }
+      return sources;
+    })
+    .catch((error) => {
+      const message = error?.message || String(error);
+      entry.sources = fallbackSources;
+      entry.rawCount = fallbackSources.length;
+      entry.error = fallbackSources.length ? null : message;
+      entry.failedSeq = entry.error ? seq : null;
+      s1mDrapeSourceKey = key;
+      s1mDrapeSources = fallbackSources;
+      s1mDrapeSourceError = entry.error;
+      s1mDrapeMetrics.sourceSearchMs =
+        performance.now() - sourceSearchStartedAt;
+      s1mDrapeMetrics.sourceError = entry.error;
+      s1mDrapeMetrics.sourceRawCount = fallbackSources.length;
+      s1mDrapeMetrics.sourceCount = fallbackSources.length;
+      renderS1MDrapeMetrics();
+      if (seq === s1mRefreshSeq) {
+        schedulePaint?.();
+      }
+      return fallbackSources;
+    })
+    .finally(() => {
+      entry.pending = null;
+      pruneS1MDrapeSourceCache();
+      renderS1MDrapeMetrics();
+    });
   schedulePaint?.();
   return null;
 }
@@ -2740,15 +3216,26 @@ function displayDrapeRgbaBytes(array, source, image) {
     return sourceData[pixel * sampleCount + band] ?? 0;
   };
 
-  const sourceSampleData = Array.isArray(sourceData) ? sourceData[0] : sourceData;
+  const sourceSampleData = Array.isArray(sourceData)
+    ? sourceData[0]
+    : sourceData;
   let scaleSample = (value) => value;
-  if (!(sourceSampleData instanceof Uint8Array || sourceSampleData instanceof Uint8ClampedArray)) {
-    const domain = collectionForHref(source?.assets?.image?.href)?.display?.domain;
+  if (
+    !(
+      sourceSampleData instanceof Uint8Array ||
+      sourceSampleData instanceof Uint8ClampedArray
+    )
+  ) {
+    const domain = collectionForHref(source?.assets?.image?.href)?.display
+      ?.domain;
     const bitsPerSample = image.cachedTags?.bitsPerSample?.[0] || 8;
     const domainMin = Number(domain?.[0] ?? 0);
-    const domainMax = Number(domain?.[1] ?? (bitsPerSample === 16 ? 65535 : 255));
+    const domainMax = Number(
+      domain?.[1] ?? (bitsPerSample === 16 ? 65535 : 255),
+    );
     const range = Math.max(1, domainMax - domainMin);
-    scaleSample = (value) => Math.round(Math.max(0, Math.min(1, (value - domainMin) / range)) * 255);
+    scaleSample = (value) =>
+      Math.round(Math.max(0, Math.min(1, (value - domainMin) / range)) * 255);
   }
 
   const adjusted = new Uint8ClampedArray(width * height * 4);
@@ -2759,16 +3246,41 @@ function displayDrapeRgbaBytes(array, source, image) {
     const rawG = scaleSample(readSample(pixel, 1));
     const rawB = scaleSample(readSample(pixel, 2));
     const blackNoData = rawR <= 2 && rawG <= 2 && rawB <= 2;
-    const r = Math.round(Math.max(0, Math.min(1, ((rawR / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
-    const g = Math.round(Math.max(0, Math.min(1, ((rawG / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
-    const b = Math.round(Math.max(0, Math.min(1, ((rawB / 255) - 0.5) * contrast + 0.5 + brightness)) * 255);
-    const whiteCollar = r >= 240 && g >= 240 && b >= 240 && Math.max(r, g, b) - Math.min(r, g, b) <= 12;
+    const r = Math.round(
+      Math.max(
+        0,
+        Math.min(1, (rawR / 255 - 0.5) * contrast + 0.5 + brightness),
+      ) * 255,
+    );
+    const g = Math.round(
+      Math.max(
+        0,
+        Math.min(1, (rawG / 255 - 0.5) * contrast + 0.5 + brightness),
+      ) * 255,
+    );
+    const b = Math.round(
+      Math.max(
+        0,
+        Math.min(1, (rawB / 255 - 0.5) * contrast + 0.5 + brightness),
+      ) * 255,
+    );
+    const whiteCollar =
+      r >= 240 &&
+      g >= 240 &&
+      b >= 240 &&
+      Math.max(r, g, b) - Math.min(r, g, b) <= 12;
     adjusted[dst] = r;
     adjusted[dst + 1] = g;
     adjusted[dst + 2] = b;
     adjusted[dst + 3] = blackNoData || whiteCollar ? 0 : 255;
   }
-  return { layout: "pixel-interleaved", width, height, count: 4, data: adjusted };
+  return {
+    layout: "pixel-interleaved",
+    width,
+    height,
+    count: 4,
+    data: adjusted,
+  };
 }
 
 // Decoded-COG-tile cache shared across drape sub-tiles. Adjacent sub-tiles
@@ -2796,20 +3308,24 @@ function displayDrapeRgbaBytes(array, source, image) {
 // -pays) + larger-viewport / warm-revisit headroom against memory: 96 MB
 // absorbs ~all of the working set with more allocation headroom than 128 MB.
 const S1M_COG_TILE_CACHE_MAX_BYTES = 96 * 1024 * 1024; // ~96 MB decoded RGBA
-const S1M_COG_TILE_CACHE_MAX_COUNT = 256;              // backstop on entry count
-const s1mCogTileCache = new Map();   // key -> Promise<decoded rgba tile>
+const S1M_COG_TILE_CACHE_MAX_COUNT = 256; // backstop on entry count
+const s1mCogTileCache = new Map(); // key -> Promise<decoded rgba tile>
 const s1mCogTileCacheBytes = new Map(); // key -> resolved rgba.data.byteLength
-let s1mCogTileCacheByteTotal = 0;    // running sum of resolved bytes
+let s1mCogTileCacheByteTotal = 0; // running sum of resolved bytes
 
 function setS1MCogTileCacheBytes(key, bytes) {
   const prev = s1mCogTileCacheBytes.get(key);
-  if (prev !== undefined) s1mCogTileCacheByteTotal -= prev;
+  if (prev !== undefined) {
+    s1mCogTileCacheByteTotal -= prev;
+  }
   s1mCogTileCacheBytes.set(key, bytes);
   s1mCogTileCacheByteTotal += bytes;
 }
 
 function deleteS1MCogTileCacheEntry(key) {
-  if (!key) return;
+  if (!key) {
+    return;
+  }
   s1mCogTileCache.delete(key);
   const prev = s1mCogTileCacheBytes.get(key);
   if (prev !== undefined) {
@@ -2833,7 +3349,9 @@ function evictS1MCogTileCache() {
       s1mCogTileCache.size > S1M_COG_TILE_CACHE_MAX_COUNT)
   ) {
     const oldest = s1mCogTileCache.keys().next().value;
-    if (oldest === undefined) break;
+    if (oldest === undefined) {
+      break;
+    }
     deleteS1MCogTileCacheEntry(oldest);
     s1mBench.cogEvict += 1;
   }
@@ -2844,7 +3362,7 @@ function getDrapeCogTile(source, image, level, tx, ty) {
   let pending = s1mCogTileCache.get(key);
   if (pending) {
     s1mBench.cogHit += 1;
-    s1mCogTileCache.delete(key);     // LRU: move to most-recently-used
+    s1mCogTileCache.delete(key); // LRU: move to most-recently-used
     s1mCogTileCache.set(key, pending);
     return pending;
   }
@@ -2855,14 +3373,19 @@ function getDrapeCogTile(source, image, level, tx, ty) {
     const t1 = performance.now();
     const rgba = displayDrapeRgbaBytes(tileData.array, source, image);
     const t2 = performance.now();
-    s1mBench.cogFetchMs += t1 - t0; s1mBench.cogFetchN += 1;
-    s1mBench.decodeMs += t2 - t1; s1mBench.decodeN += 1;
+    s1mBench.cogFetchMs += t1 - t0;
+    s1mBench.cogFetchN += 1;
+    s1mBench.decodeMs += t2 - t1;
+    s1mBench.decodeN += 1;
     if (s1mCogTileCache.get(key) === pending) {
       setS1MCogTileCacheBytes(key, rgba?.data?.byteLength || 0);
-      evictS1MCogTileCache();   // budget now knows this tile's real size
+      evictS1MCogTileCache(); // budget now knows this tile's real size
     }
     return rgba;
-  })().catch((error) => { deleteS1MCogTileCacheEntry(key); throw error; });
+  })().catch((error) => {
+    deleteS1MCogTileCacheEntry(key);
+    throw error;
+  });
   s1mCogTileCache.set(key, pending);
   evictS1MCogTileCache();
   return pending;
@@ -2873,11 +3396,12 @@ async function drapeProjectionForImage(image) {
   if (!pending) {
     pending = (async () => {
       const crsInput = image.crs;
-      const sourceProjection = typeof crsInput === "number"
-        ? await epsgResolver(crsInput)
-        : "coordinate_system" in crsInput
-          ? parseWkt(crsInput)
-          : crsInput;
+      const sourceProjection =
+        typeof crsInput === "number"
+          ? await epsgResolver(crsInput)
+          : "coordinate_system" in crsInput
+            ? parseWkt(crsInput)
+            : crsInput;
       const converter4326 = proj4(sourceProjection, "EPSG:4326");
       return {
         projectFrom4326: (lng, lat) => converter4326.inverse([lng, lat], false),
@@ -2911,7 +3435,7 @@ function s1mLngLatForUv(data, u, v) {
   const east = ex * Math.cos(g) + ny * Math.sin(g);
   const north = -ex * Math.sin(g) + ny * Math.cos(g);
   const lat = lat0 + north / 111320;
-  const lon = lon0 + east / (111320 * Math.cos(lat0 * Math.PI / 180));
+  const lon = lon0 + east / (111320 * Math.cos((lat0 * Math.PI) / 180));
   return [lon, lat];
 }
 
@@ -2931,8 +3455,12 @@ function chooseDrapeImageLevel(geotiff, source, tileBbox, textureSize) {
   const tileLonSpan = Math.max(1e-9, tileBbox[2] - tileBbox[0]);
   const desiredSourceWidth = textureSize * (sourceLonSpan / tileLonSpan);
   return levels.reduce((best, level) => {
-    const bestScore = Math.abs(Math.log2(Math.max(1, best.width) / desiredSourceWidth));
-    const score = Math.abs(Math.log2(Math.max(1, level.width) / desiredSourceWidth));
+    const bestScore = Math.abs(
+      Math.log2(Math.max(1, best.width) / desiredSourceWidth),
+    );
+    const score = Math.abs(
+      Math.log2(Math.max(1, level.width) / desiredSourceWidth),
+    );
     return score < bestScore ? level : best;
   }, levels[0]);
 }
@@ -2943,10 +3471,7 @@ function bilinearCornerMapper(nw, ne, se, sw) {
     const botCol = sw[0] + (se[0] - sw[0]) * u;
     const topRow = nw[1] + (ne[1] - nw[1]) * u;
     const botRow = sw[1] + (se[1] - sw[1]) * u;
-    return [
-      topCol + (botCol - topCol) * v,
-      topRow + (botRow - topRow) * v,
-    ];
+    return [topCol + (botCol - topCol) * v, topRow + (botRow - topRow) * v];
   };
 }
 
@@ -2979,10 +3504,18 @@ async function paintDrapeSource(data, region, source, out, drapeSize) {
   const cols = sampleCorners.map((p) => p[0]);
   const rows = sampleCorners.map((p) => p[1]);
   const c0 = Math.max(0, Math.floor(Math.min(...cols) / tw));
-  const c1 = Math.min(level.tileCount.x - 1, Math.floor(Math.max(...cols) / tw));
+  const c1 = Math.min(
+    level.tileCount.x - 1,
+    Math.floor(Math.max(...cols) / tw),
+  );
   const r0 = Math.max(0, Math.floor(Math.min(...rows) / th));
-  const r1 = Math.min(level.tileCount.y - 1, Math.floor(Math.max(...rows) / th));
-  if (c0 > c1 || r0 > r1) return 0;
+  const r1 = Math.min(
+    level.tileCount.y - 1,
+    Math.floor(Math.max(...rows) / th),
+  );
+  if (c0 > c1 || r0 > r1) {
+    return 0;
+  }
   // Collect the covering COG tiles into a flat grid addressed by numeric
   // index (tileGridW * (ty-r0) + (tx-c0)) so the per-pixel raster loop below
   // needs no template-string key or Map lookup -- at 384^2 px x many source
@@ -2995,7 +3528,9 @@ async function paintDrapeSource(data, region, source, out, drapeSize) {
     for (let tx = c0; tx <= c1; tx++) {
       const gi = (ty - r0) * tileGridW + (tx - c0);
       tilePromises.push(
-        getDrapeCogTile(source, image, level, tx, ty).then((rgba) => { tiles[gi] = rgba; }),
+        getDrapeCogTile(source, image, level, tx, ty).then((rgba) => {
+          tiles[gi] = rgba;
+        }),
       );
     }
   }
@@ -3007,12 +3542,16 @@ async function paintDrapeSource(data, region, source, out, drapeSize) {
     for (let x = 0; x < drapeSize; x++) {
       const u = drapeSize > 1 ? x / (drapeSize - 1) : 0;
       const dst = (y * drapeSize + x) * 4;
-      if (out[dst + 3] > 0) continue;
+      if (out[dst + 3] > 0) {
+        continue;
+      }
       if (Array.isArray(sourceBbox)) {
         const [lon, lat] = lngLatFromUv(u, v);
         if (
-          lon < sourceBbox[0] || lon > sourceBbox[2] ||
-          lat < sourceBbox[1] || lat > sourceBbox[3]
+          lon < sourceBbox[0] ||
+          lon > sourceBbox[2] ||
+          lat < sourceBbox[1] ||
+          lat > sourceBbox[3]
         ) {
           continue;
         }
@@ -3027,10 +3566,18 @@ async function paintDrapeSource(data, region, source, out, drapeSize) {
       if (!src) {
         continue;
       }
-      const sx = Math.max(0, Math.min(src.width - 1, Math.floor(col - tx * tw)));
-      const sy = Math.max(0, Math.min(src.height - 1, Math.floor(row - ty * th)));
+      const sx = Math.max(
+        0,
+        Math.min(src.width - 1, Math.floor(col - tx * tw)),
+      );
+      const sy = Math.max(
+        0,
+        Math.min(src.height - 1, Math.floor(row - ty * th)),
+      );
       const srcIdx = (sy * src.width + sx) * 4;
-      if (src.data[srcIdx + 3] <= 0) continue;
+      if (src.data[srcIdx + 3] <= 0) {
+        continue;
+      }
       out[dst] = src.data[srcIdx];
       out[dst + 1] = src.data[srcIdx + 1];
       out[dst + 2] = src.data[srcIdx + 2];
@@ -3040,26 +3587,36 @@ async function paintDrapeSource(data, region, source, out, drapeSize) {
   }
   s1mBench.rasterMs += performance.now() - rasterStartedAt;
   s1mBench.rasterN += 1;
-  return filled;   // count of newly-opaque pixels this source contributed
+  return filled; // count of newly-opaque pixels this source contributed
 }
 
 function activeDrapeCacheKeys() {
   const active = new Set();
   for (const cache of s1mTileCache.values()) {
-    if (!cache.subtiles) continue;
+    if (!cache.subtiles) {
+      continue;
+    }
     for (const sub of cache.subtiles.values()) {
-      if (sub.drapeKey) active.add(sub.drapeKey);
-      if (sub.drapePending) active.add(sub.drapePending);
+      if (sub.drapeKey) {
+        active.add(sub.drapeKey);
+      }
+      if (sub.drapePending) {
+        active.add(sub.drapePending);
+      }
     }
   }
   return active;
 }
 
 function pruneS1MDrapeCache() {
-  if (s1mDrapeCache.size <= S1M_DRAPE_CACHE_MAX) return;
+  if (s1mDrapeCache.size <= S1M_DRAPE_CACHE_MAX) {
+    return;
+  }
   const active = activeDrapeCacheKeys();
   for (const key of s1mDrapeCache.keys()) {
-    if (s1mDrapeCache.size <= S1M_DRAPE_CACHE_MAX) break;
+    if (s1mDrapeCache.size <= S1M_DRAPE_CACHE_MAX) {
+      break;
+    }
     if (!active.has(key)) {
       deleteS1MDrapeCacheEntry(key);
       s1mBench.drapeEvict += 1;
@@ -3068,15 +3625,23 @@ function pruneS1MDrapeCache() {
 }
 
 function disposeS1MTileCache(cache) {
-  if (!cache) return;
+  if (!cache) {
+    return;
+  }
   cache.drapeImage = null;
   cache.layer = null;
   cache.elevations = null;
   cache.gpuMesh = null;
-  if (!cache.subtiles) return;
+  if (!cache.subtiles) {
+    return;
+  }
   for (const sub of cache.subtiles.values()) {
-    if (sub.drapeKey) deleteS1MDrapeCacheEntry(sub.drapeKey);
-    if (sub.drapePending) deleteS1MDrapeCacheEntry(sub.drapePending);
+    if (sub.drapeKey) {
+      deleteS1MDrapeCacheEntry(sub.drapeKey);
+    }
+    if (sub.drapePending) {
+      deleteS1MDrapeCacheEntry(sub.drapePending);
+    }
     sub.drapeImage = null;
     sub.drapeKey = null;
     sub.drapePending = null;
@@ -3088,13 +3653,15 @@ function disposeS1MTileCache(cache) {
 
 function releaseS1MDrapeMemory() {
   clearS1MDrapeCacheEntries();
-  s1mDrapedSubdivByDataset.clear();   // drapes are gone -> drop the ratchet so tiles re-drape at the current zoom
+  s1mDrapedSubdivByDataset.clear(); // drapes are gone -> drop the ratchet so tiles re-drape at the current zoom
   clearS1MCogTileCacheEntries();
   clearGeotiffSourceCache();
   clearS1MDrapeSourceCache();
   drapeProjectionCache = new WeakMap();
   for (const cache of s1mTileCache.values()) {
-    if (!cache.subtiles) continue;
+    if (!cache.subtiles) {
+      continue;
+    }
     for (const sub of cache.subtiles.values()) {
       sub.drapeImage = null;
       sub.drapeKey = null;
@@ -3114,9 +3681,15 @@ async function buildDrapeImage(data, region, sources, drapeSize) {
   let filled = 0;
   for (let i = 0; i < cappedSources.length; i++) {
     const source = cappedSources[i];
-    filled += await paintDrapeSource(data, region, source, out, drapeSize) || 0;
-    if (filled >= totalPixels) break;
-    if (i + 1 === s1mInitialDrapeSourcesPerTile() && cappedSources.length > i + 1) {
+    filled +=
+      (await paintDrapeSource(data, region, source, out, drapeSize)) || 0;
+    if (filled >= totalPixels) {
+      break;
+    }
+    if (
+      i + 1 === s1mInitialDrapeSourcesPerTile() &&
+      cappedSources.length > i + 1
+    ) {
       s1mDrapeMetrics.noDataSourceFallbacks += 1;
     }
   }
@@ -3150,12 +3723,19 @@ function s1mSubdiv(tile) {
   // (s1mSubdivMax) is tile-count responsive, so this only goes high when few
   // tiles are in view; the viewport cull keeps the built sub-tile count small.
   let n;
-  if (px >= 12000) n = 32;
-  else if (px >= 6000) n = 16;
-  else if (px >= 3000) n = 8;
-  else if (px >= 1500) n = 4;
-  else if (px >= 760) n = 2;
-  else n = isSmallCogCollection() ? 2 : 1;
+  if (px >= 12000) {
+    n = 32;
+  } else if (px >= 6000) {
+    n = 16;
+  } else if (px >= 3000) {
+    n = 8;
+  } else if (px >= 1500) {
+    n = 4;
+  } else if (px >= 760) {
+    n = 2;
+  } else {
+    n = isSmallCogCollection() ? 2 : 1;
+  }
   return Math.min(n, s1mSubdivMax());
 }
 
@@ -3163,14 +3743,17 @@ function s1mSubdiv(tile) {
 // share an edge row/col so meshes abut with no crack.
 function s1mSubBoundaries(count, n) {
   const b = [];
-  for (let i = 0; i <= n; i++) b.push(Math.round((i * (count - 1)) / n));
+  for (let i = 0; i <= n; i++) {
+    b.push(Math.round((i * (count - 1)) / n));
+  }
   return b;
 }
 
 // Axis-aligned lon/lat bbox enclosing a sub-grid (the tile is slightly
 // rotated by Albers convergence, so take the envelope of the four corners).
 function s1mSubTileBbox(data, c0, c1, r0, r1) {
-  const W = data.width, H = data.height;
+  const W = data.width,
+    H = data.height;
   const corners = [
     s1mLngLatForUv(data, c0 / (W - 1), r0 / (H - 1)),
     s1mLngLatForUv(data, c1 / (W - 1), r0 / (H - 1)),
@@ -3179,21 +3762,30 @@ function s1mSubTileBbox(data, c0, c1, r0, r1) {
   ];
   const lons = corners.map((p) => p[0]);
   const lats = corners.map((p) => p[1]);
-  return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+  return [
+    Math.min(...lons),
+    Math.min(...lats),
+    Math.max(...lons),
+    Math.max(...lats),
+  ];
 }
 
 // Sliced flat draped sub-mesh: POSITION in tile-centre ENU metres (same
 // formula as s1mGpuMesh, so sub-tiles share the tile coordinateOrigin),
 // TEXCOORD_0 local 0..1 across the sub-grid.
 function s1mGpuSubMesh(data, c0, c1, r0, r1) {
-  const W = data.width, H = data.height;
-  const sx = data.step[0], sy = data.step[1];
-  const gw = c1 - c0 + 1, gh = r1 - r0 + 1;
+  const W = data.width,
+    H = data.height;
+  const sx = data.step[0],
+    sy = data.step[1];
+  const gw = c1 - c0 + 1,
+    gh = r1 - r0 + 1;
   const N = gw * gh;
   const positions = new Float32Array(N * 3);
   const texCoords = new Float32Array(N * 2);
   const g = s1mConvergenceRad(data.center_lnglat[0]);
-  const cg = Math.cos(g), sg = Math.sin(g);
+  const cg = Math.cos(g),
+    sg = Math.sin(g);
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
       const i = (r - r0) * gw + (c - c0);
@@ -3208,12 +3800,16 @@ function s1mGpuSubMesh(data, c0, c1, r0, r1) {
   const idx = [];
   for (let r = 0; r < gh - 1; r++) {
     for (let c = 0; c < gw - 1; c++) {
-      const a = r * gw + c, b = a + 1, d = a + gw, e = d + 1;
+      const a = r * gw + c,
+        b = a + 1,
+        d = a + gw,
+        e = d + 1;
       idx.push(a, d, b, b, d, e);
     }
   }
   return {
-    gw, gh,
+    gw,
+    gh,
     mesh: {
       indices: { value: new Uint32Array(idx), size: 1 },
       attributes: {
@@ -3229,12 +3825,20 @@ function s1mGpuSubMesh(data, c0, c1, r0, r1) {
 // elevation sub-array + mesh + bbox + uvRect into the full tile.
 function ensureSubTile(cache, ix, iy, n, bx, by) {
   const subKey = `${n}:${ix},${iy}`;
-  if (!cache.subtiles) cache.subtiles = new Map();
+  if (!cache.subtiles) {
+    cache.subtiles = new Map();
+  }
   let sub = cache.subtiles.get(subKey);
-  if (sub) return sub;
+  if (sub) {
+    return sub;
+  }
   const data = cache.data;
-  const W = data.width, H = data.height;
-  const c0 = bx[ix], c1 = bx[ix + 1], r0 = by[iy], r1 = by[iy + 1];
+  const W = data.width,
+    H = data.height;
+  const c0 = bx[ix],
+    c1 = bx[ix + 1],
+    r0 = by[iy],
+    r1 = by[iy + 1];
   const m = s1mGpuSubMesh(data, c0, c1, r0, r1);
   const elev = new Float32Array(m.gw * m.gh);
   for (let r = r0; r <= r1; r++) {
@@ -3243,11 +3847,22 @@ function ensureSubTile(cache, ix, iy, n, bx, by) {
     }
   }
   sub = {
-    ix, iy, N: n, c0, c1, r0, r1,
-    gpuMesh: m, gw: m.gw, gh: m.gh, elev,
+    ix,
+    iy,
+    N: n,
+    c0,
+    c1,
+    r0,
+    r1,
+    gpuMesh: m,
+    gw: m.gw,
+    gh: m.gh,
+    elev,
     bbox: s1mSubTileBbox(data, c0, c1, r0, r1),
     uvRect: [c0 / (W - 1), r0 / (H - 1), c1 / (W - 1), r1 / (H - 1)],
-    drapeImage: null, drapeKey: null, drapePending: null,
+    drapeImage: null,
+    drapeKey: null,
+    drapePending: null,
     data, // Store data reference for fallback building
   };
   cache.subtiles.set(subKey, sub);
@@ -3267,8 +3882,13 @@ function ensureSubTileDrape(data, tile, sub, schedulePaint, seq) {
     sub.drapePending = sourceKey;
     return;
   }
-  if (sub.drapePending === sourceKey) sub.drapePending = null;
-  const sources = drapeSourcesForTile(region, sourcePool).slice(0, s1mMaxDrapeSourcesPerTile());
+  if (sub.drapePending === sourceKey) {
+    sub.drapePending = null;
+  }
+  const sources = drapeSourcesForTile(region, sourcePool).slice(
+    0,
+    s1mMaxDrapeSourcesPerTile(),
+  );
   if (!sources.length) {
     sub.drapeError = "no imagery sources intersect S1M subtile";
     return;
@@ -3276,15 +3896,22 @@ function ensureSubTileDrape(data, tile, sub, schedulePaint, seq) {
   sub.drapeError = null;
   const hrefKey = sources.map((s) => s.assets?.image?.href || s.id).join("|");
   const key = `${data.dataset}@sub${sub.N}:${sub.ix},${sub.iy}@${hrefKey}@${imageryRevision}@${S1M_SUBTILE_DRAPE_SIZE}`;
-  if (sub.drapeKey === key || sub.drapePending === key) return;
+  if (sub.drapeKey === key || sub.drapePending === key) {
+    return;
+  }
   let pending = s1mDrapeCache.get(key);
   if (!pending) {
     const startedAt = performance.now();
     s1mDrapeMetrics.tilesStarted += 1;
     s1mDrapeMetrics.tileSourceRefs += sources.length;
-    s1mDrapeMetrics.analyticRefs += sources.filter((s) => s?.assets?.image?.href?.startsWith("s3://naip-analytic/")).length;
+    s1mDrapeMetrics.analyticRefs += sources.filter((s) =>
+      s?.assets?.image?.href?.startsWith("s3://naip-analytic/"),
+    ).length;
     s1mDrapeMetrics.lastSourceRefs = sources.length;
-    s1mDrapeMetrics.maxSourceRefs = Math.max(s1mDrapeMetrics.maxSourceRefs, sources.length);
+    s1mDrapeMetrics.maxSourceRefs = Math.max(
+      s1mDrapeMetrics.maxSourceRefs,
+      sources.length,
+    );
     s1mDrapeMetrics.lastHref = sources[0]?.assets?.image?.href || null;
     renderS1MDrapeMetrics();
     pending = buildDrapeImage(data, region, sources, S1M_SUBTILE_DRAPE_SIZE)
@@ -3292,12 +3919,15 @@ function ensureSubTileDrape(data, tile, sub, schedulePaint, seq) {
         // Record the finest subdivision actually draped for this tile so
         // s1mBuildTileLayers can ratchet -- never re-drape coarser on zoom-out.
         const drapedMax = s1mDrapedSubdivByDataset.get(data.dataset) || 0;
-        if (sub.N > drapedMax) s1mDrapedSubdivByDataset.set(data.dataset, sub.N);
+        if (sub.N > drapedMax) {
+          s1mDrapedSubdivByDataset.set(data.dataset, sub.N);
+        }
         const elapsed = performance.now() - startedAt;
         s1mDrapeMetrics.tilesCompleted += 1;
         s1mDrapeMetrics.totalTileMs += elapsed;
         s1mDrapeMetrics.lastTileMs = elapsed;
-        s1mBench.drapeBuildMs += elapsed; s1mBench.drapeBuildN += 1;
+        s1mBench.drapeBuildMs += elapsed;
+        s1mBench.drapeBuildN += 1;
         if (s1mDrapeCache.get(key) === pending) {
           s1mDrapeCacheBytes.set(key, imageData?.data?.byteLength || 0);
         }
@@ -3317,20 +3947,28 @@ function ensureSubTileDrape(data, tile, sub, schedulePaint, seq) {
   }
   const oldDrapeKey = sub.drapeKey;
   sub.drapePending = key;
-  pending.then((imageData) => {
-    sub.drapeImage = imageData;
-    sub.drapeKey = key;
-    if (sub.drapePending === key) sub.drapePending = null;
-    if (oldDrapeKey && oldDrapeKey !== key) deleteS1MDrapeCacheEntry(oldDrapeKey);
-    pruneS1MDrapeCache();
-    if (s1mActive && seq === s1mRefreshSeq) {
-      schedulePaint?.();
-    }
-  }).catch((error) => {
-    if (sub.drapePending === key) sub.drapePending = null;
-    sub.drapeError = error?.message || String(error);
-    console.error("Drape sub-tile failed:", error);
-  });
+  pending
+    .then((imageData) => {
+      sub.drapeImage = imageData;
+      sub.drapeKey = key;
+      if (sub.drapePending === key) {
+        sub.drapePending = null;
+      }
+      if (oldDrapeKey && oldDrapeKey !== key) {
+        deleteS1MDrapeCacheEntry(oldDrapeKey);
+      }
+      pruneS1MDrapeCache();
+      if (s1mActive && seq === s1mRefreshSeq) {
+        schedulePaint?.();
+      }
+    })
+    .catch((error) => {
+      if (sub.drapePending === key) {
+        sub.drapePending = null;
+      }
+      sub.drapeError = error?.message || String(error);
+      console.error("Drape sub-tile failed:", error);
+    });
 }
 
 function buildS1MSubTileLayerGPU(data, sub, exag, range) {
@@ -3342,11 +3980,19 @@ function buildS1MSubTileLayerGPU(data, sub, exag, range) {
     coordinateSystem: S1M_COORD.METER_OFFSETS,
     coordinateOrigin: [clon, clat, 0],
     mesh: sub.gpuMesh.mesh,
-    data: { length: 1, attributes: { positions64Low: sub.gpuMesh.positions64Low } },
+    data: {
+      length: 1,
+      attributes: { positions64Low: sub.gpuMesh.positions64Low },
+    },
     elevationData: sub.elev,
-    gridWidth: sub.gw, gridHeight: sub.gh,
-    stepX: subData.step[0], stepY: subData.step[1],
-    exag, zmin, zspan: Math.max(1e-6, zmax - zmin), nodata: subData.nodata,
+    gridWidth: sub.gw,
+    gridHeight: sub.gh,
+    stepX: subData.step[0],
+    stepY: subData.step[1],
+    exag,
+    zmin,
+    zspan: Math.max(1e-6, zmax - zmin),
+    nodata: subData.nodata,
     drapeImage: sub.drapeImage || null,
     wireframe: false,
     parameters: { cullMode: "none" },
@@ -3357,8 +4003,17 @@ function buildS1MSubTileLayerGPU(data, sub, exag, range) {
 // Layers for one S1M tile during a refresh: sub-tiled in GPU+imagery-drape
 // mode (viewport-culled, draping triggered for visible sub-tiles), else the
 // single whole-tile layer (shaded GPU or CPU wireframe) as before.
-function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, seq) {
-  const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
+function s1mBuildTileLayers(
+  cache,
+  tile,
+  exag,
+  range,
+  viewBbox,
+  schedulePaint,
+  seq,
+) {
+  const gpu =
+    !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
   const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
   const wantsDrape = drapeImageryActive();
   if (!(gpu && !wireframe && wantsDrape) || !cache.elevations) {
@@ -3372,7 +4027,9 @@ function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, s
   // (refreshS1MTerrain eviction) or on collection change / terrain off.
   let n = s1mSubdiv(tile);
   const drapedN = s1mDrapedSubdivByDataset.get(tile.dataset) || 0;
-  if (drapedN > n) n = drapedN;
+  if (drapedN > n) {
+    n = drapedN;
+  }
   // Clamp the ratchet to the CURRENT responsive cap: zooming out lowers the
   // cap (more tiles in view), so a fine subdivision earned at deep zoom is
   // released here instead of rendering thousands of tiny sub-tiles at z10.
@@ -3385,7 +4042,11 @@ function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, s
   // terrain and cannot hide a refresh gap.
   if (cache.subtiles) {
     for (const [k, s] of [...cache.subtiles]) {
-      if ((s.N !== n || !bboxIntersects(s.bbox, viewBbox)) && !s.drapeImage && !s.drapePending) {
+      if (
+        (s.N !== n || !bboxIntersects(s.bbox, viewBbox)) &&
+        !s.drapeImage &&
+        !s.drapePending
+      ) {
         cache.subtiles.delete(k);
       }
     }
@@ -3394,7 +4055,9 @@ function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, s
   for (let iy = 0; iy < n; iy++) {
     for (let ix = 0; ix < n; ix++) {
       const bbox = s1mSubTileBbox(data, bx[ix], bx[ix + 1], by[iy], by[iy + 1]);
-      if (!bboxIntersects(bbox, viewBbox)) continue;   // viewport cull
+      if (!bboxIntersects(bbox, viewBbox)) {
+        continue; // viewport cull
+      }
       const sub = ensureSubTile(cache, ix, iy, n, bx, by);
       ensureSubTileDrape(data, tile, sub, schedulePaint, seq);
       targetSubs.push(sub);
@@ -3409,8 +4072,11 @@ function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, s
         candidates.push(...other.subtiles.values());
       }
     }
-    fallbackSubs = candidates.filter((sub) =>
-      (sub.N !== n || sub.data !== cache.data) && sub.drapeImage && bboxIntersects(sub.bbox, viewBbox)
+    fallbackSubs = candidates.filter(
+      (sub) =>
+        (sub.N !== n || sub.data !== cache.data) &&
+        sub.drapeImage &&
+        bboxIntersects(sub.bbox, viewBbox),
     );
   }
   const layers = [];
@@ -3420,8 +4086,13 @@ function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, s
       layers.push(buildS1MSubTileLayerGPU(data, sub, exag, range));
       continue;
     }
-    const fallbackMatches = fallbackSubs.filter((candidate) => bboxOverlapFraction(sub.bbox, candidate.bbox) > 0.01);
-    const fallbackCoverage = bboxCombinedOverlapFraction(sub.bbox, fallbackMatches.map((candidate) => candidate.bbox));
+    const fallbackMatches = fallbackSubs.filter(
+      (candidate) => bboxOverlapFraction(sub.bbox, candidate.bbox) > 0.01,
+    );
+    const fallbackCoverage = bboxCombinedOverlapFraction(
+      sub.bbox,
+      fallbackMatches.map((candidate) => candidate.bbox),
+    );
     if (fallbackCoverage < 0.75) {
       layers.push(buildS1MSubTileLayerGPU(data, sub, exag, range));
     }
@@ -3439,7 +4110,10 @@ function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, s
     // The desired LOD is fully draped. We can now safely evict any other cached LOD sizes
     // for this dataset, since we no longer need them as fallbacks.
     for (const cacheKey of [...s1mTileCache.keys()]) {
-      if (cacheKey.startsWith(tile.dataset + "@") && cacheKey !== `${tile.dataset}@${tile.size}`) {
+      if (
+        cacheKey.startsWith(`${tile.dataset}@`) &&
+        cacheKey !== `${tile.dataset}@${tile.size}`
+      ) {
         disposeS1MTileCache(s1mTileCache.get(cacheKey));
         s1mTileCache.delete(cacheKey);
       }
@@ -3453,11 +4127,14 @@ function s1mBuildTileLayers(cache, tile, exag, range, viewBbox, schedulePaint, s
 // mode toggles -- no refetch, no new draping). Uses existing sub-tiles when
 // present so exaggeration stays a free uniform update.
 function s1mTileLayersFromCache(cache, exag, range) {
-  const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
+  const gpu =
+    !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
   const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
   const wantsDrape = drapeImageryActive();
   if (gpu && !wireframe && wantsDrape && cache.subtiles?.size) {
-    return [...cache.subtiles.values()].map((s) => buildS1MSubTileLayerGPU(cache.data, s, exag, range));
+    return [...cache.subtiles.values()].map((s) =>
+      buildS1MSubTileLayerGPU(cache.data, s, exag, range),
+    );
   }
   return [s1mBuildTileLayer(cache, exag, range)];
 }
@@ -3491,17 +4168,22 @@ function buildS1MTerrainLayerGPU(cache, exag, wireframe, range) {
   const [zmin, zmax] = range || data.z_range;
   const [clon, clat] = data.center_lnglat;
   return new TerrainMeshLayerClass({
-    id: "s1m-terrain-" + data.dataset + "-" + data.width,
+    id: `s1m-terrain-${data.dataset}-${data.width}`,
     coordinateSystem: S1M_COORD.METER_OFFSETS,
     coordinateOrigin: [clon, clat, 0],
     mesh: gpuMesh.mesh,
     data: { length: 1, attributes: { positions64Low: gpuMesh.positions64Low } },
     elevationData: elevations,
-    gridWidth: data.width, gridHeight: data.height,
-    stepX: data.step[0], stepY: data.step[1],
-    exag, zmin, zspan: Math.max(1e-6, zmax - zmin), nodata: data.nodata,
+    gridWidth: data.width,
+    gridHeight: data.height,
+    stepX: data.step[0],
+    stepY: data.step[1],
+    exag,
+    zmin,
+    zspan: Math.max(1e-6, zmax - zmin),
+    nodata: data.nodata,
     drapeImage: cache.drapeImage || null,
-    wireframe: !!wireframe,   // draw the displaced mesh as edges
+    wireframe: !!wireframe, // draw the displaced mesh as edges
     parameters: { cullMode: "none" },
     pickable: false,
   });
@@ -3510,8 +4192,14 @@ function buildS1MTerrainLayerGPU(cache, exag, wireframe, range) {
 // Token + base helper for the dedicated S1M service.
 function s1mFetch(path, body) {
   const headers = { "content-type": "application/json" };
-  if (S1M_DEMO_TOKEN) headers["x-demo-token"] = S1M_DEMO_TOKEN;
-  return fetch(`${S1M_API_BASE}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  if (S1M_DEMO_TOKEN) {
+    headers["x-demo-token"] = S1M_DEMO_TOKEN;
+  }
+  return fetch(`${S1M_API_BASE}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
 }
 
 function s1mProjectedTilePixels(tile) {
@@ -3527,7 +4215,8 @@ function s1mProjectedTilePixels(tile) {
   ];
   let maxEdge = 0;
   for (let i = 0; i < corners.length; i++) {
-    const a = corners[i], b = corners[(i + 1) % corners.length];
+    const a = corners[i],
+      b = corners[(i + 1) % corners.length];
     maxEdge = Math.max(maxEdge, Math.hypot(a.x - b.x, a.y - b.y));
   }
   return Number.isFinite(maxEdge) ? maxEdge : 256;
@@ -3547,7 +4236,9 @@ function s1mScreenSortKey(tile) {
   const ys = corners.map((p) => p.y).filter(Number.isFinite);
   const xs = corners.map((p) => p.x).filter(Number.isFinite);
   const bottomY = ys.length ? Math.max(...ys) : -Infinity;
-  const centerX = xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : Infinity;
+  const centerX = xs.length
+    ? xs.reduce((sum, x) => sum + x, 0) / xs.length
+    : Infinity;
   return { bottomY, centerX };
 }
 
@@ -3557,8 +4248,13 @@ function sortS1MTilesBottomFirst(tiles) {
     const ak = s1mScreenSortKey(a);
     const bk = s1mScreenSortKey(b);
     const bottomDelta = bk.bottomY - ak.bottomY;
-    if (bottomDelta) return bottomDelta;
-    return Math.abs(ak.centerX - viewportCenterX) - Math.abs(bk.centerX - viewportCenterX);
+    if (bottomDelta) {
+      return bottomDelta;
+    }
+    return (
+      Math.abs(ak.centerX - viewportCenterX) -
+      Math.abs(bk.centerX - viewportCenterX)
+    );
   });
 }
 
@@ -3575,13 +4271,18 @@ function s1mFootprintViewportKey(bbox) {
 
 function s1mFootprintPaths(tile) {
   if (Array.isArray(tile?.footprint) && tile.footprint.length > 0) {
-    return tile.footprint.filter((ring) => Array.isArray(ring) && ring.length >= 4);
+    return tile.footprint.filter(
+      (ring) => Array.isArray(ring) && ring.length >= 4,
+    );
   }
   return [];
 }
 
 async function refreshS1MFootprintsLayer() {
-  if (!toggleS1MFootprintsLayerEl?.checked || !s1mFootprintsVisibleAtCurrentZoom()) {
+  if (
+    !toggleS1MFootprintsLayerEl?.checked ||
+    !s1mFootprintsVisibleAtCurrentZoom()
+  ) {
     s1mFootprintSeq += 1;
     s1mFootprintTiles = [];
     s1mFootprintKey = "";
@@ -3608,14 +4309,25 @@ async function refreshS1MFootprintsLayer() {
       throw new Error(`S1M footprints ${response.status}`);
     }
     const tiles = (await response.json()).tiles || [];
-    if (seq !== s1mFootprintSeq) return;
-    if (tiles.length && !tiles.some((tile) => Array.isArray(tile?.footprint) && tile.footprint.length)) {
-      console.warn("S1M footprint layer received no polygon footprints; deploy the updated S1M API.");
+    if (seq !== s1mFootprintSeq) {
+      return;
+    }
+    if (
+      tiles.length &&
+      !tiles.some(
+        (tile) => Array.isArray(tile?.footprint) && tile.footprint.length,
+      )
+    ) {
+      console.warn(
+        "S1M footprint layer received no polygon footprints; deploy the updated S1M API.",
+      );
     }
     s1mFootprintTiles = tiles;
     s1mFootprintKey = key;
   } catch (error) {
-    if (seq !== s1mFootprintSeq) return;
+    if (seq !== s1mFootprintSeq) {
+      return;
+    }
     s1mFootprintTiles = [];
     s1mFootprintKey = "";
     console.error("S1M footprints failed:", error);
@@ -3632,8 +4344,12 @@ function naipCoverageMvtUrl() {
     collection: activeCollection(),
     v: NAIP_COVERAGE_MVT_VERSION,
   });
-  if (stateEl.value) params.set("region", stateEl.value);
-  if (yearEl.value) params.set("year", yearEl.value);
+  if (stateEl.value) {
+    params.set("region", stateEl.value);
+  }
+  if (yearEl.value) {
+    params.set("year", yearEl.value);
+  }
   const base = API_BASE || "";
   return `${base}/naip-coverage/{z}/{x}/{y}.mvt?${params.toString()}`;
 }
@@ -3648,7 +4364,6 @@ function removeNaipCoverageMvtLayer() {
   if (map.getSource(NAIP_COVERAGE_MVT_SOURCE_ID)) {
     map.removeSource(NAIP_COVERAGE_MVT_SOURCE_ID);
   }
-  naipCoverageMvtKey = "";
 }
 
 function updateNaipCoverageMvtLayer() {
@@ -3675,17 +4390,29 @@ function syncFootprintLayerMode() {
 // DEM overviews. Quantized sizes keep cache churn bounded while panning.
 function s1mLodSize(tile) {
   const px = s1mProjectedTilePixels(tile);
-  if (px >= 900) return 384;
-  if (px >= 600) return 256;
-  if (px >= 360) return 192;
-  if (px >= 220) return 128;
-  if (px >= 120) return 96;
+  if (px >= 900) {
+    return 384;
+  }
+  if (px >= 600) {
+    return 256;
+  }
+  if (px >= 360) {
+    return 192;
+  }
+  if (px >= 220) {
+    return 128;
+  }
+  if (px >= 120) {
+    return 96;
+  }
   return 64;
 }
 
 function s1mPaddedBbox(bounds) {
-  const west = bounds.getWest(), south = bounds.getSouth();
-  const east = bounds.getEast(), north = bounds.getNorth();
+  const west = bounds.getWest(),
+    south = bounds.getSouth();
+  const east = bounds.getEast(),
+    north = bounds.getNorth();
   const padLon = Math.max(0.01, (east - west) * 0.18);
   const padLat = Math.max(0.01, (north - south) * 0.18);
   return [
@@ -3706,11 +4433,16 @@ const S1M_ABS_RANGE = [0, 1500];
 // displacement baseline are consistent tile-to-tile instead of each tile
 // stretching its own min/max.
 function s1mViewRange() {
-  let lo = Infinity, hi = -Infinity;
+  let lo = Infinity,
+    hi = -Infinity;
   for (const c of s1mTileCache.values()) {
     const [a, b] = c.data.z_range;
-    if (a < lo) lo = a;
-    if (b > hi) hi = b;
+    if (a < lo) {
+      lo = a;
+    }
+    if (b > hi) {
+      hi = b;
+    }
   }
   return Number.isFinite(lo) ? [lo, Math.max(lo + 1e-6, hi)] : [0, 1];
 }
@@ -3724,7 +4456,8 @@ function s1mColorRange() {
 }
 
 function s1mBuildTileLayer(cache, exag, range) {
-  const gpu = !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
+  const gpu =
+    !!document.getElementById("ter-gpu")?.checked && !!TerrainMeshLayerClass;
   const wireframe = document.getElementById("ter-mode")?.value === "wireframe";
   const wantsDrape = drapeImageryActive();
   const draped = gpu && !wireframe && !!cache.drapeImage && wantsDrape;
@@ -3732,18 +4465,22 @@ function s1mBuildTileLayer(cache, exag, range) {
   // source mesh. For GPU displacement that source mesh is intentionally
   // flat (z=0), so wireframe appears as parallel lines below the terrain.
   // Use the CPU-baked mesh for wireframe so line vertices include z.
-  return gpu && !wireframe ? buildS1MTerrainLayerGPU(
-    draped ? cache : { ...cache, drapeImage: null },
-    exag,
-    false,
-    range,
-  ) : buildS1MTerrainLayer(cache.data, exag, wireframe, range);
+  return gpu && !wireframe
+    ? buildS1MTerrainLayerGPU(
+        draped ? cache : { ...cache, drapeImage: null },
+        exag,
+        false,
+        range,
+      )
+    : buildS1MTerrainLayer(cache.data, exag, wireframe, range);
 }
 
 // Rebuild cached tile layers at the current exaggeration (a uniform change
 // for GPU tiles -- texture reused) without re-querying coverage.
 function rebuildS1MLayers() {
-  if (!s1mActive) return;
+  if (!s1mActive) {
+    return;
+  }
   const exag = Number(document.getElementById("ter-exag").value) || 2;
   const range = s1mColorRange();
   s1mLayers = [...s1mTileCache.values()]
@@ -3756,7 +4493,9 @@ function rebuildS1MLayers() {
 // projected screen footprint, mesh new ones, evict off-screen ones, redraw.
 // A sequence guard drops stale refreshes.
 async function refreshS1MTerrain() {
-  if (!s1mActive) return;
+  if (!s1mActive) {
+    return;
+  }
   const summaryEl = document.getElementById("ter-summary");
   const seq = ++s1mRefreshSeq;
   const exag = Number(document.getElementById("ter-exag").value) || 2;
@@ -3787,14 +4526,24 @@ async function refreshS1MTerrain() {
       max_tiles: S1M_MAX_TILES,
       center: [c.lng, c.lat],
     });
-    if (!r.ok) { summaryEl.textContent = `Tiles error ${r.status}`; return; }
+    if (!r.ok) {
+      summaryEl.textContent = `Tiles error ${r.status}`;
+      return;
+    }
     tiles = sortS1MTilesBottomFirst((await r.json()).tiles || []);
-  } catch (e) { summaryEl.textContent = `Tiles fetch failed: ${e?.message || e}`; return; }
-  if (seq !== s1mRefreshSeq) return;
-  s1mActiveTiles = new Map(tiles.map((t) => {
-    const size = s1mLodSize(t);
-    return [`${t.dataset}@${size}`, { ...t, size }];
-  }));
+  } catch (e) {
+    summaryEl.textContent = `Tiles fetch failed: ${e?.message || e}`;
+    return;
+  }
+  if (seq !== s1mRefreshSeq) {
+    return;
+  }
+  s1mActiveTiles = new Map(
+    tiles.map((t) => {
+      const size = s1mLodSize(t);
+      return [`${t.dataset}@${size}`, { ...t, size }];
+    }),
+  );
   s1mFillMetrics.desired = s1mActiveTiles.size;
   refreshBuildingFootprints();
 
@@ -3819,36 +4568,71 @@ async function refreshS1MTerrain() {
   let paintQueued = false;
   const paint = () => {
     paintQueued = false;
-    if (seq !== s1mRefreshSeq) return;
-    const range = s1mColorRange();  // absolute: fixed; adaptive: grows as tiles arrive
+    if (seq !== s1mRefreshSeq) {
+      return;
+    }
+    const range = s1mColorRange(); // absolute: fixed; adaptive: grows as tiles arrive
     const built = [];
-    let tilesDrawn = 0, exactDrawn = 0, fallbackDrawn = 0, missingDrawn = 0;
-    let subTotal = 0, subTextured = 0, subPending = 0, subRefreshing = 0, subFailed = 0;
+    let tilesDrawn = 0,
+      exactDrawn = 0,
+      fallbackDrawn = 0,
+      missingDrawn = 0;
+    let subTotal = 0,
+      subTextured = 0,
+      subPending = 0,
+      subRefreshing = 0,
+      subFailed = 0;
     for (const k of desired.keys()) {
       const tile = desired.get(k);
-      if (!tile) continue;
+      if (!tile) {
+        continue;
+      }
       // Find the best cached entry for this tile (exact LOD, else any LOD).
       let c = s1mTileCache.get(k);
-      let exact = !!c;
+      const exact = !!c;
       if (!c) {
         for (const cacheKey of s1mTileCache.keys()) {
-          if (cacheKey.startsWith(tile.dataset + "@")) { c = s1mTileCache.get(cacheKey); break; }
+          if (cacheKey.startsWith(`${tile.dataset}@`)) {
+            c = s1mTileCache.get(cacheKey);
+            break;
+          }
         }
       }
-      if (!c) { missingDrawn += 1; continue; }
-      const tileLayers = s1mBuildTileLayers(c, tile, exag, range, visibleBbox, schedulePaint, seq);
-      if (tileLayers.length) tilesDrawn += 1;
-      if (exact) exactDrawn += 1; else fallbackDrawn += 1;
+      if (!c) {
+        missingDrawn += 1;
+        continue;
+      }
+      const tileLayers = s1mBuildTileLayers(
+        c,
+        tile,
+        exag,
+        range,
+        visibleBbox,
+        schedulePaint,
+        seq,
+      );
+      if (tileLayers.length) {
+        tilesDrawn += 1;
+      }
+      if (exact) {
+        exactDrawn += 1;
+      } else {
+        fallbackDrawn += 1;
+      }
       built.push(...tileLayers);
       if (c.subtiles) {
         for (const s of c.subtiles.values()) {
           subTotal += 1;
           if (s.drapeImage) {
             subTextured += 1;
-            if (s.drapePending && s.drapePending !== s.drapeKey) subRefreshing += 1;
+            if (s.drapePending && s.drapePending !== s.drapeKey) {
+              subRefreshing += 1;
+            }
+          } else if (s.drapePending) {
+            subPending += 1;
+          } else if (s.drapeError) {
+            subFailed += 1;
           }
-          else if (s.drapePending) subPending += 1;
-          else if (s.drapeError) subFailed += 1;
         }
       }
     }
@@ -3869,27 +4653,47 @@ async function refreshS1MTerrain() {
       drapeRefreshing: subRefreshing,
       drapeFailed: subFailed,
     };
-    const sizes = [...new Set([...desired.values()].map((t) => t.size))].sort((a, b) => a - b);
-    const sizeText = sizes.length <= 1 ? `${sizes[0] ?? "-"}` : `${sizes[0]}-${sizes[sizes.length - 1]}`;
-    const canRenderDrape = !!document.getElementById("ter-gpu")?.checked &&
+    const sizes = [...new Set([...desired.values()].map((t) => t.size))].sort(
+      (a, b) => a - b,
+    );
+    const sizeText =
+      sizes.length <= 1
+        ? `${sizes[0] ?? "-"}`
+        : `${sizes[0]}-${sizes[sizes.length - 1]}`;
+    const canRenderDrape =
+      !!document.getElementById("ter-gpu")?.checked &&
       document.getElementById("ter-mode")?.value !== "wireframe" &&
       drapeImageryActive();
-    const drapeText = canRenderDrape ? ` · ${subTextured}/${subTotal} drape sub-tiles` : "";
-    const drapeErrorText = canRenderDrape && s1mDrapeSourceError ? ` · drape search failed` : "";
+    const drapeText = canRenderDrape
+      ? ` · ${subTextured}/${subTotal} drape sub-tiles`
+      : "";
+    const drapeErrorText =
+      canRenderDrape && s1mDrapeSourceError ? ` · drape search failed` : "";
     // Imagery is selected but the drape is deferred (small-COG collection,
     // zoomed out): show shaded terrain and tell the user why + how to fix.
-    const drapeGated = document.getElementById("ter-surface")?.value === "imagery"
-      && isSmallCogCollection() && (map.getZoom() || 0) < S1M_SMALL_COG_DRAPE_MIN_ZOOM;
-    const drapeGateText = drapeGated ? ` · shaded — imagery drapes at z≥${S1M_SMALL_COG_DRAPE_MIN_ZOOM} (zoom in)` : "";
+    const drapeGated =
+      document.getElementById("ter-surface")?.value === "imagery" &&
+      isSmallCogCollection() &&
+      (map.getZoom() || 0) < S1M_SMALL_COG_DRAPE_MIN_ZOOM;
+    const drapeGateText = drapeGated
+      ? ` · shaded — imagery drapes at z≥${S1M_SMALL_COG_DRAPE_MIN_ZOOM} (zoom in)`
+      : "";
     summaryEl.textContent = desired.size
       ? `${tilesDrawn}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}${drapeGateText}`
       : "No S1M coverage in view (CONUS only, still expanding).";
     // Re-seat footprints as elevation tiles arrive so bases catch up to the relief.
-    if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();
+    if (terBuildingsEl?.checked && buildingFeatureData) {
+      applyBuildingExtrusionZ();
+    }
   };
-  const schedulePaint = () => { if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); } };
+  const schedulePaint = () => {
+    if (!paintQueued) {
+      paintQueued = true;
+      requestAnimationFrame(paint);
+    }
+  };
 
-  schedulePaint();  // show already-cached tiles immediately
+  schedulePaint(); // show already-cached tiles immediately
 
   // Fetch missing tiles bottom-of-viewport first with bounded concurrency,
   // painting each arrival immediately so its imagery drape can start before
@@ -3899,36 +4703,59 @@ async function refreshS1MTerrain() {
   let idx = 0;
   const worker = async () => {
     while (idx < missing.length) {
-      if (seq !== s1mRefreshSeq) return;
+      if (seq !== s1mRefreshSeq) {
+        return;
+      }
       const [key, t] = missing[idx++];
       try {
         const tf0 = performance.now();
         s1mFillMetrics.terrainStarted += 1;
-        s1mTerrainPending.set(key, { seq, dataset: t.dataset, size: t.size, startedAt: tf0 });
+        s1mTerrainPending.set(key, {
+          seq,
+          dataset: t.dataset,
+          size: t.size,
+          startedAt: tf0,
+        });
         let data;
         try {
           // Read the DEM overview directly in the browser (no /s1m/terrain).
           data = await readS1MTerrainClient(t.dataset, t.size);
         } catch (readError) {
-          if (seq !== s1mRefreshSeq) return;  // Clear/newer refresh superseded us
+          if (seq !== s1mRefreshSeq) {
+            return; // Clear/newer refresh superseded us
+          }
           const message = `terrain read: ${readError?.message || readError}`;
           s1mFillMetrics.terrainFailed += 1;
-          s1mTerrainFailures.set(key, { seq, dataset: t.dataset, size: t.size, message, at: performance.now() });
+          s1mTerrainFailures.set(key, {
+            seq,
+            dataset: t.dataset,
+            size: t.size,
+            message,
+            at: performance.now(),
+          });
           continue;
         }
         if (seq !== s1mRefreshSeq) {
-          return;  // Clear/newer refresh superseded us
+          return; // Clear/newer refresh superseded us
         }
         const tf1 = performance.now();
         const elevations = data.elev;
-        const gpuMesh = s1mGpuMesh(data.width, data.height, data.step[0], data.step[1], data.center_lnglat[0]);
+        const gpuMesh = s1mGpuMesh(
+          data.width,
+          data.height,
+          data.step[0],
+          data.step[1],
+          data.center_lnglat[0],
+        );
         const tf2 = performance.now();
-        s1mBench.terrainFetchMs += tf1 - tf0; s1mBench.terrainFetchN += 1;
-        s1mBench.meshMs += tf2 - tf1; s1mBench.meshN += 1;
+        s1mBench.terrainFetchMs += tf1 - tf0;
+        s1mBench.terrainFetchN += 1;
+        s1mBench.meshMs += tf2 - tf1;
+        s1mBench.meshN += 1;
         s1mTileCache.set(key, { data, elevations, gpuMesh, layer: null });
         s1mFillMetrics.terrainCompleted += 1;
         pruneS1MDrapeCache();
-        paint();  // paint sub-tiles + start draping this newly arrived tile now
+        paint(); // paint sub-tiles + start draping this newly arrived tile now
       } catch (error) {
         if (seq !== s1mRefreshSeq) {
           return;
@@ -3953,7 +4780,10 @@ async function refreshS1MTerrain() {
 
 const s1mDebouncedRefresh = (() => {
   let t = null;
-  return () => { clearTimeout(t); t = setTimeout(refreshS1MTerrain, 300); };
+  return () => {
+    clearTimeout(t);
+    t = setTimeout(refreshS1MTerrain, 300);
+  };
 })();
 
 async function enableS1MTerrain() {
@@ -3967,9 +4797,15 @@ async function enableS1MTerrain() {
     updateReferenceRasterLayers();
 
     await initImagerySupport();
-    if (!S1M_COORD) { summaryEl.textContent = "Terrain modules unavailable."; return; }
+    if (!S1M_COORD) {
+      summaryEl.textContent = "Terrain modules unavailable.";
+      return;
+    }
     s1mActive = true;
-    if (!s1mMoveHandler) { s1mMoveHandler = s1mDebouncedRefresh; map.on("moveend", s1mMoveHandler); }
+    if (!s1mMoveHandler) {
+      s1mMoveHandler = s1mDebouncedRefresh;
+      map.on("moveend", s1mMoveHandler);
+    }
     await refreshS1MTerrain();
   } catch (err) {
     summaryEl.textContent = `Terrain load failed: ${err?.message || err}`;
@@ -3980,8 +4816,11 @@ async function enableS1MTerrain() {
 
 function clearS1MTerrain() {
   s1mActive = false;
-  s1mRefreshSeq++;  // invalidate any in-flight refresh
-  if (s1mMoveHandler) { map.off("moveend", s1mMoveHandler); s1mMoveHandler = null; }
+  s1mRefreshSeq++; // invalidate any in-flight refresh
+  if (s1mMoveHandler) {
+    map.off("moveend", s1mMoveHandler);
+    s1mMoveHandler = null;
+  }
   for (const cache of s1mTileCache.values()) {
     disposeS1MTileCache(cache);
   }
@@ -4000,11 +4839,14 @@ function clearS1MTerrain() {
   clearBuildingFootprints();
   updateImageryLayers();
   const el = document.getElementById("ter-summary");
-  if (el) el.textContent = "No terrain loaded.";
+  if (el) {
+    el.textContent = "No terrain loaded.";
+  }
   const metricsEl = document.getElementById("ter-metrics");
-  if (metricsEl) metricsEl.textContent = "Drape metrics unavailable.";
+  if (metricsEl) {
+    metricsEl.textContent = "Drape metrics unavailable.";
+  }
 }
-
 
 function getBasemapSourceCacheEntries() {
   const style = map.style;
@@ -4012,21 +4854,25 @@ function getBasemapSourceCacheEntries() {
     return [];
   }
   const sourceCaches = style.sourceCaches || style._sourceCaches || {};
-  const ignoredSources = new Set([
-    "naip-search",
-  ]);
-  return Object.entries(sourceCaches).filter(([sourceId]) => !ignoredSources.has(sourceId));
+  const ignoredSources = new Set(["naip-search"]);
+  return Object.entries(sourceCaches).filter(
+    ([sourceId]) => !ignoredSources.has(sourceId),
+  );
 }
 
 function updateReferenceRasterLayers() {
   const usgsVisible = toggleUsgsNaipWmsLayerEl.checked;
   if (map.getLayer("usgs-naip-wms-layer")) {
-    map.setLayoutProperty("usgs-naip-wms-layer", "visibility", usgsVisible ? "visible" : "none");
+    map.setLayoutProperty(
+      "usgs-naip-wms-layer",
+      "visibility",
+      usgsVisible ? "visible" : "none",
+    );
   }
   moveMapLibreVectorLayersToTop();
 }
 
-function updateResolutionDebug(features, imagerySources) {
+function updateResolutionDebug(_features, imagerySources) {
   if (!imagerySources.length) {
     resolutionDebugEl.textContent = "Resolution debug unavailable.";
     return;
@@ -4034,7 +4880,7 @@ function updateResolutionDebug(features, imagerySources) {
 
   const topSource = imagerySources[0];
   const properties = topSource?.properties || {};
-  const gsd = Number(properties["gsd"]);
+  const gsd = Number(properties.gsd);
   const mapMpp = mapMetersPerPixel();
 
   if (!Number.isFinite(gsd) || !Number.isFinite(mapMpp) || gsd <= 0) {
@@ -4061,9 +4907,19 @@ async function initImagerySupport({ retryAfterMemoryRelease = true } = {}) {
   if (deckOverlay && MosaicLayerClass && COGLayerClass) {
     return;
   }
-  imageryInitAttempted = true;
   try {
-    const [{ MapboxOverlay }, geoLayersModule, geotiffModule, geotiffCoreModule, rasterGpuModule, { lngLatToWorld }, meshLayersModule, deckCoreModule, rasterModule, layersModule] = await Promise.all([
+    const [
+      { MapboxOverlay },
+      geoLayersModule,
+      geotiffModule,
+      geotiffCoreModule,
+      rasterGpuModule,
+      { lngLatToWorld },
+      meshLayersModule,
+      deckCoreModule,
+      rasterModule,
+      layersModule,
+    ] = await Promise.all([
       import("@deck.gl/mapbox"),
       import("@deck.gl/geo-layers"),
       import("@s3-cog/deck.gl-geotiff"),
@@ -4075,7 +4931,6 @@ async function initImagerySupport({ retryAfterMemoryRelease = true } = {}) {
       import("@s3-cog/deck.gl-raster"),
       import("@deck.gl/layers"),
     ]);
-    MapboxOverlayClass = MapboxOverlay;
     MVTLayerClass = geoLayersModule.MVTLayer;
     MosaicLayerClass = geotiffModule.MosaicLayer;
     COGLayerClass = geotiffModule.COGLayer;
@@ -4098,7 +4953,9 @@ async function initImagerySupport({ retryAfterMemoryRelease = true } = {}) {
       // use the lower of the two: these requests compete with other
       // same-origin imagery reads (the flat-map COG tiles share the S3
       // origin) while a cold drape fills.
-      s1mDrapeConcurrencyLimiter = new geotiffCoreModule.PerOriginSemaphore({ maxRequests: 16 });
+      s1mDrapeConcurrencyLimiter = new geotiffCoreModule.PerOriginSemaphore({
+        maxRequests: 16,
+      });
     }
     deckOverlay = new MapboxOverlay({ interleaved: true, layers: [] });
     map.addControl(deckOverlay);
@@ -4133,17 +4990,21 @@ function currentBbox() {
 
 function bboxAtZoom(maxZoom) {
   const zoom = map.getZoom();
-  if (zoom >= maxZoom) return currentBbox();
+  if (zoom >= maxZoom) {
+    return currentBbox();
+  }
   const canvas = map.getCanvas();
   const center = map.getCenter();
   // Avoid accidental whole-world searches if the map has not sized yet.
-  if (!(canvas.width > 0 && canvas.height > 0)) return currentBbox();
+  if (!(canvas.width > 0 && canvas.height > 0)) {
+    return currentBbox();
+  }
 
   const tileSize = 512;
   const worldSize = tileSize * 2 ** maxZoom;
   const mercator = maplibregl.MercatorCoordinate.fromLngLat(center);
-  const dx = (canvas.width / 2) / worldSize;
-  const dy = (canvas.height / 2) / worldSize;
+  const dx = canvas.width / 2 / worldSize;
+  const dy = canvas.height / 2 / worldSize;
   const westX = Math.max(0, mercator.x - dx);
   const eastX = Math.min(1, mercator.x + dx);
   const northY = Math.max(0, mercator.y - dy);
@@ -4166,7 +5027,9 @@ function switchTab(tabName) {
   if (tabName === "ingest") {
     switchIngestMode(ingestMode);
   }
-  if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+  if (selectedCollectionId) {
+    renderCollectionDetail(selectedCollectionId);
+  }
 }
 
 function renderKeyValue(target, values) {
@@ -4198,47 +5061,61 @@ async function refreshEnvironment() {
   try {
     const response = await apiFetch("/environment");
     const data = await response.json();
-    renderKeyValue(environmentChecksEl, [
-      ["auth mode", data.auth_mode],
+    renderKeyValue(
+      environmentChecksEl,
       [
-        "S3 object access",
-        statusLabel(
-          data.s3_access_status?.ok,
-          data.s3_access_status?.error ||
-            `${data.s3_access_status?.bucket || ""}${data.s3_access_status?.request_payer ? ` (${data.s3_access_status.request_payer})` : ""}`,
-        ),
-      ],
-      [
-        "manifest index",
-        statusLabel(
-          data.manifest_index?.ok,
-          data.manifest_index?.error ||
-            `${data.manifest_index?.path || "—"}${data.manifest_index?.file_count != null ? ` · ${data.manifest_index.file_count} files` : ""}`,
-        ),
-      ],
-      (() => {
-        const mi = data.manifest_index || {};
-        if (mi.source_modified == null && mi.freshness_error == null) return null;
-        const fmt = (s) => (s ? String(s).slice(0, 10) : "—");
-        const detail = mi.freshness_error
-          ? mi.freshness_error
-          : `${mi.source || "—"} · source ${fmt(mi.source_modified)} · index ${fmt(mi.index_built)}`;
-        // ok when NOT stale; statusLabel renders the stale case as a warning.
-        return ["manifest freshness", statusLabel(mi.stale === false, detail)];
-      })(),
-      ["DB health", statusLabel(data.db?.ok, data.db?.error)],
-      [
-        "EarthSearch",
-        statusLabel(data.earthsearch?.ok, data.earthsearch?.error || data.earthsearch?.url),
-      ],
-      [
-        "AWS identity",
-        data.auth_identity?.ok
-          ? `${data.auth_identity?.arn || "unknown"}`
-          : data.auth_identity?.error || "unavailable",
-      ],
-    ].filter(Boolean));
-    renderKeyValue(environmentConfigEl, Object.entries(data.effective_config || {}));
+        ["auth mode", data.auth_mode],
+        [
+          "S3 object access",
+          statusLabel(
+            data.s3_access_status?.ok,
+            data.s3_access_status?.error ||
+              `${data.s3_access_status?.bucket || ""}${data.s3_access_status?.request_payer ? ` (${data.s3_access_status.request_payer})` : ""}`,
+          ),
+        ],
+        [
+          "manifest index",
+          statusLabel(
+            data.manifest_index?.ok,
+            data.manifest_index?.error ||
+              `${data.manifest_index?.path || "—"}${data.manifest_index?.file_count != null ? ` · ${data.manifest_index.file_count} files` : ""}`,
+          ),
+        ],
+        (() => {
+          const mi = data.manifest_index || {};
+          if (mi.source_modified == null && mi.freshness_error == null) {
+            return null;
+          }
+          const fmt = (s) => (s ? String(s).slice(0, 10) : "—");
+          const detail = mi.freshness_error
+            ? mi.freshness_error
+            : `${mi.source || "—"} · source ${fmt(mi.source_modified)} · index ${fmt(mi.index_built)}`;
+          // ok when NOT stale; statusLabel renders the stale case as a warning.
+          return [
+            "manifest freshness",
+            statusLabel(mi.stale === false, detail),
+          ];
+        })(),
+        ["DB health", statusLabel(data.db?.ok, data.db?.error)],
+        [
+          "EarthSearch",
+          statusLabel(
+            data.earthsearch?.ok,
+            data.earthsearch?.error || data.earthsearch?.url,
+          ),
+        ],
+        [
+          "AWS identity",
+          data.auth_identity?.ok
+            ? `${data.auth_identity?.arn || "unknown"}`
+            : data.auth_identity?.error || "unavailable",
+        ],
+      ].filter(Boolean),
+    );
+    renderKeyValue(
+      environmentConfigEl,
+      Object.entries(data.effective_config || {}),
+    );
   } catch (error) {
     environmentChecksEl.textContent = `Failed to load environment status: ${error?.message || error}`;
     environmentConfigEl.textContent = "";
@@ -4246,10 +5123,12 @@ async function refreshEnvironment() {
 }
 
 function sanitizeCollectionId(value) {
-  return (value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "s3-source";
+  return (
+    (value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "s3-source"
+  );
 }
 
 function ingestSourcePayload() {
@@ -4264,9 +5143,15 @@ function ingestSourcePayload() {
     const year = yearRaw ? Number(yearRaw) : NaN;
     const strategy = ingestCatalogStrategyEl.value;
 
-    if (!collection) throw new Error("Select a collection.");
-    if (!region) throw new Error("Select a state/region.");
-    if (!Number.isInteger(year)) throw new Error("Select a year.");
+    if (!collection) {
+      throw new Error("Select a collection.");
+    }
+    if (!region) {
+      throw new Error("Select a state/region.");
+    }
+    if (!Number.isInteger(year)) {
+      throw new Error("Select a year.");
+    }
 
     const payload = {
       collection,
@@ -4276,8 +5161,12 @@ function ingestSourcePayload() {
       limit_per_partition: ingestLimitPerPartition(),
       max_workers: maxWorkers,
     };
-    if (accessKey) payload["source_access_key_id"] = accessKey;
-    if (secretKey) payload["source_secret_access_key"] = secretKey;
+    if (accessKey) {
+      payload.source_access_key_id = accessKey;
+    }
+    if (secretKey) {
+      payload.source_secret_access_key = secretKey;
+    }
     return payload;
   } else {
     const bucket = ingestCustomBucketEl.value.trim();
@@ -4289,13 +5178,23 @@ function ingestSourcePayload() {
     const strategy = ingestCustomStrategyEl.value || "manifest-cog-headers";
     const customCol = ingestCustomCollectionEl.value.trim();
 
-    if (!bucket) throw new Error("Enter an S3 bucket.");
-    if (!region) throw new Error("Enter a region code.");
-    if (!Number.isInteger(year)) throw new Error("Enter a numeric year.");
+    if (!bucket) {
+      throw new Error("Enter an S3 bucket.");
+    }
+    if (!region) {
+      throw new Error("Enter a region code.");
+    }
+    if (!Number.isInteger(year)) {
+      throw new Error("Enter a numeric year.");
+    }
 
-    const bareBucket = bucket.startsWith("s3://") ? bucket.slice(5).split("/")[0] : bucket;
+    const bareBucket = bucket.startsWith("s3://")
+      ? bucket.slice(5).split("/")[0]
+      : bucket;
     const registered = collectionFeatures.find((p) => p.bucket === bareBucket);
-    const colId = customCol || (registered ? registered.id : sanitizeCollectionId(bareBucket));
+    const colId =
+      customCol ||
+      (registered ? registered.id : sanitizeCollectionId(bareBucket));
 
     const payload = {
       collection: colId,
@@ -4310,14 +5209,20 @@ function ingestSourcePayload() {
       limit_per_partition: ingestLimitPerPartition(),
       max_workers: maxWorkers,
     };
-    if (accessKey) payload["source_access_key_id"] = accessKey;
-    if (secretKey) payload["source_secret_access_key"] = secretKey;
+    if (accessKey) {
+      payload.source_access_key_id = accessKey;
+    }
+    if (secretKey) {
+      payload.source_secret_access_key = secretKey;
+    }
     return payload;
   }
 }
 
 async function pollIngestStatus(jobId) {
-  if (!jobId) return;
+  if (!jobId) {
+    return;
+  }
   try {
     const response = await apiFetch(`/ingest/status/${jobId}`);
     const data = await response.json();
@@ -4325,7 +5230,10 @@ async function pollIngestStatus(jobId) {
     ingestSummaryEl.textContent = `Job ${jobId} · ${data.status}${data.error ? ` · ${data.error}` : ""}`;
     ingestLogsEl.textContent = lines.length ? lines.join("\n") : "No logs yet.";
     if (data.status === "running") {
-      ingestStatusPollId = window.setTimeout(() => pollIngestStatus(jobId), 1500);
+      ingestStatusPollId = window.setTimeout(
+        () => pollIngestStatus(jobId),
+        1500,
+      );
     } else {
       ingestStatusPollId = null;
       await refreshEnvironment();
@@ -4343,7 +5251,9 @@ async function pollIngestStatus(jobId) {
 }
 
 async function getIngestConfig() {
-  if (ingestModeCache) return ingestModeCache;
+  if (ingestModeCache) {
+    return ingestModeCache;
+  }
   try {
     const response = await apiFetch("/environment");
     const data = await response.json();
@@ -4354,7 +5264,7 @@ async function getIngestConfig() {
     // ingest_url (set on the read-only Lambda) points the viewer at the
     // dedicated container ingest function; falls back to same origin.
     ingestModeCache = { mode, url: data.ingest_url || "" };
-  } catch (error) {
+  } catch (_error) {
     // Default to async (local/Docker) if the probe fails.
     ingestModeCache = { mode: "async", url: "" };
   }
@@ -4371,7 +5281,7 @@ function ingestLimitPerPartition() {
     return INGEST_SYNC_MAX_LIMIT;
   }
   const requested = Number(valStr);
-  if (isNaN(requested)) {
+  if (Number.isNaN(requested)) {
     return INGEST_SYNC_MAX_LIMIT;
   }
   const val = Math.trunc(requested);
@@ -4383,7 +5293,9 @@ function ingestLimitPerPartition() {
 
 function ingestRequestHeaders() {
   const headers = { "content-type": "application/json" };
-  if (INGEST_TOKEN) headers["x-ingest-token"] = INGEST_TOKEN;
+  if (INGEST_TOKEN) {
+    headers["x-ingest-token"] = INGEST_TOKEN;
+  }
   return headers;
 }
 
@@ -4465,8 +5377,7 @@ async function runIngestSync(baseUrl = "") {
       ingestLogsEl.textContent = JSON.stringify(data, null, 2);
       return;
     }
-    ingestSummaryEl.textContent =
-      `Completed · ${data.state} ${data.year} · ${data.rows_ingested} rows · ${data.elapsed_ms} ms`;
+    ingestSummaryEl.textContent = `Completed · ${data.state} ${data.year} · ${data.rows_ingested} rows · ${data.elapsed_ms} ms`;
     ingestLogsEl.textContent = JSON.stringify(data, null, 2);
     await refreshEnvironment();
     await refreshAvailability();
@@ -4485,7 +5396,9 @@ function readTimingHeaders(response) {
     rewriteMs: Number(response.headers.get("x-search-rewrite-ms") || 0),
     totalMs: Number(response.headers.get("x-search-total-ms") || 0),
     cacheHits: Number(response.headers.get("x-search-presign-cache-hits") || 0),
-    cacheMisses: Number(response.headers.get("x-search-presign-cache-misses") || 0),
+    cacheMisses: Number(
+      response.headers.get("x-search-presign-cache-misses") || 0,
+    ),
   };
 }
 
@@ -4501,9 +5414,10 @@ function renderTimingSummary(timings) {
   // via /sign as deck.gl loads it (line 2 reports that, growing as tiles
   // stream in after this summary first renders). "Server total" is what
   // the API spent; "round trip" is what you waited for the footprints.
-  const signNote = signCallCount > 0
-    ? `${signCallCount} tile${signCallCount === 1 ? "" : "s"} signed, ${formatMs(signTotalMs)} total`
-    : "none yet — tiles sign as they load";
+  const signNote =
+    signCallCount > 0
+      ? `${signCallCount} tile${signCallCount === 1 ? "" : "s"} signed, ${formatMs(signTotalMs)} total`
+      : "none yet — tiles sign as they load";
   timingSummaryEl.innerHTML = `
     <div style="margin-bottom:4px;"><strong>Where the time went (this search):</strong></div>
     <div><strong>1. Server — find footprints:</strong> ${formatMs(timings.server.sqlMs)} <span class="muted">(database/lake query)</span></div>
@@ -4580,8 +5494,12 @@ function renderResults(features) {
 
   features.forEach((feature) => {
     const properties = feature.properties || {};
-    const region = String(properties["region"] ?? properties["naip:state"] ?? "unknown").toLowerCase();
-    const year = String(properties["year"] ?? properties["naip:year"] ?? "unknown");
+    const region = String(
+      properties.region ?? properties["naip:state"] ?? "unknown",
+    ).toLowerCase();
+    const year = String(
+      properties.year ?? properties["naip:year"] ?? "unknown",
+    );
     incrementCount(regions, region);
     incrementCount(years, year);
     incrementCount(regionYears, `${region} ${year}`);
@@ -4592,30 +5510,53 @@ function renderResults(features) {
       maxGsd = maxGsd == null ? gsd : Math.max(maxGsd, gsd);
     }
 
-    const date = properties.datetime ? String(properties.datetime).slice(0, 10) : null;
+    const date = properties.datetime
+      ? String(properties.datetime).slice(0, 10)
+      : null;
     if (date) {
-      minDate = minDate == null ? date : (date < minDate ? date : minDate);
-      maxDate = maxDate == null ? date : (date > maxDate ? date : maxDate);
+      minDate = minDate == null ? date : date < minDate ? date : minDate;
+      maxDate = maxDate == null ? date : date > maxDate ? date : maxDate;
     }
 
-    if (feature.assets?.image?.href) imageAssetCount += 1;
+    if (feature.assets?.image?.href) {
+      imageAssetCount += 1;
+    }
   });
 
-  const yearValues = Array.from(years.keys()).sort((a, b) => Number(b) - Number(a));
-  const topRegions = sortedCounts(regions).map(([region, count]) => `${region}: ${count}`).join(" | ");
-  const topRegionYears = sortedCounts(regionYears).map(([key, count]) => `${key}: ${count}`).join(" | ");
-  const gsdText = minGsd == null
-    ? "unavailable"
-    : minGsd === maxGsd
-      ? `${minGsd} m`
-      : `${minGsd}-${maxGsd} m`;
-  const dateText = minDate && maxDate
-    ? minDate === maxDate ? minDate : `${minDate} to ${maxDate}`
-    : "unavailable";
+  const yearValues = Array.from(years.keys()).sort(
+    (a, b) => Number(b) - Number(a),
+  );
+  const topRegions = sortedCounts(regions)
+    .map(([region, count]) => `${region}: ${count}`)
+    .join(" | ");
+  const topRegionYears = sortedCounts(regionYears)
+    .map(([key, count]) => `${key}: ${count}`)
+    .join(" | ");
+  const gsdText =
+    minGsd == null
+      ? "unavailable"
+      : minGsd === maxGsd
+        ? `${minGsd} m`
+        : `${minGsd}-${maxGsd} m`;
+  const dateText =
+    minDate && maxDate
+      ? minDate === maxDate
+        ? minDate
+        : `${minDate} to ${maxDate}`
+      : "unavailable";
 
-  renderMetricRow("Returned footprints", `${features.length} total | ${imageAssetCount} with image assets`);
-  renderMetricRow("Regions", `${regions.size} region${regions.size === 1 ? "" : "s"} | ${topRegions || "none"}`);
-  renderMetricRow("Years", `${yearValues.length} year${yearValues.length === 1 ? "" : "s"} | ${yearValues.join(", ") || "none"}`);
+  renderMetricRow(
+    "Returned footprints",
+    `${features.length} total | ${imageAssetCount} with image assets`,
+  );
+  renderMetricRow(
+    "Regions",
+    `${regions.size} region${regions.size === 1 ? "" : "s"} | ${topRegions || "none"}`,
+  );
+  renderMetricRow(
+    "Years",
+    `${yearValues.length} year${yearValues.length === 1 ? "" : "s"} | ${yearValues.join(", ") || "none"}`,
+  );
   renderMetricRow("Resolution", gsdText);
   renderMetricRow("Acquisition dates", dateText);
   renderMetricRow("Top region/year groups", topRegionYears || "none");
@@ -4646,17 +5587,26 @@ function imagerySignature(features) {
 function updateSearchResultsCount() {
   const countEl = document.getElementById("search-results-count");
   const hintEl = document.getElementById("search-results-cap-hint");
-  if (!countEl) return;
+  if (!countEl) {
+    return;
+  }
   const n = (lastSearchFeatures || []).length;
   const limit = Number(limitEl.value || SEARCH_LIMIT_DEFAULT);
   const capped = n > 0 && n >= limit;
-  countEl.textContent = n === 0 ? "" : `· ${n.toLocaleString()} COG${n === 1 ? "" : "s"}${capped ? " (capped)" : ""}`;
+  countEl.textContent =
+    n === 0
+      ? ""
+      : `· ${n.toLocaleString()} COG${n === 1 ? "" : "s"}${capped ? " (capped)" : ""}`;
   countEl.style.color = capped ? "#fbbf24" : "";
-  if (hintEl) hintEl.style.display = capped ? "" : "none";
+  if (hintEl) {
+    hintEl.style.display = capped ? "" : "none";
+  }
 }
 
 function updateNaipSearchFootprintsVisibility() {
-  const visibility = toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none";
+  const visibility = toggleNaipSearchFootprintsLayerEl?.checked
+    ? "visible"
+    : "none";
   for (const layerId of ["naip-search-fill", "naip-search-line"]) {
     if (map.getLayer(layerId)) {
       map.setLayoutProperty(layerId, "visibility", visibility);
@@ -4696,7 +5646,9 @@ function updateMap(features) {
     type: "fill",
     source: "naip-search",
     layout: {
-      visibility: toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none",
+      visibility: toggleNaipSearchFootprintsLayerEl?.checked
+        ? "visible"
+        : "none",
     },
     paint: {
       "fill-color": SEARCH_RESULT_FOOTPRINT_COLOR,
@@ -4709,7 +5661,9 @@ function updateMap(features) {
     type: "line",
     source: "naip-search",
     layout: {
-      visibility: toggleNaipSearchFootprintsLayerEl?.checked ? "visible" : "none",
+      visibility: toggleNaipSearchFootprintsLayerEl?.checked
+        ? "visible"
+        : "none",
     },
     paint: {
       "line-color": SEARCH_RESULT_FOOTPRINT_COLOR,
@@ -4726,9 +5680,11 @@ function updateImagery(features) {
   const imagerySources = features.filter(
     (feature) => feature?.assets?.image?.href && Array.isArray(feature?.bbox),
   );
-  const nextImageryHrefs = imagerySources.map((feature) => feature.assets.image.href);
+  const nextImageryHrefs = imagerySources.map(
+    (feature) => feature.assets.image.href,
+  );
   const nextSignature = imagerySignature(imagerySources);
-  const zoomNow = map.getZoom();
+  const _zoomNow = map.getZoom();
 
   if (!deckOverlay || !MosaicLayerClass || !COGLayerClass) {
     imageryStatusEl.textContent = imageryInitErrorMessage
@@ -4751,7 +5707,8 @@ function updateImagery(features) {
   if (!imagerySources.length) {
     updateImageryLayers();
     currentImagerySignature = nextSignature;
-    imageryStatusEl.textContent = "No imagery sources available in current response.";
+    imageryStatusEl.textContent =
+      "No imagery sources available in current response.";
     imageryStatusEl.className = "small status-warn";
     updateResolutionDebug(features, imagerySources);
     return { skipped: false, durationMs: performance.now() - startedAt };
@@ -4787,7 +5744,10 @@ async function runSearch(trigger = "manual") {
   signCallCount = 0;
   signTotalMs = 0;
   resignAttempted = new Set();
-  if (toggleCogEl.checked && (!deckOverlay || !MosaicLayerClass || !COGLayerClass)) {
+  if (
+    toggleCogEl.checked &&
+    (!deckOverlay || !MosaicLayerClass || !COGLayerClass)
+  ) {
     await initImagerySupport();
   }
   const allLoaded = !stateEl.value;
@@ -4796,11 +5756,14 @@ async function runSearch(trigger = "manual") {
     bbox: allLoaded ? bboxAtZoom(7) : currentBbox(),
     limit: Number(limitEl.value || SEARCH_LIMIT_DEFAULT),
   };
-  if (stateEl.value) body["region"] = stateEl.value;
-  if (yearEl.value) body["year"] = Number(yearEl.value);
+  if (stateEl.value) {
+    body.region = stateEl.value;
+  }
+  if (yearEl.value) {
+    body.year = Number(yearEl.value);
+  }
 
-  summaryEl.textContent =
-    trigger === "auto" ? "Loading… (auto)" : "Loading…";
+  summaryEl.textContent = trigger === "auto" ? "Loading… (auto)" : "Loading…";
   timingSummaryEl.textContent = "Timing pending…";
 
   const searchPath = "/search";
@@ -4833,18 +5796,24 @@ async function runSearch(trigger = "manual") {
       return;
     }
 
-     const features = data.features || [];
+    const features = data.features || [];
     lastSearchFeatures = features;
     updateSearchResultsCount();
-    if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+    if (selectedCollectionId) {
+      renderCollectionDetail(selectedCollectionId);
+    }
     lastSearchBbox = body.bbox;
-    const isLake = true;
+    const _isLake = true;
     const engineName = "GeoParquet lake (DuckDB direct)";
     const engineExplain =
       "Footprints read from partitioned GeoParquet files via a standalone in-process DuckDB connection (read_parquet) — no database server. Prunes by bbox columns + row-group stats. This is the serverless lake read path.";
     const filterNote = [];
-    if (body["region"]) filterNote.push(`region = ${body["region"]}`);
-    if (body["year"]) filterNote.push(`year = ${body["year"]}`);
+    if (body.region) {
+      filterNote.push(`region = ${body.region}`);
+    }
+    if (body.year) {
+      filterNote.push(`year = ${body.year}`);
+    }
     const zeroHint =
       features.length === 0
         ? `<div class="muted" style="color:#fbbf24; margin-top:4px;">No footprints matched. Either this area isn't ingested, or a filter excludes it${filterNote.length ? ` (${filterNote.join(", ")})` : ""}. Try clearing the Region/Year filters.</div>`
@@ -4923,8 +5892,8 @@ async function queueSearch(trigger = "manual") {
 // that state's ingested years (newest first) and auto-selects the newest,
 // so the viewer never issues the slow no-year (all-vintages) scan.
 let searchAvailability = {};
-let searchAvailabilityGsd = {};      // {region: {year: meters}} from /availability
-let searchAvailabilityExtent = {};   // {region: {year: [xmin,ymin,xmax,ymax]}} from /availability
+let searchAvailabilityGsd = {}; // {region: {year: meters}} from /availability
+let searchAvailabilityExtent = {}; // {region: {year: [xmin,ymin,xmax,ymax]}} from /availability
 
 // Fly to the current Collection/Region/Year selection. Specific regions
 // use a fixed zoom rather than fitBounds: fitting a large state's full
@@ -4932,28 +5901,38 @@ let searchAvailabilityExtent = {};   // {region: {year: [xmin,ymin,xmax,ymax]}} 
 // the footprint limit. "All loaded" is intentionally different: it fits
 // the active collection's registered bbox, e.g. CONUS for NAIP and KY for
 // KyFromAbove.
-const CENTER_ZOOM = Number(
+const _CENTER_ZOOM = Number(
   new URLSearchParams(location.search).get("centerZoom") ||
-  window.S3_COG_CENTER_ZOOM || 11
+    window.S3_COG_CENTER_ZOOM ||
+    11,
 );
 const CONUS_BBOX = [-125, 24, -66.5, 50];
 const CONUS_CENTER_MAX_ZOOM = Number(
   new URLSearchParams(location.search).get("conusCenterMaxZoom") ||
-  window.S3_COG_CONUS_CENTER_MAX_ZOOM || 4.8
+    window.S3_COG_CONUS_CENTER_MAX_ZOOM ||
+    4.8,
 );
 
 function isValidLngLatBbox(bbox) {
-  return Array.isArray(bbox) && bbox.length === 4 &&
+  return (
+    Array.isArray(bbox) &&
+    bbox.length === 4 &&
     bbox.every((v) => Number.isFinite(Number(v))) &&
     Number(bbox[0]) < Number(bbox[2]) &&
-    Number(bbox[1]) < Number(bbox[3]);
+    Number(bbox[1]) < Number(bbox[3])
+  );
 }
 
 function fitLngLatBbox(bbox, extraOptions = {}) {
-  if (!isValidLngLatBbox(bbox)) return false;
+  if (!isValidLngLatBbox(bbox)) {
+    return false;
+  }
   const b = bbox.map(Number);
   map.fitBounds(
-    [[b[0], b[1]], [b[2], b[3]]],
+    [
+      [b[0], b[1]],
+      [b[2], b[3]],
+    ],
     {
       padding: { top: 72, right: 48, bottom: 72, left: 48 },
       duration: 1200,
@@ -4968,8 +5947,6 @@ function activeCollectionBbox() {
   return isValidLngLatBbox(collection?.bbox) ? collection.bbox : null;
 }
 
-
-
 function centerOnSelection() {
   const st = stateEl.value;
   if (!st) {
@@ -4981,15 +5958,25 @@ function centerOnSelection() {
   const yr = yearEl.value;
   let box = null;
   const merge = (b) => {
-    if (!b) return;
+    if (!b) {
+      return;
+    }
     box = box
-      ? [Math.min(box[0], b[0]), Math.min(box[1], b[1]), Math.max(box[2], b[2]), Math.max(box[3], b[3])]
+      ? [
+          Math.min(box[0], b[0]),
+          Math.min(box[1], b[1]),
+          Math.max(box[2], b[2]),
+          Math.max(box[3], b[3]),
+        ]
       : [...b];
   };
   for (const region of [st]) {
     const byYear = searchAvailabilityExtent[region] || {};
-    if (yr) merge(byYear[yr]);
-    else Object.values(byYear).forEach(merge);
+    if (yr) {
+      merge(byYear[yr]);
+    } else {
+      Object.values(byYear).forEach(merge);
+    }
   }
   if (box) {
     fitLngLatBbox(box);
@@ -5002,7 +5989,9 @@ function centerOnSelection() {
 }
 
 function gsdLabel(meters) {
-  if (!Number.isFinite(meters) || meters <= 0) return null;
+  if (!Number.isFinite(meters) || meters <= 0) {
+    return null;
+  }
   return meters >= 1 ? `${meters} m` : `${Math.round(meters * 100)} cm`;
 }
 
@@ -5012,11 +6001,13 @@ function gsdLabel(meters) {
 function yearOptionLabel(year, st) {
   let g = null;
   if (st) {
-    g = (searchAvailabilityGsd[st] || {})[String(year)];
+    g = searchAvailabilityGsd[st]?.[String(year)];
   } else {
     for (const region of Object.keys(searchAvailabilityGsd)) {
       const v = searchAvailabilityGsd[region][String(year)];
-      if (v != null && (g == null || v < g)) g = v;
+      if (v != null && (g == null || v < g)) {
+        g = v;
+      }
     }
   }
   const label = gsdLabel(Number(g));
@@ -5035,14 +6026,18 @@ function populateSearchYears() {
     // year as default is jarring (visible dropdown jump at startup) and
     // wrong when states have different most-recent years.
     const allYears = Array.from(
-      new Set([].concat(...Object.values(searchAvailability)))
+      new Set([].concat(...Object.values(searchAvailability))),
     ).sort((a, b) => b - a);
     // "Latest available" option — no year filter, results sorted naip_year desc.
     const anyOpt = document.createElement("option");
-    anyOpt.value = ""; anyOpt.textContent = "Latest available"; yearEl.appendChild(anyOpt);
+    anyOpt.value = "";
+    anyOpt.textContent = "Latest available";
+    yearEl.appendChild(anyOpt);
     allYears.forEach((y) => {
       const o = document.createElement("option");
-      o.value = y; o.textContent = yearOptionLabel(y, ""); yearEl.appendChild(o);
+      o.value = y;
+      o.textContent = yearOptionLabel(y, "");
+      yearEl.appendChild(o);
     });
     // "All loaded" always uses Latest available (no year filter). If the
     // user comes from a specific region/year, do not carry that year into
@@ -5055,11 +6050,15 @@ function populateSearchYears() {
     const years = searchAvailability[st] || [];
     years.forEach((y) => {
       const o = document.createElement("option");
-      o.value = y; o.textContent = yearOptionLabel(y, st); yearEl.appendChild(o);
+      o.value = y;
+      o.textContent = yearOptionLabel(y, st);
+      yearEl.appendChild(o);
     });
     if (!years.length) {
       const o = document.createElement("option");
-      o.value = ""; o.textContent = "Any"; yearEl.appendChild(o);
+      o.value = "";
+      o.textContent = "Any";
+      yearEl.appendChild(o);
     }
     yearEl.value = years.length ? String(years[0]) : "";
   }
@@ -5078,13 +6077,21 @@ async function refreshCollections({ retry = true } = {}) {
   let ok = false;
   try {
     const response = await apiFetch(`/collections`);
-    if (!response.ok) throw new Error(`/collections HTTP ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`/collections HTTP ${response.status}`);
+    }
     const data = await response.json();
     const ids = (data.collections || []).map((c) => c.id);
-    if (!ids.length) ids.push("naip");
+    if (!ids.length) {
+      ids.push("naip");
+    }
     searchableCollectionIds = new Set(ids);
     const prev = activeSearchCollectionId;
-    activeSearchCollectionId = ids.includes(prev) ? prev : (ids.includes("naip") ? "naip" : ids[0]);
+    activeSearchCollectionId = ids.includes(prev)
+      ? prev
+      : ids.includes("naip")
+        ? "naip"
+        : ids[0];
     if (!selectedCollectionId || !collectionById[selectedCollectionId]) {
       selectedCollectionId = activeSearchCollectionId;
     }
@@ -5094,22 +6101,35 @@ async function refreshCollections({ retry = true } = {}) {
   } catch (error) {
     // Keep the previous (good) searchableCollectionIds rather than
     // clobbering it -- a transient failure shouldn't hide collections.
-    console.error("collections fetch failed (keeping last-known collections):", error);
+    console.error(
+      "collections fetch failed (keeping last-known collections):",
+      error,
+    );
   }
-  if (!ok && retry) scheduleCollectionsRetry();
+  if (!ok && retry) {
+    scheduleCollectionsRetry();
+  }
   return ok;
 }
 
 // Re-poll /collections after a failure until it succeeds (bounded), so a
 // bad-creds moment at load self-heals once the lake is readable again.
 function scheduleCollectionsRetry() {
-  if (collectionsRetryTimer !== null) return;
+  if (collectionsRetryTimer !== null) {
+    return;
+  }
   let attempt = 0;
   const tick = async () => {
     attempt += 1;
     const ok = await refreshCollections({ retry: false });
-    if (ok || attempt >= 5) { collectionsRetryTimer = null; return; }
-    collectionsRetryTimer = window.setTimeout(tick, Math.min(15000, 2000 * attempt));
+    if (ok || attempt >= 5) {
+      collectionsRetryTimer = null;
+      return;
+    }
+    collectionsRetryTimer = window.setTimeout(
+      tick,
+      Math.min(15000, 2000 * attempt),
+    );
   };
   collectionsRetryTimer = window.setTimeout(tick, 2000);
 }
@@ -5117,21 +6137,27 @@ function scheduleCollectionsRetry() {
 async function refreshAvailability() {
   const prevState = stateEl.value;
   try {
-    const response = await apiFetch(`/availability?collection=${encodeURIComponent(activeCollection())}`);
+    const response = await apiFetch(
+      `/availability?collection=${encodeURIComponent(activeCollection())}`,
+    );
     if (!response.ok) {
       let detail = `${response.status}`;
       try {
         const payload = await response.json();
         detail += payload?.detail ? ` ${payload.detail}` : "";
       } catch (_) {
-        try { detail += ` ${await response.text()}`; } catch (_) { /* ignore */ }
+        try {
+          detail += ` ${await response.text()}`;
+        } catch (_) {
+          /* ignore */
+        }
       }
       throw new Error(detail);
     }
     const data = await response.json();
-    searchAvailability = (data && data.states) || {};
-    searchAvailabilityGsd = (data && data.gsd) || {};
-    searchAvailabilityExtent = (data && data.extent) || {};
+    searchAvailability = data?.states || {};
+    searchAvailabilityGsd = data?.gsd || {};
+    searchAvailabilityExtent = data?.extent || {};
     const states = Object.keys(searchAvailability);
     stateEl.innerHTML = '<option value="">All loaded</option>';
     states.forEach((st) => {
@@ -5141,8 +6167,11 @@ async function refreshAvailability() {
       stateEl.appendChild(o);
     });
     // Preserve the prior selection if still valid; else stay on "All loaded".
-    if (prevState && searchAvailability[prevState]) stateEl.value = prevState;
-    else stateEl.value = "";
+    if (prevState && searchAvailability[prevState]) {
+      stateEl.value = prevState;
+    } else {
+      stateEl.value = "";
+    }
     populateSearchYears();
     return true;
   } catch (error) {
@@ -5164,14 +6193,20 @@ stateEl.addEventListener("change", () => {
   populateSearchYears();
   queueSearch("auto");
   updateNaipCoverageMvtLayer();
-  if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+  if (selectedCollectionId) {
+    renderCollectionDetail(selectedCollectionId);
+  }
 });
 yearEl.addEventListener("change", () => {
   queueSearch("auto");
   updateNaipCoverageMvtLayer();
-  if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+  if (selectedCollectionId) {
+    renderCollectionDetail(selectedCollectionId);
+  }
 });
-document.getElementById("center-data").addEventListener("click", centerOnSelection);
+document
+  .getElementById("center-data")
+  .addEventListener("click", centerOnSelection);
 
 tabButtons.forEach((button) => {
   button.addEventListener("click", () => switchTab(button.dataset.tab));
@@ -5184,7 +6219,7 @@ let ingestCatalogMetadata = null;
 let currentAccountId = "";
 let currentBucketName = "";
 
-window.toggleCredentialsSection = function() {
+window.toggleCredentialsSection = () => {
   const el = document.getElementById("ingest-creds-container");
   const icon = document.getElementById("creds-toggle-icon");
   if (el.style.display === "none") {
@@ -5196,7 +6231,7 @@ window.toggleCredentialsSection = function() {
   }
 };
 
-window.togglePolicySection = function() {
+window.togglePolicySection = () => {
   const el = document.getElementById("ingest-policy-helper");
   const icon = document.getElementById("policy-toggle-icon");
   if (el.style.display === "none") {
@@ -5209,27 +6244,28 @@ window.togglePolicySection = function() {
 };
 
 function updateIamPolicyHelper() {
-  const acc = currentAccountId || "<your-aws-account-id>";
+  const _acc = currentAccountId || "<your-aws-account-id>";
   const buck = currentBucketName || "deckgl-s3-cog-s1m-<account>-us-west2";
   const policy = {
-    "Version": "2012-10-17",
-    "Statement": [
+    Version: "2012-10-17",
+    Statement: [
       {
-        "Effect": "Allow",
-        "Action": [
+        Effect: "Allow",
+        Action: [
           "s3:GetObject",
           "s3:PutObject",
           "s3:DeleteObject",
-          "s3:ListBucket"
+          "s3:ListBucket",
         ],
-        "Resource": [
-          `arn:aws:s3:::${buck}`,
-          `arn:aws:s3:::${buck}/*`
-        ]
-      }
-    ]
+        Resource: [`arn:aws:s3:::${buck}`, `arn:aws:s3:::${buck}/*`],
+      },
+    ],
   };
-  document.getElementById("policy-pre").textContent = JSON.stringify(policy, null, 2);
+  document.getElementById("policy-pre").textContent = JSON.stringify(
+    policy,
+    null,
+    2,
+  );
 }
 
 function switchIngestMode(mode) {
@@ -5246,7 +6282,9 @@ function switchIngestMode(mode) {
     ingestCatalogFieldsWrap.style.display = "none";
     ingestCustomFieldsWrap.style.display = "block";
   }
-  if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+  if (selectedCollectionId) {
+    renderCollectionDetail(selectedCollectionId);
+  }
 }
 
 async function loadIngestCatalogOptions() {
@@ -5276,7 +6314,10 @@ async function loadIngestCatalogOptions() {
       const opt = document.createElement("option");
       opt.value = colId;
       opt.textContent = colId.toUpperCase();
-      if (colId === currentCollectionVal || (!currentCollectionVal && colId === "naip")) {
+      if (
+        colId === currentCollectionVal ||
+        (!currentCollectionVal && colId === "naip")
+      ) {
         opt.selected = true;
       }
       ingestCatalogCollectionEl.appendChild(opt);
@@ -5299,7 +6340,9 @@ async function loadIngestCatalogOptions() {
 }
 
 function updateCatalogRegionAndYearDropdowns() {
-  if (!ingestCatalogMetadata) return;
+  if (!ingestCatalogMetadata) {
+    return;
+  }
   const currentRegionVal = ingestCatalogRegionEl.value;
   ingestCatalogRegionEl.innerHTML = "";
 
@@ -5319,14 +6362,18 @@ function updateCatalogRegionAndYearDropdowns() {
 }
 
 function updateCatalogYearDropdown() {
-  if (!ingestCatalogMetadata) return;
+  if (!ingestCatalogMetadata) {
+    return;
+  }
   const selectedRegion = ingestCatalogRegionEl.value;
-  const stateObj = ingestCatalogMetadata.states.find((st) => st.state === selectedRegion);
+  const stateObj = ingestCatalogMetadata.states.find(
+    (st) => st.state === selectedRegion,
+  );
 
   const currentYearVal = ingestCatalogYearEl.value;
   ingestCatalogYearEl.innerHTML = "";
 
-  if (stateObj && stateObj.years) {
+  if (stateObj?.years) {
     stateObj.years.forEach((yr) => {
       const opt = document.createElement("option");
       opt.value = yr;
@@ -5341,34 +6388,48 @@ function updateCatalogYearDropdown() {
   }
 }
 
-ingestModeCatalogBtn.addEventListener("click", () => switchIngestMode("catalog"));
+ingestModeCatalogBtn.addEventListener("click", () =>
+  switchIngestMode("catalog"),
+);
 ingestModeCustomBtn.addEventListener("click", () => switchIngestMode("custom"));
 ingestCatalogCollectionEl.addEventListener("change", () => {
   loadIngestCatalogOptions();
-  if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+  if (selectedCollectionId) {
+    renderCollectionDetail(selectedCollectionId);
+  }
 });
 ingestCatalogRegionEl.addEventListener("change", () => {
   updateCatalogYearDropdown();
-  if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+  if (selectedCollectionId) {
+    renderCollectionDetail(selectedCollectionId);
+  }
 });
 ingestCatalogYearEl.addEventListener("change", () => {
-  if (selectedCollectionId) renderCollectionDetail(selectedCollectionId);
+  if (selectedCollectionId) {
+    renderCollectionDetail(selectedCollectionId);
+  }
 });
 
 // --- Terrain (S1M DEM -> 3D mesh, viewport-tiled) ---
 const terExagEl = document.getElementById("ter-exag");
 const terExagValEl = document.getElementById("ter-exag-val");
-if (terExagEl) terExagEl.addEventListener("input", () => {
-  terExagValEl.textContent = `${Number(terExagEl.value).toFixed(1)}×`;
-  rebuildS1MLayers();  // live exaggeration: rebuild cached tiles, no refetch
-  if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();  // keep bases on the relief
-});
+if (terExagEl) {
+  terExagEl.addEventListener("input", () => {
+    terExagValEl.textContent = `${Number(terExagEl.value).toFixed(1)}×`;
+    rebuildS1MLayers(); // live exaggeration: rebuild cached tiles, no refetch
+    if (terBuildingsEl?.checked && buildingFeatureData) {
+      applyBuildingExtrusionZ(); // keep bases on the relief
+    }
+  });
+}
 function normalizeS1MSurfaceControls(changed) {
   const surfaceEl = document.getElementById("ter-surface");
   const modeEl = document.getElementById("ter-mode");
   const gpuEl = document.getElementById("ter-gpu");
   if (surfaceEl?.value === "imagery") {
-    if (modeEl) modeEl.value = "shaded";
+    if (modeEl) {
+      modeEl.value = "shaded";
+    }
     if (gpuEl) {
       gpuEl.checked = true;
       gpuEl.disabled = true;
@@ -5389,31 +6450,50 @@ document.getElementById("ter-gpu")?.addEventListener("change", () => {
 });
 document.getElementById("ter-surface")?.addEventListener("change", () => {
   normalizeS1MSurfaceControls("surface");
-  if (s1mActive) refreshS1MTerrain();
-  else rebuildS1MLayers();
+  if (s1mActive) {
+    refreshS1MTerrain();
+  } else {
+    rebuildS1MLayers();
+  }
 });
 document.getElementById("ter-mode")?.addEventListener("change", () => {
   normalizeS1MSurfaceControls("mode");
   rebuildS1MLayers();
-});   // shaded <-> wireframe
+}); // shaded <-> wireframe
 document.getElementById("ter-color")?.addEventListener("change", () => {
-  rebuildS1MLayers();  // adaptive <-> absolute changes the displacement baseline (zmin)
-  if (terBuildingsEl?.checked && buildingFeatureData) applyBuildingExtrusionZ();
+  rebuildS1MLayers(); // adaptive <-> absolute changes the displacement baseline (zmin)
+  if (terBuildingsEl?.checked && buildingFeatureData) {
+    applyBuildingExtrusionZ();
+  }
 });
 
-document.getElementById("ter-buildings")?.addEventListener("change", refreshBuildingFootprints);
+document
+  .getElementById("ter-buildings")
+  ?.addEventListener("change", refreshBuildingFootprints);
 document.getElementById("ter-run")?.addEventListener("click", enableS1MTerrain);
-document.getElementById("ter-clear")?.addEventListener("click", clearS1MTerrain);
-document.getElementById("ter-stats-window")?.addEventListener("click", s1mOpenStatsWindow);
+document
+  .getElementById("ter-clear")
+  ?.addEventListener("click", clearS1MTerrain);
+document
+  .getElementById("ter-stats-window")
+  ?.addEventListener("click", s1mOpenStatsWindow);
 toggleS1MFootprintsLayerEl?.addEventListener("change", async () => {
   if (toggleS1MFootprintsLayerEl.checked) {
     await initImagerySupport();
   }
   refreshS1MFootprintsLayer();
 });
-toggleNaipSearchFootprintsLayerEl?.addEventListener("change", updateNaipSearchFootprintsVisibility);
-toggleNaipCoverageMvtLayerEl?.addEventListener("change", updateNaipCoverageMvtLayer);
-footprintLayerModeEls.forEach((el) => el.addEventListener("change", syncFootprintLayerMode));
+toggleNaipSearchFootprintsLayerEl?.addEventListener(
+  "change",
+  updateNaipSearchFootprintsVisibility,
+);
+toggleNaipCoverageMvtLayerEl?.addEventListener(
+  "change",
+  updateNaipCoverageMvtLayer,
+);
+footprintLayerModeEls.forEach((el) => {
+  el.addEventListener("change", syncFootprintLayerMode);
+});
 
 toggleCogEl.addEventListener("change", () => {
   updateImagery(lastSearchFeatures);
@@ -5461,7 +6541,8 @@ updateDisplayAdjustmentLabels();
 
 map.on("movestart", () => {
   if (toggleCogEl.checked) {
-    imageryStatusEl.textContent = "Keeping current imagery while map view changes.";
+    imageryStatusEl.textContent =
+      "Keeping current imagery while map view changes.";
     imageryStatusEl.className = "small status-ok";
   }
 });
@@ -5481,10 +6562,14 @@ let selectedCollectionId = null;
 async function loadCollectionsRegistry() {
   try {
     const res = await fetch("./collections.geojson", { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
     const fc = await res.json();
     collectionFeatures = (fc.features || []).map((f) => f.properties);
-    collectionById = Object.fromEntries(collectionFeatures.map((p) => [p.id, p]));
+    collectionById = Object.fromEntries(
+      collectionFeatures.map((p) => [p.id, p]),
+    );
   } catch (err) {
     console.warn("collections.geojson load failed", err);
     collectionFeatures = [];
@@ -5492,41 +6577,62 @@ async function loadCollectionsRegistry() {
   }
 }
 function collectionAvailability(p) {
-  if (!p.active) return { label: `available · ${p.bucket_region} · region-deferred`, cls: "muted" };
-  if (isSearchableCollection(p.id)) return { label: "ingested · searchable", cls: "status-ok" };
+  if (!p.active) {
+    return {
+      label: `available · ${p.bucket_region} · region-deferred`,
+      cls: "muted",
+    };
+  }
+  if (isSearchableCollection(p.id)) {
+    return { label: "ingested · searchable", cls: "status-ok" };
+  }
   return { label: "registered · not yet ingested", cls: "status-warn" };
 }
 function updateCollectionsHere() {
   const el = document.getElementById("collections-here");
-  if (!el) return;
+  if (!el) {
+    return;
+  }
   if (!collectionFeatures.length) {
     el.textContent = "Collection registry unavailable.";
     el.className = "small muted";
     return;
   }
-  const hits = [...collectionFeatures]
-    .sort((a, x) => (a.active === x.active ? 0 : a.active ? -1 : 1));
+  const hits = [...collectionFeatures].sort((a, x) =>
+    a.active === x.active ? 0 : a.active ? -1 : 1,
+  );
   el.className = "small";
-  el.innerHTML = hits.map((p) => {
-    const yrs = Array.isArray(p.years) && p.years.length === 2
-      ? ` <span class="muted">${p.years[0]}–${p.years[1]}</span>` : "";
-    const dot = p.active ? "#22c55e" : "#9ca3af";
-    const selected = p.id === selectedCollectionId
-      ? "background:rgba(59,130,246,.18);border:1px solid #3b82f6;"
-      : "border:1px solid transparent;";
-    const dim = p.active ? "" : "opacity:.6;";
-    const name = p.active ? `<strong>${p.title}</strong>${yrs}` : `${p.title}`;
-    return `<div class="collection-row" data-cid="${p.id}" tabindex="0" role="button"`
-      + ` style="display:flex;align-items:center;gap:6px;margin:2px 0;padding:2px 4px;`
-      + `border-radius:4px;cursor:pointer;${selected}${dim}">`
-      + `<span class="swatch" style="background:${dot}"></span>${name}</div>`;
-  }).join("");
+  el.innerHTML = hits
+    .map((p) => {
+      const yrs =
+        Array.isArray(p.years) && p.years.length === 2
+          ? ` <span class="muted">${p.years[0]}–${p.years[1]}</span>`
+          : "";
+      const dot = p.active ? "#22c55e" : "#9ca3af";
+      const selected =
+        p.id === selectedCollectionId
+          ? "background:rgba(59,130,246,.18);border:1px solid #3b82f6;"
+          : "border:1px solid transparent;";
+      const dim = p.active ? "" : "opacity:.6;";
+      const name = p.active
+        ? `<strong>${p.title}</strong>${yrs}`
+        : `${p.title}`;
+      return (
+        `<div class="collection-row" data-cid="${p.id}" tabindex="0" role="button"` +
+        ` style="display:flex;align-items:center;gap:6px;margin:2px 0;padding:2px 4px;` +
+        `border-radius:4px;cursor:pointer;${selected}${dim}">` +
+        `<span class="swatch" style="background:${dot}"></span>${name}</div>`
+      );
+    })
+    .join("");
   if (selectedCollectionId && collectionById[selectedCollectionId]) {
     renderCollectionDetail(selectedCollectionId);
   }
 }
 async function selectCollection(id) {
-  if (!collectionById[id]) return;
+  if (!collectionById[id]) {
+    return;
+  }
   selectedCollectionId = id;
   // If the registry marks this collection active (ingestable) but it isn't
   // currently in the searchable set, the lake listing may have failed
@@ -5552,15 +6658,21 @@ async function selectCollection(id) {
       if (changed && s1mActive) {
         refreshS1MTerrain();
       }
-      if (ok && changed) queueSearch("auto");
+      if (ok && changed) {
+        queueSearch("auto");
+      }
       updateNaipCoverageMvtLayer();
     });
   }
 }
 function resolveTemplate(template, feature) {
-  if (!feature || !feature.id) return template;
+  if (!feature?.id) {
+    return template;
+  }
 
-  const isIngestTab = document.getElementById("tab-ingest")?.classList.contains("active");
+  const isIngestTab = document
+    .getElementById("tab-ingest")
+    ?.classList.contains("active");
   let activeState = stateEl.value;
   let activeYear = yearEl.value;
   if (isIngestTab) {
@@ -5570,7 +6682,9 @@ function resolveTemplate(template, feature) {
   const stateCode = activeState ? activeState.split("-")[0] : "";
 
   const idx = feature.id.indexOf("/");
-  if (idx === -1) return template;
+  if (idx === -1) {
+    return template;
+  }
   const key = feature.id.substring(idx + 1);
   const templateParts = template.split("/");
   const keyParts = key.split("/");
@@ -5599,19 +6713,35 @@ function resolveTemplate(template, feature) {
 
 function renderCollectionDetail(id) {
   const el = document.getElementById("collection-detail");
-  if (!el) return;
+  if (!el) {
+    return;
+  }
   const p = id && collectionById[id];
-  if (!p) { el.innerHTML = ""; return; }
+  if (!p) {
+    el.innerHTML = "";
+    return;
+  }
   const avail = collectionAvailability(p);
-  const badgeCls = avail.cls === "status-ok" ? "ok" : avail.cls === "status-warn" ? "warn" : "neutral";
-  const yrs = Array.isArray(p.years) && p.years.length === 2 ? `${p.years[0]}–${p.years[1]}` : "—";
+  const badgeCls =
+    avail.cls === "status-ok"
+      ? "ok"
+      : avail.cls === "status-warn"
+        ? "warn"
+        : "neutral";
+  const yrs =
+    Array.isArray(p.years) && p.years.length === 2
+      ? `${p.years[0]}–${p.years[1]}`
+      : "—";
 
   let prefixPath = p.root_prefix || "—";
-  const firstFeature = Array.isArray(lastSearchFeatures) && lastSearchFeatures[0];
+  const firstFeature =
+    Array.isArray(lastSearchFeatures) && lastSearchFeatures[0];
   if (firstFeature && prefixPath.includes("{")) {
     prefixPath = resolveTemplate(prefixPath, firstFeature);
   } else if (prefixPath.includes("{")) {
-    const isIngestTab = document.getElementById("tab-ingest")?.classList.contains("active");
+    const isIngestTab = document
+      .getElementById("tab-ingest")
+      ?.classList.contains("active");
     let st = stateEl.value || "[state]";
     let yr = yearEl.value || "[year]";
     let optText = yearEl.options[yearEl.selectedIndex]?.textContent || "";
@@ -5619,7 +6749,9 @@ function renderCollectionDetail(id) {
     if (isIngestTab) {
       const ingReg = document.getElementById("ingest-catalog-region")?.value;
       const ingYr = document.getElementById("ingest-catalog-year")?.value;
-      if (ingReg) st = ingReg;
+      if (ingReg) {
+        st = ingReg;
+      }
       if (ingYr) {
         yr = ingYr;
         const ingYrEl = document.getElementById("ingest-catalog-year");
@@ -5634,7 +6766,9 @@ function renderCollectionDetail(id) {
       const gsd = searchAvailabilityGsd[stCode][String(yr)];
       if (gsd) {
         const label = gsdLabel(Number(gsd));
-        if (label) res = label.replace(/\s+/g, ""); // e.g. "60cm"
+        if (label) {
+          res = label.replace(/\s+/g, ""); // e.g. "60cm"
+        }
       }
     }
     if (res === "[resolution]" && optText) {
@@ -5653,7 +6787,10 @@ function renderCollectionDetail(id) {
   }
 
   const rows = [
-    ["bucket", `${p.bucket} <span class="muted">(${p.bucket_region}, ${p.access})</span>`],
+    [
+      "bucket",
+      `${p.bucket} <span class="muted">(${p.bucket_region}, ${p.access})</span>`,
+    ],
     ["prefix path", `${prefixPath}`],
     ["region", `${p.region_code || p.region_kind || "—"}`],
     ["years", yrs],
@@ -5668,17 +6805,20 @@ function renderCollectionDetail(id) {
   const canSearch = p.active && isSearchableCollection(p.id);
   const hint = canSearch
     ? `<div class="small status-ok" style="margin-top:6px;">Selected for search — use Footprints filters below.</div>`
-    : (p.active
-        ? `<div class="small status-warn" style="margin-top:6px;">Not in the lake yet — ingest needed before it can be searched.</div>`
-        : `<div class="small muted" style="margin-top:6px;">Outside the current us-west-2 scope.</div>`);
-  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`
-    + `<span style="font-weight:600;">${p.title}</span>`
-    + `<span class="cd-badge ${badgeCls}">${avail.label}</span>`
-    + `</div>`
-    + `<div class="cd-kv">`
-    + rows.map(([k, v]) => `<span class="cd-key">${k}</span><span>${v}</span>`).join("")
-    + `</div>`
-    + hint;
+    : p.active
+      ? `<div class="small status-warn" style="margin-top:6px;">Not in the lake yet — ingest needed before it can be searched.</div>`
+      : `<div class="small muted" style="margin-top:6px;">Outside the current us-west-2 scope.</div>`;
+  el.innerHTML =
+    `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
+    `<span style="font-weight:600;">${p.title}</span>` +
+    `<span class="cd-badge ${badgeCls}">${avail.label}</span>` +
+    `</div>` +
+    `<div class="cd-kv">` +
+    rows
+      .map(([k, v]) => `<span class="cd-key">${k}</span><span>${v}</span>`)
+      .join("") +
+    `</div>` +
+    hint;
 }
 
 map.on("moveend", () => {
@@ -5696,7 +6836,8 @@ map.on("moveend", () => {
     autoSearchTimeoutId = null;
     // Skip the search if existing footprints already cover the viewport
     if (footprintsCoverViewport(lastSearchFeatures)) {
-      imageryStatusEl.textContent = "Footprints cover viewport — search skipped.";
+      imageryStatusEl.textContent =
+        "Footprints cover viewport — search skipped.";
       imageryStatusEl.className = "small status-ok";
       updateResolutionDebug(lastSearchFeatures, getImagerySources());
       // Still refresh deck.gl layers so panning picks up the new
@@ -5717,18 +6858,23 @@ map.on("load", async () => {
     // Delegated: rows are re-rendered on each moveend, listener persists on parent.
     const onPick = (ev) => {
       const row = ev.target.closest(".collection-row");
-      if (row && row.dataset.cid) selectCollection(row.dataset.cid);
+      if (row?.dataset.cid) {
+        selectCollection(row.dataset.cid);
+      }
     };
     collectionsHereEl.addEventListener("click", onPick);
     collectionsHereEl.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onPick(ev); }
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        onPick(ev);
+      }
     });
   }
   updateCollectionsHere();
   map.addSource("usgs-naip-wms", {
     type: "raster",
     tiles: [
-      "https://basemap.nationalmap.gov/arcgis/services/USGSImageryOnly/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&FORMAT=image/png&TRANSPARENT=true&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}"
+      "https://basemap.nationalmap.gov/arcgis/services/USGSImageryOnly/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&FORMAT=image/png&TRANSPARENT=true&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}",
     ],
     tileSize: 256,
     maxzoom: 22,
@@ -5739,11 +6885,11 @@ map.on("load", async () => {
     type: "raster",
     source: "usgs-naip-wms",
     paint: {
-      "raster-opacity": 1.0
+      "raster-opacity": 1.0,
     },
     layout: {
-      visibility: "none"
-    }
+      visibility: "none",
+    },
   });
   updateReferenceRasterLayers();
 
@@ -5755,13 +6901,19 @@ map.on("load", async () => {
   await refreshCollections();
   updateCogLayerLabel();
   const availabilityOk = await refreshAvailability();
-  if (availabilityOk) await queueSearch("auto");
+  if (availabilityOk) {
+    await queueSearch("auto");
+  }
   mapReady = true;
 });
 
 // Lambda Cold Start Notice Handling
 const lambdaModal = document.getElementById("lambda-modal");
 
+// The cold-start modal is disabled, not removed. Keep the name as `openModal`:
+// the commented-out setTimeout below is the documented way to switch it back on,
+// so renaming it (e.g. to _openModal) would quietly break that.
+// biome-ignore lint/correctness/noUnusedVariables: intentionally retained, re-enabled via the setTimeout below
 function openModal() {
   lambdaModal.classList.add("show");
 }
