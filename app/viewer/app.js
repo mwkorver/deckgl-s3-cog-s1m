@@ -101,27 +101,39 @@ function addDebugLog(msg, isErr = false) {
   }
 }
 
-const _origLog = console.log;
-const _origErr = console.error;
-console.log = (...args) => {
-  _origLog(...args);
-  addDebugLog(
-    args
-      .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
-      .join(" "),
-  );
-};
-console.error = (...args) => {
-  _origErr(...args);
-  addDebugLog(
-    args
-      .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
-      .join(" "),
-    true,
-  );
-};
+function formatDebugArg(a) {
+  if (a instanceof Error) {
+    // JSON.stringify(new Error("boom")) is "{}" -- the panel exists to capture
+    // errors, so stringifying them to nothing defeats the point.
+    return a.stack || `${a.name}: ${a.message}`;
+  }
+  if (typeof a !== "object" || a === null) {
+    return String(a);
+  }
+  try {
+    return JSON.stringify(a);
+  } catch {
+    return String(a); // circular, or a throwing toJSON
+  }
+}
 
-addDebugLog("Live Debug Console Initialized successfully.");
+// Only patch the global console when the panel is actually on. Installing these
+// unconditionally overrode console.log/error for the whole page forever, and --
+// because a function's arguments are evaluated before the call -- ran the full
+// map/stringify on every log site just for addDebugLog to drop the result.
+if (DEBUG_CONSOLE_ENABLED) {
+  const _origLog = console.log;
+  const _origErr = console.error;
+  console.log = (...args) => {
+    _origLog(...args);
+    addDebugLog(args.map(formatDebugArg).join(" "));
+  };
+  console.error = (...args) => {
+    _origErr(...args);
+    addDebugLog(args.map(formatDebugArg).join(" "), true);
+  };
+  addDebugLog("Live debug console initialised.");
+}
 
 let layerNumberControlEl = null;
 

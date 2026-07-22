@@ -301,3 +301,43 @@ def test_search_rejects_bad_scalars():
         response = client.post("/search", json=body)
         assert response.status_code == 400, f"{body} -> {response.status_code}"
         assert expected in response.json()["detail"], f"{body} -> {response.json()['detail']}"
+
+
+def test_naip_coverage_mvt_is_parameterized():
+    """The MVT query binds request values like /search does. DuckDB binds
+    positionally, so placeholders and params must stay in lockstep -- a mismatch
+    shifts every value one slot and fails silently."""
+    from app import _lake_read_path, _webmercator_tile_bbox_lnglat  # noqa: F401
+
+    # Exercised through the route so the built SQL and params travel together.
+    with patch("app.lake_query") as mock_lake_query:
+        captured = {}
+
+        def capture(run):
+            class _Cur:
+                def execute(self, sql, params=None):
+                    captured["sql"] = sql
+                    captured["params"] = params
+                    return self
+
+                def fetchone(self):
+                    return [b""]
+
+            return run(_Cur())
+
+        mock_lake_query.side_effect = capture
+        response = client.get("/naip-coverage/7/37/48.mvt?region=nj&year=2022")
+        assert response.status_code == 200
+
+    sql, params = captured["sql"], captured["params"]
+    assert params is not None, "MVT query was not parameterized"
+    assert sql.count("?") == len(params), f"{sql.count('?')} placeholders vs {len(params)} params"
+    # z/x/y lead (ST_TileEnvelope), then the partition glob, then the filters.
+    assert params[:3] == [7, 37, 48]
+    assert "collection=naip" in params[3]
+    # Request-derived values are bound, not interpolated. (The SQL does contain
+    # static literals -- the EPSG codes and the MVT layer name -- so this checks
+    # the request inputs specifically rather than banning quotes outright.)
+    assert "'nj'" not in sql
+    assert "2022" not in sql
+    assert "nj" in params and 2022 in params

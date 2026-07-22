@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import asynccontextmanager
 from math import isfinite
 from pathlib import Path
 from secrets import compare_digest
@@ -62,14 +63,19 @@ STAC_VERSION = "1.1.0"
 PROJECTION_EXTENSION = "https://stac-extensions.github.io/projection/v2.0.0/schema.json"
 GRID_EXTENSION = "https://stac-extensions.github.io/grid/v1.1.0/schema.json"
 
-app = FastAPI(title="COG STAC-item search over a GeoParquet lake")
 
-
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Register collections found in the lake before serving. Replaces
+    # @app.on_event("startup"), deprecated in FastAPI since 0.93 -- it warned on
+    # every import, including every test run.
     import descriptors
 
     descriptors.register_lake_collections()
+    yield
+
+
+app = FastAPI(title="COG STAC-item search over a GeoParquet lake", lifespan=lifespan)
 
 
 # /search responses carry one presigned asset URL per feature, each ~1.5KB --
@@ -962,30 +968,42 @@ def naip_coverage_mvt(
     safe_region = "".join(ch for ch in str(region).lower() if ch.isalnum()) if region else None
     year_int = int(year) if year is not None else None
     read_path = _lake_read_path(collection, safe_region, year_int)
-    escaped_path = read_path.replace("'", "''")
     west, south, east, north = _webmercator_tile_bbox_lnglat(z, x, y)
 
-    filters = [
-        f"bbox_xmin <= {east} and bbox_xmax >= {west}",
-        f"bbox_ymin <= {north} and bbox_ymax >= {south}",
-        f"collection = '{collection}'",
+    # Bound rather than interpolated, matching _build_lake_inner_sql. collection
+    # and region keep their allowlist because they also build the partition-glob
+    # path, which is path construction and not SQL. Params are appended in the
+    # order their `?` appear -- DuckDB binds positionally.
+    filters: list[tuple[str, list[Any]]] = [
+        ("bbox_xmin <= ? and bbox_xmax >= ?", [east, west]),
+        ("bbox_ymin <= ? and bbox_ymax >= ?", [north, south]),
+        ("collection = ?", [collection]),
     ]
     if year_int is not None:
-        filters.append(f"year = {year_int}")
+        filters.append(("year = ?", [year_int]))
     else:
-        filters.append(f"""
+        filters.append(
+            (
+                """
             (region, year) in (
                 select region, max(year)
-                from read_parquet('{escaped_path}', hive_partitioning=true)
+                from read_parquet(?, hive_partitioning=true)
                 group by region
             )
-        """)
+        """,
+                [read_path],
+            )
+        )
     if safe_region:
-        filters.append(f"region = '{safe_region}'")
+        filters.append(("region = ?", [safe_region]))
+
+    params: list[Any] = [z, x, y, read_path]
+    for _, filter_params in filters:
+        params.extend(filter_params)
 
     sql = f"""
         with bounds as (
-          select ST_Extent(ST_TileEnvelope({z}, {x}, {y})) as b
+          select ST_Extent(ST_TileEnvelope(?, ?, ?)) as b
         ),
         features as (
           select
@@ -1005,15 +1023,15 @@ def naip_coverage_mvt(
             region,
             year as yr,
             gsd
-          from read_parquet('{escaped_path}', hive_partitioning=true), bounds
-          where {" and ".join(filters)}
+          from read_parquet(?, hive_partitioning=true), bounds
+          where {" and ".join(fragment for fragment, _ in filters)}
         )
         select ST_AsMVT(features, 'naip', 4096, 'geom')
         from features
         where geom is not null
     """
     try:
-        tile = lake_query(lambda cur: cur.execute(sql).fetchone()[0])
+        tile = lake_query(lambda cur: cur.execute(sql, params).fetchone()[0])
     except Exception as exc:
         msg = str(exc).lower()
         if "no files found" in msg or "no files matched" in msg:
