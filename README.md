@@ -2,17 +2,28 @@
 
 [![CI](https://github.com/mwkorver/deckgl-s3-cog-s1m/actions/workflows/ci.yml/badge.svg)](https://github.com/mwkorver/deckgl-s3-cog-s1m/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![linting: ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
-[![formatted with: biome](https://img.shields.io/badge/formatted%20with-biome-60a5fa.svg)](https://biomejs.dev)
 
-> [!NOTE]
-> **Reference implementation, released under [MIT](LICENSE) — use, fork, and adapt it freely.** It is a prototype provided as-is, with no support or active maintenance; issues and pull requests aren't monitored, so please fork rather than wait on changes here. The TypeScript packages under [`packages/`](packages/) are derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) (MIT) — see the per-package `LICENSE` files.
-
-A working reference implementation of **client-side Cloud-Optimized GeoTIFF (COG) rendering** and **serverless spatial data lake indexing**.
+A browser that streams federal aerial imagery (USDA NAIP) and 1-meter USGS terrain (3DEP S1M) straight from public S3 as Cloud-Optimized GeoTIFFs, draping the imagery over 3D terrain on the client GPU with deck.gl — no tile server, no terrain server, no rendering backend.
+Spatial discovery is serverless too: in-process DuckDB queries a Hive-partitioned GeoParquet index on S3, so there is no always-on PostGIS or Elasticsearch behind the search.
 
 ![NAIP imagery draped over the USGS 3DEP S1M 1-meter terrain in the browser viewer](docs/NAIP-S1M.gif)
 
 *NAIP aerial imagery draped over the USGS 3DEP Seamless 1-meter DEM, rendered client-side in the browser directly from Cloud-Optimized GeoTIFFs.*
+
+## Run it in 60 seconds
+
+```bash
+git clone --recurse-submodules https://github.com/mwkorver/deckgl-s3-cog-s1m.git
+cd deckgl-s3-cog-s1m
+pnpm install && pnpm build
+cd app && cp .env.example .env      # set AWS_PROFILE for imagery + search reads
+docker compose up --build
+```
+
+Then open **http://localhost:8089/viewer/**. Full setup, tests, and AWS deployment are in [Getting Started](#getting-started) below and [app/README.md](app/README.md).
+
+> [!NOTE]
+> **Reference implementation, released under [MIT](LICENSE) — use, fork, and adapt it freely.** It is a prototype provided as-is, with no support or active maintenance; issues and pull requests aren't monitored, so please fork rather than wait on changes here. The TypeScript packages under [`packages/`](packages/) are derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) (MIT) — see the per-package `LICENSE` files.
 
 ## Why this repository exists
 
