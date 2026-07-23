@@ -116,6 +116,14 @@ aws s3 cp "$STAGE/app.js" "s3://$BUCKET/app.js" \
   --content-type "text/javascript" \
   --cache-control "no-cache, no-store, must-revalidate"
 
+# styles.css is on the same footing: extracted out of index.html's inline
+# <style>, so it too must revalidate rather than let a fresh page pair with a
+# cached older stylesheet.
+aws s3 cp "$STAGE/styles.css" "s3://$BUCKET/styles.css" \
+  --region "$REGION" \
+  --content-type "text/css" \
+  --cache-control "no-cache, no-store, must-revalidate"
+
 # (CloudFront removed -- the viewer is served straight from the S3 website
 # endpoint and public COGs are read directly, so there is no tile cache to
 # invalidate.)
