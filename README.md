@@ -15,12 +15,10 @@ Spatial discovery is serverless too: in-process DuckDB queries a Hive-partitione
 ```bash
 git clone --recurse-submodules https://github.com/mwkorver/deckgl-s3-cog-s1m.git
 cd deckgl-s3-cog-s1m
-pnpm install && pnpm build
-cd app && cp .env.example .env      # set AWS_PROFILE for imagery + search reads
-docker compose up --build
+make run        # builds and serves everything in Docker (needs Docker only)
 ```
 
-Then open **http://localhost:8089/viewer/**. Full setup, tests, and AWS deployment are in [Getting Started](#getting-started) below and [app/README.md](app/README.md).
+Then open **http://localhost:8089/viewer/**. The viewer and basemap load straight away; imagery, footprint search, and 3D terrain need AWS credentials (`~/.aws` plus `AWS_PROFILE` in `app/.env`, which `make run` creates from the example). Run `make` on its own to see the other targets (`test`, `lint`, `deps`, …). Full setup, tests, and AWS deployment are in [Getting Started](#getting-started) below and [app/README.md](app/README.md).
 
 > [!NOTE]
 > **Reference implementation, released under [MIT](LICENSE) — use, fork, and adapt it freely.** It is a prototype provided as-is, with no support or active maintenance; issues and pull requests aren't monitored, so please fork rather than wait on changes here. The TypeScript packages under [`packages/`](packages/) are derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) (MIT) — see the per-package `LICENSE` files.
