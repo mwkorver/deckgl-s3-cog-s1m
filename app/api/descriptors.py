@@ -10,7 +10,7 @@ PHASE 1 (this module): NAIP only, routed through its existing manifest-index
 discovery. Pure seam — no output change. The partition layout, columns, and lake
 are untouched; ingest_duckdb still writes state/naip_year/product. Later phases add
 an `S3PrefixListing` adapter, a second descriptor, and the collection/region/year
-partition rename (see COLLECTIONS.md).
+partition rename (see docs/design/COLLECTIONS.md).
 
 Design note: this module must NOT be named `collections.py` — that shadows the
 stdlib `collections` used by ingest_duckdb (`from collections import Counter`).
@@ -302,7 +302,7 @@ def is_source_asset(bucket: str, key: str) -> bool:
 # --------------------------------------------------------------------------- #
 # KyFromAbove via S3PrefixListing (LIVE as of Phase 4 -- in _REGISTRY below).     #
 # Ingested through the generic COG-header path (fetch_cog_geo_generic); region is #
-# the constant "ky", year/properties parsed from the key. See COLLECTIONS.md      #
+# the constant "ky", year/properties parsed from the key. See docs/design/COLLECTIONS.md      #
 # "Worked example 1" for the layout:                                              #
 #   imagery/orthos/<Phase>/KY_KYAPED_<year>_<res>/<tile>_<year>_<res>_cog.tif    #
 # --------------------------------------------------------------------------- #

@@ -1,6 +1,6 @@
 """One-time migration: repartition the imagery lake from the pre-Phase-3
 `state=/naip_year=/product=` layout to the universal `collection=/region=/year=`
-layout (COLLECTIONS.md Phase 3). DuckDB-only -- it reads the existing parquet and
+layout (docs/design/COLLECTIONS.md Phase 3). DuckDB-only -- it reads the existing parquet and
 rewrites it; there are NO COG re-reads.
 
   reads:  <root>/state=*/naip_year=*/product=*/**.parquet     (old)

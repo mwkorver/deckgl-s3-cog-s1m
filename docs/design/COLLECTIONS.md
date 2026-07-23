@@ -517,7 +517,7 @@ Two operational notes:
   feed, incremental ingest can subscribe instead of re‑listing — a future
   `DiscoveryAdapter` variant. Listing remains the universal baseline.
 
-The seed file lives at **`collections/registry.yaml`** (curated). It compiles two
+The seed file lives at **`app/collections/registry.yaml`** (curated). It compiles two
 ways: to `collections.geojson` for the viewer's map lookup, and to
 `CollectionDescriptor`s for the ingest. Adding a collection = adding one YAML
 entry, never editing pipeline code.
@@ -610,7 +610,7 @@ lake, or a backfill that writes the new layout alongside and flips the read root
 
 ## Migration plan (phased)
 
-1. **Descriptor + adapter seam** — ✅ **DONE.** Added `api/descriptors.py`
+1. **Descriptor + adapter seam** — ✅ **DONE.** Added `app/api/descriptors.py`
    (`CollectionDescriptor`, `DiscoveryAdapter`, `ManifestIndexAdapter`, the `NAIP`
    descriptor, `get_descriptor`); `ingest_duckdb.py` gained `--collection` (default
    `naip`) and routes discovery + requester‑pays through the descriptor;
@@ -627,7 +627,7 @@ lake, or a backfill that writes the new layout alongside and flips the read root
    `ky_enumerate_prefixes`). It is a Phase-2 PREVIEW (in `_PREVIEW`, NOT
    `_REGISTRY`) — the live NAIP pipeline is untouched, because feeding these
    generic rows to ingest needs the Phase-3 rename + a generalized COG-header
-   reader. Tests (`api/test_descriptors.py`, 6/6): pure parser/filter, an offline
+   reader. Tests (`app/api/test_descriptors.py`, 6/6): pure parser/filter, an offline
    FakeS3 crawl (year filter, all-years + latest-only, constant-region guard), and
    a live smoke against the real public bucket (found real ky/2022 COGs).
 3. **Partition rename** — ✅ **DONE (NAIP).** Lake is now

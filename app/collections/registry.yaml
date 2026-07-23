@@ -4,7 +4,7 @@
 # This is the LOOKUP TABLE (design layer 0). Each entry pairs:
 #   - extent : coarse spatial + temporal coverage, for the map "what's here" lookup
 #   - source : the CollectionDescriptor, for ingest (Stage 1)
-# See COLLECTIONS.md > "The collection registry & the map lookup".
+# See docs/design/COLLECTIONS.md > "The collection registry & the map lookup".
 #
 # It compiles two ways:
 #   - collections.geojson  -> shipped to the viewer; intersect vs viewport on moveend
@@ -18,7 +18,7 @@
 #   Region as a user/config choice is a deliberate LATER feature, not built now.
 #   us-west-2 is anchored by NAIP (primary collection); all active collections
 #   are in it, so the active set has zero cross-region exposure.
-#   See COLLECTIONS.md > "Region & latency (decision)".
+#   See docs/design/COLLECTIONS.md > "Region & latency (decision)".
 #
 #   `active: true`  = in scope now (bucket in us-west-2).
 #   `active: false` = parked: layout may be pinned, but the bucket is NOT in
