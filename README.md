@@ -251,14 +251,11 @@ pnpm check       # biome + ruff, read-only
 pnpm check:fix   # apply fixes
 ```
 
-Python API and ingest tests (pytest). `/health` creates a DuckDB S3 secret
-via the AWS credential chain, so provide credentials — real or dummy:
+Python API and ingest tests (pytest). No AWS credentials needed — the tests
+point the lake at an empty local root, so the S3 code path is never taken:
 ```bash
 pip install -r app/api/requirements.txt
 cd app/api
-AWS_ACCESS_KEY_ID=testing \
-AWS_SECRET_ACCESS_KEY=testing \
-AWS_DEFAULT_REGION=us-west-2 \
 python3 -m pytest
 ```
 

@@ -7,10 +7,6 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 PY ?= python3
 
-# Dummy creds satisfy the DuckDB S3-secret setup in the Python tests; no test
-# reads real S3. Mirrors the CI job.
-TEST_ENV := AWS_ACCESS_KEY_ID=testing AWS_SECRET_ACCESS_KEY=testing AWS_DEFAULT_REGION=us-west-2
-
 .PHONY: help run down logs install test test-js test-py lint fmt deps clean
 
 help: ## List available targets
@@ -48,8 +44,8 @@ test: test-js test-py ## Run all tests (JS + Python)
 test-js: ## TypeScript package tests (run `make install` first for the fixtures)
 	pnpm -r test
 
-test-py: ## Python API tests (`make deps` first; dummy AWS creds, no real S3)
-	cd app/api && $(TEST_ENV) $(PY) -m pytest -q
+test-py: ## Python API tests (`make deps` first; no AWS credentials needed)
+	cd app/api && $(PY) -m pytest -q
 
 lint: ## Biome (JS/TS) + Ruff (Python), read-only -- what CI runs
 	pnpm exec biome ci .
