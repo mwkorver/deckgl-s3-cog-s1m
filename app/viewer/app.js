@@ -4719,7 +4719,7 @@ async function refreshS1MTerrain() {
       : "";
     summaryEl.textContent = desired.size
       ? `${tilesDrawn}/${desired.size} S1M tiles · grid ${sizeText} · ${exag}× exag${drapeText}${drapeErrorText}${drapeGateText}`
-      : "No S1M coverage in view (CONUS only, still expanding).";
+      : "No S1M coverage in view (partial coverage, still expanding).";
     // Re-seat footprints as elevation tiles arrive so bases catch up to the relief.
     if (terBuildingsEl?.checked && buildingFeatureData) {
       applyBuildingExtrusionZ();

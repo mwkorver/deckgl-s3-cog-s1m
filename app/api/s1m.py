@@ -1,8 +1,9 @@
 """USGS 3DEP Seamless 1-meter (S1M) DEM access.
 
-S1M is a CONUS-wide seamless 1 m DEM (NAD83(2011) Conus Albers / EPSG:6350,
-NAVD88 heights) distributed as COG GeoTIFF + metadata pairs in the public USGS
-bucket s3://prd-tnm/StagedProducts/Elevation/S1M/. The whole-collection tile
+S1M is a 1 m DEM with partial CONUS coverage -- present only where high-res
+source data exists, not nationwide, and still growing (NAD83(2011) Conus Albers /
+EPSG:6350, NAVD88 heights) -- distributed as COG GeoTIFF + metadata pairs in the
+public USGS bucket s3://prd-tnm/StagedProducts/Elevation/S1M/. The whole-collection tile
 index is published as a compact Parquet file whose polygon footprints carry the
 relative COG path per tile in the `dataset` column.
 
