@@ -77,47 +77,33 @@ By replacing an always-on spatial database with in-process DuckDB queries over G
 ## Architecture
 
 ```mermaid
-graph TD
-    subgraph Browser ["Browser (Client WebGL/GPU)"]
-        Viewer["🗺️ MapLibre + deck.gl Viewer"]
-        GeotiffJS["📦 geotiff.js range reader"]
-        MosaicLayer["⛰️ MosaicLayer / COGLayer / TerrainMeshLayer"]
-        GLSL["⚡ GPU Shaders: rescale/composite/hillshade"]
+sequenceDiagram
+    autonumber
+    participant B as Browser (deck.gl / geotiff.js)
+    participant API as Read API (FastAPI on Lambda)
+    participant DB as DuckDB (in-process)
+    participant Lake as GeoParquet lake on S3
+    participant S3 as Public COGs on S3 (NAIP / S1M / Overture)
+
+    Note over B,Lake: Discovery — footprints only, no pixels
+    B->>API: POST /search, /s1m/tiles, /buildings/overture (bbox)
+    API->>DB: in-process query (no database server)
+    DB->>Lake: prune partitions, scan metadata + footprints
+    Lake-->>DB: matching rows
+    API-->>B: STAC Items, S1M tile paths, building footprints
+
+    loop each COG entering the viewport
+        alt requester-pays bucket (naip-analytic)
+            B->>API: GET /sign (lazy, per-COG)
+            API-->>B: presigned URL, bounded to the STS token life
+        else public bucket (prd-tnm S1M, Overture)
+            B->>B: use the s3:// href directly (anonymous)
+        end
+        B->>S3: HTTP range reads over COG overviews + tiles
+        S3-->>B: COG byte ranges
+        B->>B: decode pixels / elevation, build mesh
+        B->>B: GPU shaders — rescale, composite, hillshade, extrude
     end
-
-    subgraph AWS ["AWS Cloud (Serverless Stack)"]
-        APIGateway["🚀 FastAPI on Lambda"]
-        DuckDB["🦆 DuckDB Query Engine"]
-        Parquet["🗄️ GeoParquet Lake Indexes on S3"]
-    end
-
-    subgraph External ["External Public Data Sources"]
-        COGBucket["🪣 COG Imagery Buckets on S3"]
-        USGSBucket["🪣 USGS 3DEP S1M Bucket on S3"]
-        OvertureS3["🪣 Overture GeoParquet on S3"]
-    end
-
-    %% Force vertical layout via invisible links
-    Viewer ~~~ APIGateway ~~~ COGBucket
-    GeotiffJS ~~~ DuckDB ~~~ USGSBucket
-    MosaicLayer ~~~ Parquet ~~~ OvertureS3
-
-    %% API Queries
-    Viewer -->|1. Search BBOX / Tiles / Buildings| APIGateway
-    APIGateway -->|2. In-Process Query| DuckDB
-    DuckDB -->|3. Prune & Scan Metadata| Parquet
-    DuckDB -->|3. Query footprints directly| OvertureS3
-    APIGateway -->|4. Return STAC Items, S1M Paths, & Buildings| Viewer
-
-    %% Client data reads
-    Viewer -->|5. Coordinate Mapping & BBOX Check| GeotiffJS
-    GeotiffJS -->|6. HTTP Range Requests| COGBucket
-    GeotiffJS -->|6. HTTP Range Requests| USGSBucket
-    
-    %% Decoding & Rendering
-    GeotiffJS -->|7. Decode raw pixels/elevation grid| MosaicLayer
-    MosaicLayer -->|8. Seat Overture footprints on S1M mesh| Viewer
-    MosaicLayer -->|9. Upload textures & render| GLSL
 ```
 
 1. **Client-Side Rendering & Terrain Drape:** The frontend viewer reads COG imagery and USGS S1M elevation data directly from public S3 buckets using HTTP Range Requests, decoding them in-browser via `geotiff.js` to build 3D terrain meshes.
