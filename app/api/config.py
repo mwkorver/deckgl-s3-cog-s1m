@@ -47,10 +47,21 @@ INGEST_URL = (os.environ.get("S3_COG_INGEST_URL") or "").rstrip("/")
 # Shared token required by public write ingest endpoints. Local dev may leave
 # this unset; Lambda write endpoints fail closed when it is missing.
 INGEST_TOKEN = os.environ.get("S3_COG_INGEST_TOKEN", "")
-# How long the {region: newest year} map is cached (see lake.latest_years_by_region).
-# It only changes when an ingest publishes a new year -- a few states a year --
-# and an ingest clears the cache explicitly, so this is just the staleness ceiling
-# for changes made by some OTHER process (e.g. a CLI ingest against the same lake).
+# How long the {region: newest year} map is cached (see lake.cached_latest_years).
+#
+# The cache is per-PROCESS, so on Lambda it lives and dies with the execution
+# environment: a cold start begins with an empty cache and the first request pays
+# the recompute, and a burst spread across several concurrent containers pays it
+# once per container. That is still strictly better than the correlated subquery
+# it replaced, which every request paid -- the worst case here only equals the
+# old behaviour -- but it is not a durable cache, and this TTL does not make it
+# one.
+#
+# So the TTL is a staleness ceiling, not a hit-rate lever. It matters for
+# long-lived processes (docker/local, or a container kept warm by steady traffic)
+# where the map could otherwise outlive an ingest performed by some OTHER process;
+# ingests in THIS process clear it outright. On Lambda the container is usually
+# recycled long before an hour elapses, so the TTL rarely fires at all.
 LATEST_YEARS_TTL = int(os.environ.get("S3_COG_LATEST_YEARS_TTL", "3600"))
 MODULE_DIR = Path(__file__).resolve().parent
 # In the container the viewer is COPYed to api/viewer; running from a checkout it

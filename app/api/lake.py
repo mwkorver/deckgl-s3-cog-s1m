@@ -179,6 +179,13 @@ def lake_years_for_states(states: set[str]) -> dict[str, set[int]]:
 # So compute it once and keep it. The query itself stays the authoritative one
 # (max over the data, not over directory names -- an empty partition dir must not
 # be mistaken for a year that has imagery); caching is what makes it cheap.
+#
+# Scope: this is per-process, not durable. On Lambda a cold start starts empty and
+# the first request repopulates it (~one map query, vs the subquery that every
+# request used to pay), so the win is within a warm container and across the burst
+# of tile requests a single viewport generates. Making it survive cold starts would
+# mean persisting the map next to the lake -- deliberately not done, since a sidecar
+# can drift from the data it summarises.
 _latest_years: dict[str, tuple[float, dict[str, int]]] = {}
 _latest_years_lock = Lock()
 
