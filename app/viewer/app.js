@@ -3237,6 +3237,35 @@ function s1mDrapeSourcesForBbox(bbox, seq, schedulePaint) {
   return null;
 }
 
+// Brightness/contrast + nodata tables, memoized across the tiles of one drape
+// pass. A pass repaints up to S1M_DRAPE_CACHE_MAX sub-tiles that share a
+// collection, dtype and slider state, so the 16-bit table (64K entries) is built
+// once per pass instead of once per tile.
+let _drapeLutMemo = null;
+
+function drapeLutFor(signature, size, rawToScaled) {
+  if (_drapeLutMemo && _drapeLutMemo.signature === signature) {
+    return _drapeLutMemo;
+  }
+  // out[raw] -> final display byte; low[raw] -> 1 when the SCALED sample is the
+  // <=2 "black nodata" level, so the loop needs no scale call to test it.
+  const out = new Uint8ClampedArray(size);
+  const low = new Uint8Array(size);
+  const { brightness, contrast } = getDisplayAdjustments();
+  for (let raw = 0; raw < size; raw++) {
+    const scaled = rawToScaled(raw);
+    out[raw] = Math.round(
+      Math.max(
+        0,
+        Math.min(1, (scaled / 255 - 0.5) * contrast + 0.5 + brightness),
+      ) * 255,
+    );
+    low[raw] = scaled <= 2 ? 1 : 0;
+  }
+  _drapeLutMemo = { signature, out, low };
+  return _drapeLutMemo;
+}
+
 function displayDrapeRgbaBytes(array, source, image) {
   const width = array.width;
   const height = array.height;
@@ -3248,17 +3277,11 @@ function displayDrapeRgbaBytes(array, source, image) {
     sourceData = array.data;
   }
 
-  const readSample = (pixel, band) => {
-    if (Array.isArray(sourceData)) {
-      return sourceData[band]?.[pixel] ?? 0;
-    }
-    return sourceData[pixel * sampleCount + band] ?? 0;
-  };
-
   const sourceSampleData = Array.isArray(sourceData)
     ? sourceData[0]
     : sourceData;
   let scaleSample = (value) => value;
+  let domainKey = "identity";
   if (
     !(
       sourceSampleData instanceof Uint8Array ||
@@ -3275,34 +3298,90 @@ function displayDrapeRgbaBytes(array, source, image) {
     const range = Math.max(1, domainMax - domainMin);
     scaleSample = (value) =>
       Math.round(Math.max(0, Math.min(1, (value - domainMin) / range)) * 255);
+    domainKey = `${domainMin}:${domainMax}`;
+  }
+
+  // Integer samples are directly indexable, so the rescale AND the
+  // brightness/contrast curve collapse into one table lookup -- which takes
+  // scaleSample out of the per-pixel loop entirely. Float samples are not
+  // indexable, so they keep the per-sample call.
+  let lut = null;
+  const { brightness, contrast } = getDisplayAdjustments();
+  if (
+    sourceSampleData instanceof Uint8Array ||
+    sourceSampleData instanceof Uint8ClampedArray
+  ) {
+    lut = drapeLutFor(
+      `u8|${domainKey}|${brightness}|${contrast}`,
+      256,
+      scaleSample,
+    );
+  } else if (sourceSampleData instanceof Uint16Array) {
+    lut = drapeLutFor(
+      `u16|${domainKey}|${brightness}|${contrast}`,
+      65536,
+      scaleSample,
+    );
   }
 
   const adjusted = new Uint8ClampedArray(width * height * 4);
-  const { brightness, contrast } = getDisplayAdjustments();
-  for (let pixel = 0; pixel < width * height; pixel++) {
+  const pixelCount = width * height;
+  // Layout is fixed for the whole tile, so resolve it once instead of re-testing
+  // Array.isArray inside a closure on every sample of every pixel.
+  const bandSeparate = Array.isArray(sourceData);
+  const band0 = bandSeparate ? sourceData[0] : null;
+  const band1 = bandSeparate ? sourceData[1] : null;
+  const band2 = bandSeparate ? sourceData[2] : null;
+
+  for (let pixel = 0; pixel < pixelCount; pixel++) {
     const dst = pixel * 4;
-    const rawR = scaleSample(readSample(pixel, 0));
-    const rawG = scaleSample(readSample(pixel, 1));
-    const rawB = scaleSample(readSample(pixel, 2));
-    const blackNoData = rawR <= 2 && rawG <= 2 && rawB <= 2;
-    const r = Math.round(
-      Math.max(
-        0,
-        Math.min(1, (rawR / 255 - 0.5) * contrast + 0.5 + brightness),
-      ) * 255,
-    );
-    const g = Math.round(
-      Math.max(
-        0,
-        Math.min(1, (rawG / 255 - 0.5) * contrast + 0.5 + brightness),
-      ) * 255,
-    );
-    const b = Math.round(
-      Math.max(
-        0,
-        Math.min(1, (rawB / 255 - 0.5) * contrast + 0.5 + brightness),
-      ) * 255,
-    );
+    let s0;
+    let s1;
+    let s2;
+    if (bandSeparate) {
+      s0 = band0 ? (band0[pixel] ?? 0) : 0;
+      s1 = band1 ? (band1[pixel] ?? 0) : 0;
+      s2 = band2 ? (band2[pixel] ?? 0) : 0;
+    } else {
+      const base = pixel * sampleCount;
+      s0 = sourceData[base] ?? 0;
+      s1 = sourceData[base + 1] ?? 0;
+      s2 = sourceData[base + 2] ?? 0;
+    }
+
+    let r;
+    let g;
+    let b;
+    let blackNoData;
+    if (lut) {
+      blackNoData = lut.low[s0] === 1 && lut.low[s1] === 1 && lut.low[s2] === 1;
+      r = lut.out[s0];
+      g = lut.out[s1];
+      b = lut.out[s2];
+    } else {
+      const rawR = scaleSample(s0);
+      const rawG = scaleSample(s1);
+      const rawB = scaleSample(s2);
+      blackNoData = rawR <= 2 && rawG <= 2 && rawB <= 2;
+      r = Math.round(
+        Math.max(
+          0,
+          Math.min(1, (rawR / 255 - 0.5) * contrast + 0.5 + brightness),
+        ) * 255,
+      );
+      g = Math.round(
+        Math.max(
+          0,
+          Math.min(1, (rawG / 255 - 0.5) * contrast + 0.5 + brightness),
+        ) * 255,
+      );
+      b = Math.round(
+        Math.max(
+          0,
+          Math.min(1, (rawB / 255 - 0.5) * contrast + 0.5 + brightness),
+        ) * 255,
+      );
+    }
     const whiteCollar =
       r >= 240 &&
       g >= 240 &&
