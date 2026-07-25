@@ -746,14 +746,34 @@ def _lake_read_path(collection: str, safe_region: str | None, year: int | None) 
 def _query_latest_years(collection: str) -> dict[str, int]:
     """{region: newest ingested year}, read once per TTL (see cached_latest_years).
 
-    Deliberately the authoritative max over the DATA rather than over partition
-    directory names: an empty leftover partition dir must not be mistaken for a
-    year that actually has imagery.
+    Resolved from the partition PATHS, not by reading the files. `year` is a Hive
+    partition key, so its value is in the path by construction -- opening all 160
+    partitions to recover a number already spelled in their directory names is
+    redundant work. Over s3:// the glob is one paginated LIST instead of a footer
+    GET per partition, which is what makes a cold start (empty cache) cheap.
+
+    This matches *.parquet, i.e. files rather than directories, so an empty
+    leftover partition dir contributes nothing -- it has no file to match. The
+    converse invariant, "a partition file exists => that partition has rows",
+    holds because DuckDB's partitioned COPY only emits a file for a partition it
+    wrote rows to, and ingest_duckdb.export() is the only writer into the lake.
+    A zero-row partition file from some other source would report a year with no
+    imagery; the TTL and the post-ingest invalidation bound how long that lasts.
     """
     read_path = _lake_read_path(collection, None, None)
     rows = lake_query(
         lambda cur: cur.execute(
-            "select region, max(year) from read_parquet(?, hive_partitioning=true) group by region",
+            """
+            select region, max(year)
+            from (
+              select
+                regexp_extract(file, 'region=([^/]+)', 1) as region,
+                try_cast(regexp_extract(file, 'year=([0-9]+)', 1) as int) as year
+              from glob(?)
+            )
+            where region <> '' and year is not null
+            group by region
+            """,
             [read_path],
         ).fetchall()
     )

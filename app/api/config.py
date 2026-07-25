@@ -52,10 +52,9 @@ INGEST_TOKEN = os.environ.get("S3_COG_INGEST_TOKEN", "")
 # The cache is per-PROCESS, so on Lambda it lives and dies with the execution
 # environment: a cold start begins with an empty cache and the first request pays
 # the recompute, and a burst spread across several concurrent containers pays it
-# once per container. That is still strictly better than the correlated subquery
-# it replaced, which every request paid -- the worst case here only equals the
-# old behaviour -- but it is not a durable cache, and this TTL does not make it
-# one.
+# once per container. That recompute is a single S3 LIST over the partition paths
+# (see app._query_latest_years), not a scan of the partitions, so a cold cache is
+# cheap -- but it is still not a durable cache, and this TTL does not make it one.
 #
 # So the TTL is a staleness ceiling, not a hit-rate lever. It matters for
 # long-lived processes (docker/local, or a container kept warm by steady traffic)

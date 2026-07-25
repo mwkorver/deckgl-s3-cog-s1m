@@ -403,3 +403,30 @@ def test_latest_years_cache_is_reused_and_resettable():
     assert calls["n"] == 2, "reset should force a recompute"
 
     lake.reset_latest_years_cache()
+
+
+def test_query_latest_years_reads_partition_paths_not_files(tmp_path):
+    """The latest-year map comes from the partition paths, opening no parquet.
+
+    `year` is a Hive partition key, so its value is in the path by construction.
+    Resolving it by globbing *.parquet (files, not directories) means an empty
+    leftover partition dir contributes nothing, and over s3:// the whole map is
+    one LIST instead of a footer GET per partition.
+    """
+    import duckdb
+
+    import app
+
+    lake_root = tmp_path / "lake"
+    for region, year in [("nj", 2018), ("nj", 2022), ("ri", 2021), ("de", 2017)]:
+        part = lake_root / "collection=naip" / f"region={region}" / f"year={year}"
+        part.mkdir(parents=True)
+        duckdb.connect().execute(
+            f"copy (select '{region}' as region, {year} as year, i from range(3) t(i)) "
+            f"to '{part / 'data_0.parquet'}' (format parquet)"
+        )
+    # A partition directory with no parquet in it must not register as a year.
+    (lake_root / "collection=naip" / "region=nj" / "year=2099").mkdir(parents=True)
+
+    with patch("app.LAKE_ROOT", str(lake_root)):
+        assert app._query_latest_years("naip") == {"nj": 2022, "ri": 2021, "de": 2017}

@@ -181,11 +181,12 @@ def lake_years_for_states(states: set[str]) -> dict[str, set[int]]:
 # be mistaken for a year that has imagery); caching is what makes it cheap.
 #
 # Scope: this is per-process, not durable. On Lambda a cold start starts empty and
-# the first request repopulates it (~one map query, vs the subquery that every
-# request used to pay), so the win is within a warm container and across the burst
-# of tile requests a single viewport generates. Making it survive cold starts would
-# mean persisting the map next to the lake -- deliberately not done, since a sidecar
-# can drift from the data it summarises.
+# the first request repopulates it. That repopulation is now cheap -- the map is
+# read from the partition paths (one S3 LIST), not by opening every partition --
+# so a cold cache costs about one listing rather than a footer GET per partition.
+# That is also why the map is not persisted next to the lake to survive restarts:
+# a sidecar summarising the lake can drift from it, and it would buy roughly one
+# round trip over what the LIST already costs.
 _latest_years: dict[str, tuple[float, dict[str, int]]] = {}
 _latest_years_lock = Lock()
 
