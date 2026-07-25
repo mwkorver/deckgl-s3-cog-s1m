@@ -97,6 +97,11 @@ def run_ingest_job(
 
         returncode = process.wait()
         if returncode == 0:
+            # A completed ingest may have added a newer year, so drop the cached
+            # {region: newest year} map that "Latest available" searches read.
+            from lake import reset_latest_years_cache
+
+            reset_latest_years_cache()
             set_ingest_job(job_id, {"status": "completed", "returncode": returncode, "finished": monotonic()})
         else:
             set_ingest_job(

@@ -3,7 +3,7 @@ from pathlib import Path
 from threading import Lock
 
 from aws_s3 import get_aws_credentials, get_aws_credentials_expiry, get_s3_client, reset_aws_credentials_cache
-from config import COLLECTION_ID, LAKE_ROOT
+from config import COLLECTION_ID, LAKE_ROOT, LATEST_YEARS_TTL
 
 # Standalone in-process DuckDB connection -- the only query engine. It reads the
 # GeoParquet lake directly, so the service works without a database server.
@@ -159,4 +159,53 @@ def lake_years_for_states(states: set[str]) -> dict[str, set[int]]:
                             pass
     except Exception as exc:
         print(f"lake_years_for_states listing failed: {exc}", flush=True)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Latest-year-per-region cache                                                 #
+# --------------------------------------------------------------------------- #
+# "Latest available" is the default /search and /naip-coverage mode, and it used
+# to be expressed as a correlated subquery:
+#
+#   (region, year) in (select region, max(year) from read_parquet(glob) group by region)
+#
+# which re-scanned every partition in the collection on every request just to
+# recover values that only change when new imagery is ingested -- a few states a
+# year. Measured on a 160-partition lake, that subquery made a single /search
+# touch 180 parquet files instead of 20; over s3:// each of those is a footer
+# GET, and /naip-coverage pays it once per map tile.
+#
+# So compute it once and keep it. The query itself stays the authoritative one
+# (max over the data, not over directory names -- an empty partition dir must not
+# be mistaken for a year that has imagery); caching is what makes it cheap.
+_latest_years: dict[str, tuple[float, dict[str, int]]] = {}
+_latest_years_lock = Lock()
+
+
+def reset_latest_years_cache() -> None:
+    """Drop the cache so the next read recomputes. Called after an ingest writes
+    new partitions, so a freshly ingested year shows up without waiting on TTL."""
+    with _latest_years_lock:
+        _latest_years.clear()
+
+
+def cached_latest_years(collection: str, compute) -> dict[str, int]:
+    """Return {region: newest ingested year} for one collection, computing it via
+    `compute()` only on a miss or after the TTL.
+
+    The cache lives here (it is lake state) but the query does not: callers run it
+    through app.lake_query so it keeps the expired-token self-heal every other
+    route query gets, instead of opening a second, unsupervised path to DuckDB.
+    """
+    now = time.time()
+    with _latest_years_lock:
+        hit = _latest_years.get(collection)
+        if hit is not None and hit[0] > now:
+            return hit[1]
+
+    out = compute()
+
+    with _latest_years_lock:
+        _latest_years[collection] = (now + LATEST_YEARS_TTL, out)
     return out

@@ -38,7 +38,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from ingest_jobs import get_ingest_job, run_ingest_job, set_ingest_job
 from ingest_options import build_ingest_options
-from lake import get_lake_duckdb, is_expired_token_error, lake_collections, reset_lake_duckdb
+from lake import (
+    cached_latest_years,
+    get_lake_duckdb,
+    is_expired_token_error,
+    lake_collections,
+    reset_lake_duckdb,
+    reset_latest_years_cache,
+)
 from probes import build_environment_payload
 
 
@@ -532,6 +539,10 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"ingest export failed: {exc}") from exc
 
+    # New partitions may have introduced a newer year for this region, so the
+    # cached {region: newest year} map is now stale for "Latest available".
+    reset_latest_years_cache()
+
     return {
         "status": "completed",
         "state": state,
@@ -732,6 +743,45 @@ def _lake_read_path(collection: str, safe_region: str | None, year: int | None) 
     return f"{base}/**/*.parquet"
 
 
+def _query_latest_years(collection: str) -> dict[str, int]:
+    """{region: newest ingested year}, read once per TTL (see cached_latest_years).
+
+    Deliberately the authoritative max over the DATA rather than over partition
+    directory names: an empty leftover partition dir must not be mistaken for a
+    year that actually has imagery.
+    """
+    read_path = _lake_read_path(collection, None, None)
+    rows = lake_query(
+        lambda cur: cur.execute(
+            "select region, max(year) from read_parquet(?, hive_partitioning=true) group by region",
+            [read_path],
+        ).fetchall()
+    )
+    return {str(r): int(y) for r, y in rows if r is not None and y is not None}
+
+
+def _latest_year_filter(collection: str, safe_region: str | None) -> tuple[str, list[Any]]:
+    """WHERE fragment restricting rows to each region's newest ingested year.
+
+    Reads the cached {region: year} map rather than the correlated subquery this
+    replaced, which re-scanned every partition in the collection on every request
+    -- 180 parquet files touched instead of 20 on a 160-partition lake, and once
+    per map tile on /naip-coverage. The map only changes when an ingest publishes
+    a new year, and ingest clears the cache.
+    """
+    latest = cached_latest_years(collection, lambda: _query_latest_years(collection))
+    if safe_region is not None:
+        year = latest.get(safe_region)
+        # Region with nothing ingested: match no rows rather than fall through to
+        # an unfiltered scan of every year.
+        return ("year = ?", [year]) if year is not None else ("1 = 0", [])
+    if not latest:
+        return ("1 = 0", [])
+    pairs = sorted(latest.items())
+    placeholders = ", ".join("(?, ?)" for _ in pairs)
+    return (f"(region, year) in ({placeholders})", [v for pair in pairs for v in pair])
+
+
 def _build_lake_inner_sql(body: dict[str, Any]) -> tuple[str, list[Any]]:
     """Build the GeoParquet lake read query for /search.
 
@@ -804,20 +854,8 @@ def _build_lake_inner_sql(body: dict[str, Any]) -> tuple[str, list[Any]]:
     if year_int is not None:
         filters.append(("year = ?", [year_int]))
     else:
-        # If no year constraint was requested ("Latest available"), filter to only
-        # return the most recent year for each state/region in the query scope.
-        filters.append(
-            (
-                """
-            (region, year) in (
-                select region, max(year)
-                from read_parquet(?, hive_partitioning=true)
-                group by region
-            )
-        """,
-                [read_path],
-            )
-        )
+        # No year requested ("Latest available") -> newest ingested year per region.
+        filters.append(_latest_year_filter(collection, safe_region))
 
     if safe_region:
         filters.append(("region = ?", [safe_region]))
@@ -982,18 +1020,7 @@ def naip_coverage_mvt(
     if year_int is not None:
         filters.append(("year = ?", [year_int]))
     else:
-        filters.append(
-            (
-                """
-            (region, year) in (
-                select region, max(year)
-                from read_parquet(?, hive_partitioning=true)
-                group by region
-            )
-        """,
-                [read_path],
-            )
-        )
+        filters.append(_latest_year_filter(collection, safe_region))
     if safe_region:
         filters.append(("region = ?", [safe_region]))
 

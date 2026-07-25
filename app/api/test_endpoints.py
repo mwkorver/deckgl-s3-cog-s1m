@@ -190,7 +190,10 @@ def test_search_success():
         ]
 
         search_payload = {"collections": ["naip"], "bbox": [-75.0, 39.0, -74.0, 40.0], "limit": 10}
-        response = client.post("/search", json=search_payload)
+        # Stub the latest-year lookup: this test is about row -> STAC mapping, and
+        # the mocked cursor returns 17-column search rows for every query.
+        with patch("app.cached_latest_years", side_effect=lambda _c, _f: {"nj": 2022}):
+            response = client.post("/search", json=search_payload)
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "FeatureCollection"
@@ -276,8 +279,10 @@ def test_build_lake_inner_sql_is_parameterized():
         {"bbox": [-75.0, 39.0, -74.0, 40.0], "year": 2020, "region": "nj", "limit": 5},
         {"bbox": [-75.0, 39.0, -74.0, 40.0], "collections": ["kyfromabove"]},
     ]
+    latest = {"nj": 2022, "ri": 2021, "de": 2017}
     for body in bodies:
-        sql, params = _build_lake_inner_sql(body)
+        with patch("app.cached_latest_years", side_effect=lambda _c, _f: latest):
+            sql, params = _build_lake_inner_sql(body)
         assert sql.count("?") == len(params), f"{sql.count('?')} placeholders vs {len(params)} params for {body}"
         # No request value should appear as a literal in the SQL text.
         assert "'" not in sql, f"unexpected SQL literal in: {sql}"
@@ -341,3 +346,60 @@ def test_naip_coverage_mvt_is_parameterized():
     assert "'nj'" not in sql
     assert "2022" not in sql
     assert "nj" in params and 2022 in params
+
+
+def test_latest_year_filter_uses_cached_map_not_a_subquery():
+    """ "Latest available" resolves each region's newest year from the cached map.
+
+    The correlated subquery this replaced re-scanned every partition in the
+    collection on every request (180 parquet files touched instead of 20 on a
+    160-partition lake; once per map tile on /naip-coverage). The filter must
+    carry literal years as bound params and contain no nested read_parquet.
+    """
+    from app import _latest_year_filter
+
+    with patch("app.cached_latest_years") as mock_latest:
+        mock_latest.side_effect = lambda _c, _f: {"nj": 2022, "ri": 2021, "de": 2017}
+
+        # All regions -> one (region, year) pair per region, all bound.
+        fragment, params = _latest_year_filter("naip", None)
+        assert "read_parquet" not in fragment, "must not re-scan the lake"
+        assert "max(year)" not in fragment
+        assert fragment.count("?") == len(params) == 6
+        assert params == ["de", 2017, "nj", 2022, "ri", 2021]
+
+        # A single region collapses to a plain equality on its newest year.
+        assert _latest_year_filter("naip", "nj") == ("year = ?", [2022])
+
+        # A region with nothing ingested matches no rows, rather than falling
+        # through to an unfiltered scan of every year.
+        assert _latest_year_filter("naip", "zz") == ("1 = 0", [])
+
+    # An empty lake likewise matches nothing instead of emitting `in ()`.
+    with patch("app.cached_latest_years") as mock_latest:
+        mock_latest.side_effect = lambda _c, _f: {}
+        assert _latest_year_filter("naip", None) == ("1 = 0", [])
+
+
+def test_latest_years_cache_is_reused_and_resettable():
+    """The map is computed once per TTL, and an ingest can drop it."""
+    import lake
+
+    calls = {"n": 0}
+
+    def compute():
+        calls["n"] += 1
+        return {"nj": 2022, "ri": 2021}
+
+    lake.reset_latest_years_cache()
+    first = lake.cached_latest_years("naip", compute)
+    for _ in range(4):
+        lake.cached_latest_years("naip", compute)
+    assert first == {"nj": 2022, "ri": 2021}
+    assert calls["n"] == 1, "cached map should not recompute"
+
+    lake.reset_latest_years_cache()
+    lake.cached_latest_years("naip", compute)
+    assert calls["n"] == 2, "reset should force a recompute"
+
+    lake.reset_latest_years_cache()
