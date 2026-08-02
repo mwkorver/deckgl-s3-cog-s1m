@@ -430,3 +430,64 @@ def test_query_latest_years_reads_partition_paths_not_files(tmp_path):
 
     with patch("app.LAKE_ROOT", str(lake_root)):
         assert app._query_latest_years("naip") == {"nj": 2022, "ri": 2021, "de": 2017}
+
+
+def test_build_stac_index_sql_carries_the_load_bearing_settings():
+    """The projection's three easily-lost settings, pinned.
+
+    Each was measured: without geoparquet_version 'V2' DuckDB writes 0/6 row
+    groups with geo_bbox (spatial pruning silently gone); DuckDB's default
+    row_group_size of 122,880 collapses a partition to one row group; and
+    ST_Hilbert without explicit bounds degrades locality rather than preserving
+    it (the published index is already clustered at 15.4% mean row-group box).
+    """
+    import build_stac_index as bsi
+
+    sql = bsi.build_sql("/lake/collection=naip/**/*.parquet", "naip-analytic")
+    # Hilbert sort with an explicit per-region extent, not bare ST_Hilbert(geom)
+    assert "ST_Hilbert(src.geometry, region_bounds.ext)" in sql
+    assert "ST_Extent(ST_Extent_Agg(geometry))" in sql
+    # STAC shape the consumer reads
+    for col in ("as id", "as type", "as geometry", "as bbox", "as datetime", "as properties", "as assets"):
+        assert col in sql, col
+    # promoted columns so a reader can skip the JSON blobs
+    assert "as asset_href" in sql
+    assert "as gsd" in sql
+    # id is "<collection>/<source_key>", which the index reader strips back off
+    assert "'naip-analytic/' || src.source_key" in sql
+    assert bsi.DEFAULT_ROW_GROUP_SIZE == 1845
+
+
+def test_manifest_index_reader_projects_stac_items(tmp_path):
+    """The index reader reads stac-geoparquet, not the retired flat schema.
+
+    It broke with `Binder Error: Referenced column "source_key" not found` when
+    the published index moved to STAC Items. source_key/resolution/quad are now
+    derived from the key path, matching partition_from_key() on the text path.
+    """
+    import duckdb
+    import ingest_manifest as im
+
+    idx = tmp_path / "idx" / f"collection={im.INDEX_COLLECTION}" / "region=nj" / "year=2023"
+    idx.mkdir(parents=True)
+    key = "nj/2023/30cm/rgbir_cog/39075/m_3907536_ne_18_030_20230711_20231019.tif"
+    duckdb.connect().execute(
+        f"""copy (select '{im.INDEX_COLLECTION}/{key}' as id, 'Feature' as type,
+                   '{{"gsd":0.3}}'::JSON as properties, 'nj' as region, 2023 as year)
+            to '{idx / "data_0.parquet"}' (format parquet)"""
+    )
+    selected, latest = im.build_manifest_inventory_from_index(
+        states={"nj"},
+        years={2023},
+        latest_year_only=False,
+        limit_per_partition=0,
+        index_root=str(tmp_path / "idx"),
+    )
+    assert latest == {"nj": 2023}
+    ((href, row),) = selected.items()
+    assert href == f"s3://naip-analytic/{key}"
+    assert row["source_key"] == key  # collection prefix stripped
+    assert row["state"] == "nj" and row["naip_year"] == 2023
+    assert row["resolution_dir"] == "30cm"  # from the key path
+    assert row["spatial_prefix"] == "39075"
+    assert row["filename"] == "m_3907536_ne_18_030_20230711_20231019.tif"

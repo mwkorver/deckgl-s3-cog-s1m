@@ -55,6 +55,10 @@ MANIFEST_INDEX_PATH = os.environ.get(
     str(_CACHE_DIR / "manifest_index"),
 ).rstrip("/")
 
+# Collection within the stac-geoparquet index that holds the RGBIR COGs the
+# lake ingests (naip-visualization is the separate RGB product).
+INDEX_COLLECTION = os.environ.get("S3_COG_INDEX_COLLECTION", "naip-analytic")
+
 FILENAME_RE = re.compile(
     r"^(?:m_)?(\d{7})_(ne|nw|se|sw)_(\d{1,2})_([a-z0-9]+)(?:_(\d{8})(?:_(\d{8}))?)?\.tif$",
     re.IGNORECASE,
@@ -236,13 +240,19 @@ def build_manifest_inventory_from_index(
 ):
     """Index-backed equivalent of build_manifest_inventory.
 
-    Reads the partitioned Parquet manifest index (build_manifest_index.py)
-    instead of streaming the 404MB text manifest, using DuckDB to push the
-    state/naip_year filters into partition pruning. Returns the SAME
-    (selected, latest_by_state) shape the text-scan version returns, so
-    acquire_payloads can use either interchangeably -- minus metadata_href,
-    which the index does not carry (RGBIR COGs only; lake ingest does not use
-    it). This path is for the PostGIS-free lake ingest (ingest_duckdb.py).
+    Reads the partitioned stac-geoparquet index (build_stac_index.py) instead of
+    streaming the 404MB text manifest, using DuckDB to push the region/year
+    filters into partition pruning. Returns the SAME (selected, latest_by_state)
+    shape the text-scan version returns, so acquire_payloads can use either
+    interchangeably -- minus metadata_href, which the index does not carry (RGBIR
+    COGs only; lake ingest does not use it).
+
+    The index holds STAC Items, so the manifest fields are projected out of them:
+    `source_key` from `id` (which is "<collection>/<source_key>"), `state`/
+    `naip_year` from the `region`/`year` partition keys, and resolution/quad from
+    the naip:* `properties`. This replaced a direct
+    `select source_key, state, naip_year, ...`, which broke when the index moved
+    to stac-geoparquet -- those columns simply do not exist there any more.
     """
     import duckdb
     import duckdb_s3
@@ -250,14 +260,34 @@ def build_manifest_inventory_from_index(
     # Local paths must exist up front; s3:// paths are validated lazily by
     # httpfs when the read runs (no client-side stat).
     if not str(index_root).startswith("s3://") and not Path(index_root).exists():
-        raise RuntimeError(f"manifest index not found: {index_root} (run build_manifest_index.py)")
+        raise RuntimeError(f"manifest index not found: {index_root} (run build_stac_index.py)")
 
     con = duckdb.connect()
     duckdb_s3.configure(con, index_root, spatial=False)
-    glob = f"{index_root}/**/*.parquet"
+    # Scope to the analytic (RGBIR COG) collection. The index gained a
+    # collection= partition level and also carries naip-visualization (the RGB
+    # product); an unscoped glob would mix both and yield rgb/ keys the lake
+    # ingest cannot read.
+    glob = f"{index_root}/collection={INDEX_COLLECTION}/**/*.parquet"
     rel = con.sql(
-        f"select source_key, state, naip_year, resolution, quad, filename "
-        f"from read_parquet('{glob}', hive_partitioning=true)"
+        # id is "<collection>/<source_key>", so strip the leading collection
+        # segment; resolution/quad/filename then come out of the key path exactly
+        # as partition_from_key() splits them on the text path
+        # (state/year/resolution/product/quad/.../filename). Deriving them from
+        # the key rather than from `properties` keeps this working against index
+        # generations that carry no naip:* properties.
+        f"""with items as (
+              select regexp_replace(id, '^[^/]+/', '') as source_key, region, year
+              from read_parquet('{glob}', hive_partitioning=true)
+            )
+            select
+              source_key,
+              region                              as state,
+              year                                as naip_year,
+              split_part(source_key, '/', 3)      as resolution,
+              split_part(source_key, '/', 5)      as quad,
+              split_part(source_key, '/', -1)     as filename
+            from items"""
     )
     con.register("idx", rel)
 

@@ -1,5 +1,17 @@
 """Build a partitioned Parquet index from the flat NAIP manifest (RGBIR COGs only).
 
+SUPERSEDED for the published index. s3://naip-geoparquet-index/manifest-index is
+now stac-geoparquet (id/geometry/bbox/datetime/properties/assets, partitioned
+collection/region/year) and is produced by build_stac_index.py, which projects it
+out of the GeoParquet lake. This script still writes the older
+state=/naip_year= layout with a source_key/state/naip_year/... schema, which the
+index reader no longer understands -- do not point S3_COG_MANIFEST_INDEX at its
+output.
+
+It remains useful for the upstream question it was written for: turning the
+404MB flat manifest into something queryable to decide what to INGEST. Keep the
+two straight -- this indexes the manifest; build_stac_index.py publishes the lake.
+
 The published manifest (naip-analytic-manifest.txt) is a 404 MB, ~7M-line flat
 list of every object key in the bucket -- FGDC sidecars, original imagery, COGs,
 and index artifacts all interleaved. Scanning it per ingest job is the slow part
