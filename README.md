@@ -10,15 +10,69 @@ Spatial discovery is serverless too: in-process DuckDB queries a Hive-partitione
 
 *NAIP aerial imagery draped over the USGS 3DEP Seamless 1-meter DEM, rendered client-side in the browser directly from Cloud-Optimized GeoTIFFs.*
 
-## Run it in 60 seconds
+## Quick start
+
+You need an **AWS account**, credentials in `~/.aws`, **Docker**, and the **AWS CLI**.
+
+The app draws footprints from a *lake* — a Hive-partitioned GeoParquet index in your own S3 bucket. Create that first. Running the viewer beforehand only gets you a basemap over an empty map, because there is nothing to search.
+
+**1. Clone** (submodules matter — the TS packages fail without them):
 
 ```bash
 git clone --recurse-submodules https://github.com/mwkorver/deckgl-s3-cog-s1m.git
 cd deckgl-s3-cog-s1m
-make run        # builds and serves everything in Docker (needs Docker only)
 ```
 
-Then open **http://localhost:8089/viewer/**. The viewer and basemap load straight away; imagery, footprint search, and 3D terrain need AWS credentials (`~/.aws` plus `AWS_PROFILE` in `app/.env`, which `make run` creates from the example). Run `make` on its own to see the other targets (`test`, `lint`, `deps`, …). Full setup, tests, and AWS deployment are in [Getting Started](#getting-started) below and [app/README.md](app/README.md).
+**2. Create and seed your bucket.** This deploys the foundation CloudFormation stack: an S3 bucket named `deckgl-s3-cog-s1m-<your-account-id>-us-west2`, and a one-time copy of a demo lake into its `lake/` prefix from a shared bucket:
+
+```bash
+cd app/lambda && ./deploy-foundation.sh
+```
+
+This step creates a CloudFormation stack, an S3 bucket, an IAM role and a Lambda, so it needs more than read access — restricted credentials fail here. [`app/lambda/iam/README.md`](app/lambda/iam/README.md) defines a scoped `deckgl-s3-cog-s1m-deploy` role for exactly this, bounded to `deckgl-s3-cog-s1m-*` resources and us-west-2 rather than anything account-wide. Admin credentials work too if you are just trying it out.
+
+The script is deliberately conservative about what it will adopt. If that bucket already exists but no foundation stack does — a partial or hand-built setup, or a stack deleted while the bucket was retained — it refuses rather than creating a duplicate or taking ownership of your data:
+
+```
+REFUSED: legacy foundation resources already exist outside stack 'deckgl-s3-cog-s1m-foundation'
+  bucket: s3://deckgl-s3-cog-s1m-<your-account-id>-us-west2
+```
+
+Nothing is created, updated or deleted. Bring the bucket under the stack with a CloudFormation [resource import](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resource-import.html) — and if you do, pass `SeedKeys=` empty on the follow-up deploy, or the seed copy will overwrite `lake/` with the demo subset. Re-running the script when the stack *does* exist is safe: it prints the outputs and exits without changes.
+
+The seed is a subset — some NAIP states and years, plus Kentucky, New Jersey, Indiana, the S1M terrain index and the Overture buildings index. The COG ingest panel adds more later. The bucket is retained if you ever tear the app down, and it is `BucketOwner`-pays, so reading your own lake is ordinary S3.
+
+**3. Point the app at it:**
+
+```bash
+cd ../..              # back to the repo root
+cp app/.env.example app/.env
+```
+
+Edit `app/.env` and set, substituting your account id:
+
+```bash
+AWS_PROFILE=your-aws-profile
+S3_COG_LAKE_ROOT=s3://deckgl-s3-cog-s1m-<your-account-id>-us-west2/lake
+S1M_INDEX_URL=s3://deckgl-s3-cog-s1m-<your-account-id>-us-west2/lake/s1m/S1M_Products.parquet
+S3_COG_OVERTURE_BUILDINGS_INDEX=s3://deckgl-s3-cog-s1m-<your-account-id>-us-west2/lake/overture-buildings/index.parquet
+```
+
+All three point into the bucket step 2 just seeded. Leave any of them unset and that feature falls back to a local `/cache` path a fresh clone does not have — so terrain or buildings silently do nothing.
+
+**4. Run it:**
+
+```bash
+make run          # builds and serves the API + viewer in Docker
+```
+
+**5. Open** **http://localhost:8089/viewer/**. Build and start take ~30 seconds; the clone and Docker base images dominate a genuine cold start.
+
+Footprints should appear immediately. Tick **NAIP Imagery** for pixels, or **Show terrain in view** to drape them over the 3DEP DEM. The **Environment** tab reports whether credentials, the lake and the S3 reads are all healthy — start there if the map is empty.
+
+> Imagery pixels are never copied into your lake. The lake holds footprints; the viewer range-reads the COGs straight from `s3://naip-analytic`, a **requester-pays** bucket, so those reads bill your account rather than the data provider's. For one person exploring the map the cost is very small — worth knowing mainly before pointing something automated at it.
+
+Run `make` on its own for the other targets (`test`, `lint`, `deps`, …). Deeper setup, tests and full AWS deployment are in [Getting Started](#getting-started) below and [app/README.md](app/README.md).
 
 > [!NOTE]
 > **Reference implementation, released under [MIT](LICENSE) — use, fork, and adapt it freely.** It is a prototype provided as-is, with no support or active maintenance; issues and pull requests aren't monitored, so please fork rather than wait on changes here. The TypeScript packages under [`packages/`](packages/) are derived from [Development Seed's deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) (MIT) — see the per-package `LICENSE` files.
@@ -206,7 +260,8 @@ Configure the environment variables:
 ```bash
 cd app
 cp .env.example .env
-# Set AWS_PROFILE=deckgl-s3-cog-s1m-deploy and any local parameters
+# Set AWS_PROFILE to a profile that exists in your ~/.aws, and point
+# S3_COG_LAKE_ROOT at the bucket the foundation stack created -- see Quick start.
 ```
 
 To spin up the local stack (FastAPI server + static viewer) via Docker Compose:

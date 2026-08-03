@@ -5191,29 +5191,11 @@ async function refreshEnvironment() {
               `${data.s3_access_status?.bucket || ""}${data.s3_access_status?.request_payer ? ` (${data.s3_access_status.request_payer})` : ""}`,
           ),
         ],
-        [
-          "manifest index",
-          statusLabel(
-            data.manifest_index?.ok,
-            data.manifest_index?.error ||
-              `${data.manifest_index?.path || "—"}${data.manifest_index?.file_count != null ? ` · ${data.manifest_index.file_count} files` : ""}`,
-          ),
-        ],
-        (() => {
-          const mi = data.manifest_index || {};
-          if (mi.source_modified == null && mi.freshness_error == null) {
-            return null;
-          }
-          const fmt = (s) => (s ? String(s).slice(0, 10) : "—");
-          const detail = mi.freshness_error
-            ? mi.freshness_error
-            : `${mi.source || "—"} · source ${fmt(mi.source_modified)} · index ${fmt(mi.index_built)}`;
-          // ok when NOT stale; statusLabel renders the stale case as a warning.
-          return [
-            "manifest freshness",
-            statusLabel(mi.stale === false, detail),
-          ];
-        })(),
+        // "manifest index" / "manifest freshness" rows removed: /environment no
+        // longer reports them, because no functional path reads that index any
+        // more (NAIP ingest discovery lists naip-analytic; the viewer reads the
+        // lake). They rendered a red row for a requester-pays bucket the app
+        // does not use, which on a fresh clone looked like a real failure.
         ["DB health", statusLabel(data.db?.ok, data.db?.error)],
         [
           "EarthSearch",

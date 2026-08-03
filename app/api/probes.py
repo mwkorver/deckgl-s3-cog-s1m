@@ -209,7 +209,15 @@ def build_environment_payload():
             "error": auth_error,
         },
         "s3_access_status": s3_status,
-        "manifest_index": probe_manifest_index(),
+        # No manifest-index probe. Nothing on any functional path reads
+        # S3_COG_MANIFEST_INDEX any more: NAIP ingest discovery moved to
+        # S3PrefixListing over naip-analytic, and the viewer reads the lake.
+        # The only remaining readers are ManifestIndexAdapter and
+        # build_manifest_inventory_from_index, which no collection is wired to.
+        # Probing it made /environment show a red row -- on a fresh clone with no
+        # credentials, a scary failure about a requester-pays bucket the app does
+        # not use. probe_manifest_index/probe_manifest_freshness are kept for
+        # whoever re-adopts the index; they are simply not reported here.
         "db": db_status,
         "earthsearch": probe_earthsearch(),
         "ingest_mode": INGEST_MODE,
@@ -234,6 +242,8 @@ def build_environment_payload():
             "presign_cache_maxsize": PRESIGN_CACHE_MAXSIZE,
             "presign_max_workers": PRESIGN_MAX_WORKERS,
             "request_payer": REQUEST_PAYER,
+            # Reported for reference only -- see the note above; no live path
+            # reads it.
             "manifest_index": str(MANIFEST_INDEX),
             "earthsearch_api": EARTHSEARCH_API,
             "earthsearch_page_size": EARTHSEARCH_PAGE_SIZE,
