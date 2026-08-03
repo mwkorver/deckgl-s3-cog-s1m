@@ -18,7 +18,14 @@ Parameters:
     Default: ""
     Description: >
       Shared token required by POST /ingest/run-sync. deploy-ingest.sh generates
-      one and stores it in SSM, reusing the existing value across redeploys.
+      one and stores it in THIS FUNCTION'S OWN ENVIRONMENT -- not SSM, as this
+      said until now; there is no SSM call in the script or this template, and
+      hunting Parameter Store for it finds nothing. The token has to live in the
+      function environment for require_ingest_token to work at all, so a second
+      copy elsewhere would only be another thing to leak, rotate and drift.
+      Redeploys read the existing value back with
+      lambda:GetFunctionConfiguration, so a token already pasted into a running
+      browser session survives.
       Empty leaves the Lambda endpoint fail-closed with 503. It is deliberately
       NOT shipped to the viewer -- a static bundle on a public bucket cannot hold
       a secret, so the panel prompts for it per session.

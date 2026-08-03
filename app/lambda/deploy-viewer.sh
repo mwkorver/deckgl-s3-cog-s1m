@@ -71,7 +71,9 @@ find "$STAGE" -name "*.pyc" -type f -delete
 # public website origin, so anything in config.js is world-readable -- baking the
 # token in published the key to the write endpoints. The viewer now prompts for
 # it per session (see the "Ingest token" field in the ingest panel); retrieve it
-# with the SSM command deploy-ingest.sh prints.
+# with the `aws lambda get-function-configuration` command deploy-ingest.sh
+# prints (it reads the token back from the ingest function's own environment --
+# there is no SSM parameter, despite what this comment used to say).
 python3 - "$STAGE/config.js" "$API_BASE" <<'PY'
 import json
 import sys
