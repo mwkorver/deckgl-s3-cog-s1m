@@ -433,13 +433,13 @@ def test_query_latest_years_reads_partition_paths_not_files(tmp_path):
 
 
 def test_build_stac_index_sql_carries_the_load_bearing_settings():
-    """The projection's three easily-lost settings, pinned.
+    """The projection's easily-lost settings, pinned.
 
     Each was measured: without geoparquet_version 'V2' DuckDB writes 0/6 row
     groups with geo_bbox (spatial pruning silently gone); DuckDB's default
     row_group_size of 122,880 collapses a partition to one row group; and
-    ST_Hilbert without explicit bounds degrades locality rather than preserving
-    it (the published index is already clustered at 15.4% mean row-group box).
+    ST_Hilbert without explicit bounds degrades locality (99.2% mean row-group
+    box, indistinguishable from ORDER BY random()) rather than preserving it.
     """
     import build_stac_index as bsi
 
@@ -455,7 +455,9 @@ def test_build_stac_index_sql_carries_the_load_bearing_settings():
     assert "as gsd" in sql
     # id is "<collection>/<source_key>", which the index reader strips back off
     assert "'naip-analytic/' || src.source_key" in sql
-    assert bsi.DEFAULT_ROW_GROUP_SIZE == 1845
+    # 2048, not 1845: DuckDB clamps row_group_size to a multiple of its vector
+    # size, so the two produce a byte-identical file and 2048 is what it means.
+    assert bsi.DEFAULT_ROW_GROUP_SIZE == 2048
 
 
 def test_manifest_index_reader_projects_stac_items(tmp_path):
@@ -489,5 +491,82 @@ def test_manifest_index_reader_projects_stac_items(tmp_path):
     assert row["source_key"] == key  # collection prefix stripped
     assert row["state"] == "nj" and row["naip_year"] == 2023
     assert row["resolution_dir"] == "30cm"  # from the key path
+    assert row["product_family"] == "rgbir_cog"  # from the key path, not hardcoded
     assert row["spatial_prefix"] == "39075"
     assert row["filename"] == "m_3907536_ne_18_030_20230711_20231019.tif"
+
+
+def test_manifest_index_reader_survives_both_index_generations(tmp_path):
+    """It reads only `id` + the two partition keys, so schema churn misses it.
+
+    The published index has been rewritten under this reader before -- that is
+    what produced `Binder Error: Referenced column "source_key" not found`.
+
+    The second fixture is the stac-geoparquet-spec shape (flattened properties,
+    struct `assets`/`bbox`, no `type`) that build_stac_index.py deliberately does
+    NOT write -- see its module docstring. It stays here because the reader's
+    whole defence is that it never touches those columns, and the cheapest way
+    to keep that true is to read a schema that moved them.
+    """
+    import duckdb
+    import ingest_manifest as im
+
+    key = "nj/2023/30cm/rgbir_cog/39075/m_3907536_ne_18_030_20230711_20231019.tif"
+    generations = {
+        # pre-spec: JSON properties/assets, DOUBLE[] bbox, `type` present
+        "old": f"""select '{im.INDEX_COLLECTION}/{key}' as id, 'Feature' as type,
+                     '{{"gsd":0.3}}'::JSON as properties, '{{"data":{{}}}}'::JSON as assets,
+                     [1.0, 2.0, 3.0, 4.0] as bbox, 'nj' as region, 2023 as year""",
+        # spec-compliant: flattened properties, struct assets/bbox, no `type`
+        "new": f"""select '{im.INDEX_COLLECTION}/{key}' as id, 0.3 as gsd,
+                     struct_pack(href := 's3://x/y.tif') as assets,
+                     struct_pack(xmin := 1.0, ymin := 2.0, xmax := 3.0, ymax := 4.0) as bbox,
+                     'nj' as region, 2023 as year""",
+    }
+    results = {}
+    for label, projection in generations.items():
+        idx = tmp_path / label / f"collection={im.INDEX_COLLECTION}" / "region=nj" / "year=2023"
+        idx.mkdir(parents=True)
+        duckdb.connect().execute(f"copy ({projection}) to '{idx / 'data_0.parquet'}' (format parquet)")
+        selected, latest = im.build_manifest_inventory_from_index(
+            states={"nj"},
+            years={2023},
+            latest_year_only=False,
+            limit_per_partition=0,
+            index_root=str(tmp_path / label),
+        )
+        assert latest == {"nj": 2023}, label
+        results[label] = selected
+
+    assert results["old"] == results["new"]
+
+
+def test_manifest_index_reader_handles_the_island_key_depth(tmp_path):
+    """hi/pr/vi carry an extra directory level; 491 keys in the index do.
+
+    `hi/2021/60cm/rgbir_cog/19155/57/m_....tif` has seven segments, not six.
+    partition_from_key() takes parts[:5] and parts[-1], so the interposed level
+    is ignored -- the index reader must split the same way or the two ingest
+    paths would disagree on quad and filename for those rows.
+    """
+    import duckdb
+    import ingest_manifest as im
+
+    key = "hi/2021/60cm/rgbir_cog/19155/57/m_1915557_se_05_060_20211217_20220909.tif"
+    idx = tmp_path / "idx" / f"collection={im.INDEX_COLLECTION}" / "region=hi" / "year=2021"
+    idx.mkdir(parents=True)
+    duckdb.connect().execute(
+        f"""copy (select '{im.INDEX_COLLECTION}/{key}' as id, 'hi' as region, 2021 as year)
+            to '{idx / "data_0.parquet"}' (format parquet)"""
+    )
+    selected, _ = im.build_manifest_inventory_from_index(
+        states={"hi"},
+        years={2021},
+        latest_year_only=False,
+        limit_per_partition=0,
+        index_root=str(tmp_path / "idx"),
+    )
+    ((_, row),) = selected.items()
+    text_path = im.partition_from_key(key)
+    for field in ("state", "naip_year", "resolution_dir", "product_family", "spatial_prefix", "filename"):
+        assert row[field] == text_path[field], field

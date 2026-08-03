@@ -46,11 +46,21 @@ class DiscoveryAdapter(Protocol):
 
 @dataclass(frozen=True)
 class ManifestIndexAdapter:
-    """NAIP's discovery: read the pre-published, partitioned manifest index.
+    """Discovery by reading the pre-published, partitioned manifest index.
 
     A thin, transparent wrapper over the existing
     `ingest_manifest.build_manifest_inventory_from_index`, so the output is
     byte-for-byte what the direct call produced (verified by an equivalence test).
+
+    NOT CURRENTLY WIRED TO ANY COLLECTION. NAIP used to discover through this and
+    moved to `S3PrefixListing` over `naip-analytic`, because the index is a
+    projection of the lake: it could only ever offer what was already ingested
+    (4 years for nj where the bucket holds 7), and enumerating a year it lacked
+    returned 0 assets rather than failing. See the NAIP descriptor below.
+
+    Kept because it is faster than a bucket crawl when the wanted partitions are
+    known to be in the index, and it is exercised by tests. If nothing adopts it,
+    it and `build_manifest_inventory_from_index` can go together.
     """
 
     index_root: str | None = None  # None -> ingest_manifest.MANIFEST_INDEX_PATH
@@ -62,26 +72,47 @@ class ManifestIndexAdapter:
         return tuple(sorted(STATE_BBOXES.keys()))
 
     def available_years(self, region: str) -> list[int]:
-        """Fetch available years for a state by listing the naip_year= partitions."""
+        """Available years for a state, from the index's year= partitions.
+
+        Layout is collection=<c>/region=<r>/year=<y>/. This used to scan for
+        `state=<r>/` and `naip_year=` -- the layout build_manifest_index.py
+        writes and the published index abandoned -- so it silently returned []
+        for every state and left the ingest panel's year dropdown empty. Same
+        drift that broke the index reader in d7ac3a1, in a spot that had no
+        test because an empty list is indistinguishable from "no data yet".
+        """
+        from pathlib import Path
+
         from aws_s3 import get_s3_direct_client
         from config import MANIFEST_INDEX
+        from ingest_manifest import INDEX_COLLECTION
 
-        years = set()
+        years: set[int] = set()
         root = self.index_root or str(MANIFEST_INDEX)
+        scope = f"collection={INDEX_COLLECTION}/region={region}/"
+
+        def year_of(segment: str) -> None:
+            if segment.startswith("year="):
+                try:
+                    years.add(int(segment.split("=", 1)[1]))
+                except ValueError:
+                    pass
+
         if root.startswith("s3://"):
             bucket, _, prefix = root[len("s3://") :].partition("/")
             base = (prefix.rstrip("/") + "/") if prefix else ""
             s3 = get_s3_direct_client()
-            prefix_scope = f"{base}state={region}/"
             paginator = s3.get_paginator("list_objects_v2")
-            for page in paginator.paginate(Bucket=bucket, Prefix=prefix_scope, Delimiter="/", RequestPayer="requester"):
+            for page in paginator.paginate(
+                Bucket=bucket, Prefix=f"{base}{scope}", Delimiter="/", RequestPayer="requester"
+            ):
                 for cp in page.get("CommonPrefixes", []):
-                    seg = cp["Prefix"].rstrip("/").rsplit("/", 1)[-1]
-                    if seg.startswith("naip_year="):
-                        try:
-                            years.add(int(seg.split("=", 1)[1]))
-                        except ValueError:
-                            pass
+                    year_of(cp["Prefix"].rstrip("/").rsplit("/", 1)[-1])
+        else:
+            # Local index roots are a supported mode (docker-compose calls it
+            # "fully-offline runs"), and were silently unhandled here.
+            for child in sorted(Path(root).joinpath(scope).glob("year=*")):
+                year_of(child.name)
         return sorted(years, reverse=True)
 
     def enumerate(self, *, regions, years, latest_year_only, limit_per_partition):
@@ -122,15 +153,28 @@ NON_COG_BUCKETS = {"naip-source"}
 
 
 def s3_client_for(access: str):
-    """A signed client, or an UNSIGNED one for public buckets (== --no-sign-request)."""
-    import boto3
+    """A signed client, or an UNSIGNED one for public buckets (== --no-sign-request).
 
+    The signed branch goes through aws_s3.get_s3_direct_client() rather than a
+    bare boto3.client("s3"): that resolves credentials via get_aws_credentials(),
+    which falls back to the `aws login` session cache. Plain botocore raises on
+    those profiles, so in the container -- where ~/.aws is mounted read-only and
+    every working profile is a login session -- a bare client fails with
+    NoCredentialsError even when a valid token exists on disk.
+
+    This only affects non-public access. KyFromAbove / NJ / Indiana are public
+    and keep the unsigned client untouched.
+    """
     if access == "public":
+        import boto3
         from botocore import UNSIGNED
         from botocore.config import Config
 
         return boto3.client("s3", config=Config(signature_version=UNSIGNED))
-    return boto3.client("s3")
+
+    from aws_s3 import get_s3_direct_client
+
+    return get_s3_direct_client()
 
 
 def _common_prefixes(s3, bucket: str, prefix: str, request_payer: str | None = None) -> list[str]:
@@ -266,6 +310,14 @@ class CollectionDescriptor:
     access: str  # "requester-pays" | "public" | "private"
     discovery: DiscoveryAdapter | None
     key_filter: Callable[[str], bool]
+    # Shape of the rows `discovery.enumerate()` yields, DECLARED rather than
+    # inferred from the adapter class. acquire_payloads used to switch on
+    # `isinstance(discovery, S3PrefixListing)`, which conflated adapter with row
+    # shape -- fine while NAIP was the only non-S3PrefixListing collection, wrong
+    # the moment NAIP started using that adapter too. "naip" rows additionally
+    # carry state/naip_year/resolution_dir/product_family/spatial_prefix, which
+    # row_to_insertable() and process_manifest_cog_headers() require.
+    row_shape: str = "generic"  # "generic" | "naip"
 
     @property
     def request_payer(self) -> str | None:
@@ -483,13 +535,119 @@ IN_IMAGERY = CollectionDescriptor(
     key_filter=in_cog_filter,
 )
 
+
+# --------------------------------------------------------------------------- #
+# NAIP via S3PrefixListing. Layout:                                            #
+#   <state>/<year>/<gsd>/rgbir_cog/<quad>/[<sub>/]<file>.tif                   #
+#                                                                              #
+# Discovery lists the SOURCE BUCKET, not the published index. The index is a   #
+# projection of the lake, so an index-backed picker could only ever re-offer    #
+# what was already ingested -- it reported 4 years for nj where the bucket has  #
+# 7, and enumerating a missing year returned 0 assets. README.md:251 says the   #
+# ingest path exists to go beyond the seeded subset; this is what lets it.      #
+# --------------------------------------------------------------------------- #
+def naip_cog_filter(key: str) -> bool:
+    return key.endswith(".tif") and "/rgbir_cog/" in key
+
+
+def naip_key_parser(key: str) -> KeyFields | None:
+    """Split exactly as partition_from_key() does on the text path.
+
+    Both take the first five segments and the last, so the extra directory level
+    that hi/pr/vi carry -- hi/2021/60cm/rgbir_cog/19155/57/m_....tif, 491 keys in
+    the collection -- is ignored identically by both. Diverging here would make
+    the two ingest paths disagree on quad and filename for those rows.
+    """
+    parts = key.split("/")
+    if len(parts) < 5:
+        return None
+    state, year, resolution_dir, product_family, spatial_prefix = parts[:5]
+    if len(state) != 2 or not year.isdigit():
+        return None
+    return KeyFields(
+        region=state,
+        year=int(year),
+        # These three are what the NAIP row projection reads back out; naming
+        # them as the NAIP row does keeps the projection a rename, not a parse.
+        properties={
+            "resolution_dir": resolution_dir,
+            "product_family": product_family,
+            "spatial_prefix": spatial_prefix,
+        },
+    )
+
+
+def naip_enumerate_prefixes(s3, bucket: str, region: str, year: int | None) -> list[str]:
+    """`<state>/<year>/` when the year is known, else every year dir for the state.
+
+    Narrowing on year matters: naip-analytic is requester-pays, so a whole-state
+    crawl is billable LIST volume, and limit_per_partition caps rows KEPT, not
+    objects listed.
+    """
+    if year is not None:
+        return [f"{region}/{year}/"]
+    return [
+        pre
+        for pre in _common_prefixes(s3, bucket, f"{region}/", request_payer="requester")
+        if pre.rstrip("/").rsplit("/", 1)[-1].isdigit()
+    ]
+
+
+# Every two-letter prefix in the bucket: the 49 in STATE_BBOXES plus pr and vi,
+# which hold data but were unreachable while the region list came from
+# STATE_BBOXES (which also drives map centring, so it is not the same list).
+NAIP_REGIONS: tuple[str, ...] = (
+    "al", "ar", "az", "ca", "co", "ct", "de", "fl", "ga", "hi", "ia", "id",
+    "il", "in", "ks", "ky", "la", "ma", "md", "me", "mi", "mn", "mo", "ms",
+    "mt", "nc", "nd", "ne", "nh", "nj", "nm", "nv", "ny", "oh", "ok", "or",
+    "pa", "pr", "ri", "sc", "sd", "tn", "tx", "ut", "va", "vi", "vt", "wa",
+    "wi", "wv", "wy",
+)  # fmt: skip
+
 NAIP = CollectionDescriptor(
     id="naip",
     bucket="naip-analytic",
     access="requester-pays",
-    discovery=ManifestIndexAdapter(),
-    key_filter=lambda key: key.endswith(".tif") and "/rgbir_cog/" in key,
+    discovery=S3PrefixListing(
+        bucket="naip-analytic",
+        access="requester-pays",
+        cog_filter=naip_cog_filter,
+        key_parser=naip_key_parser,
+        enumerate_prefixes=naip_enumerate_prefixes,
+        regions=NAIP_REGIONS,
+    ),
+    key_filter=naip_cog_filter,
+    # NAIP keeps the richer row shape: both its ingest strategies need it, and
+    # the EarthSearch join in particular goes through row_to_insertable().
+    row_shape="naip",
 )
+
+
+def to_naip_rows(rows: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Project generic discovery rows into the NAIP row shape.
+
+    S3PrefixListing emits region/year/properties; row_to_insertable() and
+    process_manifest_cog_headers() want state/naip_year plus the three key-path
+    fields. naip_key_parser already put those in `properties`, so this is a
+    rename rather than a second parse of the key.
+
+    `metadata_href` stays absent: the FGDC sidecar lives beside the COG but the
+    lake ingest does not use it, and the index-backed path never carried it
+    either.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for href, row in rows.items():
+        props = row.get("properties") or {}
+        out[href] = {
+            **row,
+            "state": row["region"],
+            "naip_year": int(row["year"]),
+            "resolution_dir": props.get("resolution_dir"),
+            "product_family": props.get("product_family"),
+            "spatial_prefix": props.get("spatial_prefix"),
+        }
+    return out
+
 
 # Assemble the live registry now that all descriptors are defined. The public
 # S3-prefix collections (KyFromAbove, New Jersey, Indiana) are ingestable via

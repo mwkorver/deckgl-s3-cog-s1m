@@ -542,6 +542,11 @@ def ingest_run_sync(body: dict[str, Any], _: None = Depends(require_ingest_token
     # New partitions may have introduced a newer year for this region, so the
     # cached {region: newest year} map is now stale for "Latest available".
     reset_latest_years_cache()
+    # Same for the ingest panel's year lists (an lru_cache with no TTL), so the
+    # sync path invalidates exactly what the async job path does.
+    from ingest_options import reset_available_years_cache
+
+    reset_available_years_cache()
 
     return {
         "status": "completed",

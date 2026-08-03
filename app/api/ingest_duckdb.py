@@ -99,7 +99,11 @@ def parse_args():
         "--row-group-size",
         type=int,
         default=2000,
-        help="Parquet row group size; smaller groups give finer bbox-stat pruning",
+        # NOT "smaller groups give finer pruning", as this used to claim: DuckDB
+        # clamps row_group_size to a multiple of its 2048 vector size, so 2000,
+        # 1024 and 512 all emit the same [2048, ...] layout. 2048 is the floor;
+        # only raising it has any effect, and raising it costs pruning.
+        help="Parquet row group size; DuckDB rounds this up to a multiple of 2048",
     )
     parser.add_argument(
         "--single-file",
@@ -160,10 +164,19 @@ def acquire_payloads(args):
         limit_per_partition=args.limit_per_partition,
     )
 
-    # Generic public-prefix collections (S3PrefixListing): the discovery rows
-    # already carry region/year/properties; read COG headers and attach them. No
-    # NAIP filename parse, no strategy choice (header read is the only path).
-    if isinstance(descriptor.discovery, descriptors.S3PrefixListing):
+    # NAIP discovers via S3PrefixListing too, so its rows arrive in the generic
+    # shape and have to be projected before either strategy can use them --
+    # row_to_insertable() (EarthSearch) and process_manifest_cog_headers() both
+    # want state/naip_year/resolution_dir/product_family/spatial_prefix.
+    if descriptor.row_shape == "naip":
+        manifest_rows = descriptors.to_naip_rows(manifest_rows)
+
+    # Generic public-prefix collections: the discovery rows already carry
+    # region/year/properties; read COG headers and attach them. No NAIP filename
+    # parse, no strategy choice (header read is the only path). Keyed on the
+    # descriptor's DECLARED row shape, not on the adapter class -- NAIP shares
+    # the adapter now, so isinstance() no longer distinguishes the two.
+    if descriptor.row_shape == "generic":
         payloads, failed = im.process_cog_headers_generic(
             manifest_rows,
             max_workers=args.max_workers,
@@ -368,7 +381,13 @@ def _delete_partition_prefixes(
             )
             s3 = session.client("s3", region_name=region_name)
         else:
-            s3 = boto3.client("s3", region_name=region_name)
+            # Via get_aws_credentials() for the `aws login` session fallback --
+            # see process_manifest_cog_headers. This one bites LAST, after the
+            # headers are read and the reconciliation says 100%, so a bare
+            # client here fails an ingest that had already done all its work.
+            from aws_s3 import get_aws_credentials
+
+            s3 = boto3.client("s3", region_name=region_name, **get_aws_credentials())
 
     for collection, region, year in parts:
         rel = f"collection={collection}/region={region}/year={year}"
@@ -406,6 +425,21 @@ def export(
     aws_access_key_id: str | None = None,
     aws_secret_access_key: str | None = None,
 ) -> int:
+    # Nothing to write. Bail before DuckDB does: an empty payload list builds a
+    # zero-column Arrow table, and con.register() rejects that with "Provided
+    # table/dataframe must have at least one column" -- an opaque error that
+    # says nothing about the actual cause, which is always upstream (every COG
+    # header read failed, or discovery matched no assets). The completeness
+    # reconciliation just above has already printed the real reason.
+    if not payloads:
+        print(
+            "Nothing to export: 0 payloads. Nothing was written and existing "
+            "partitions were left untouched. See the reconciliation table above "
+            "for which partitions came up short and why.",
+            flush=True,
+        )
+        return 0
+
     table = payloads_to_arrow(payloads, collection)  # noqa: F841 -- referenced by DuckDB scan
 
     import duckdb_s3

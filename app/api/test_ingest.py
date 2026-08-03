@@ -192,6 +192,29 @@ def test_validate_cog_can_be_disabled():
         im.REQUIRE_COG = original
 
 
+def test_export_with_no_payloads_exits_cleanly(tmp_path, capsys):
+    """0 payloads must report and return 0, not crash inside DuckDB.
+
+    payloads_to_arrow([]) builds a zero-column table, and con.register() rejects
+    that with "Provided table/dataframe must have at least one column" -- an
+    error that names nothing about the real cause, which is always upstream
+    (every COG header read failed, or discovery matched nothing). Seen for real
+    when a whole partition's header reads failed on credentials: the run printed
+    a 0% completeness warning and then died on the DuckDB message.
+    """
+    count = ingest.export(
+        [],
+        out_path=str(tmp_path / "lake"),
+        row_group_size=2048,
+        single_file=False,
+        collection="naip",
+    )
+    assert count == 0
+    assert "Nothing to export" in capsys.readouterr().out
+    # and nothing was written
+    assert not (tmp_path / "lake").exists() or not list((tmp_path / "lake").rglob("*.parquet"))
+
+
 if __name__ == "__main__":
     tests = [
         test_derive_product,

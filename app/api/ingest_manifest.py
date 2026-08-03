@@ -59,6 +59,11 @@ MANIFEST_INDEX_PATH = os.environ.get(
 # lake ingests (naip-visualization is the separate RGB product).
 INDEX_COLLECTION = os.environ.get("S3_COG_INDEX_COLLECTION", "naip-analytic")
 
+# The S3 bucket those COGs live in. The index's collection name and the bucket
+# name coincide for NAIP, but they are different things -- the collection is a
+# catalog concept and this is a location -- so keep them separately settable.
+SOURCE_BUCKET = os.environ.get("S3_COG_SOURCE_BUCKET", "naip-analytic")
+
 FILENAME_RE = re.compile(
     r"^(?:m_)?(\d{7})_(ne|nw|se|sw)_(\d{1,2})_([a-z0-9]+)(?:_(\d{8})(?:_(\d{8}))?)?\.tif$",
     re.IGNORECASE,
@@ -249,10 +254,25 @@ def build_manifest_inventory_from_index(
 
     The index holds STAC Items, so the manifest fields are projected out of them:
     `source_key` from `id` (which is "<collection>/<source_key>"), `state`/
-    `naip_year` from the `region`/`year` partition keys, and resolution/quad from
-    the naip:* `properties`. This replaced a direct
-    `select source_key, state, naip_year, ...`, which broke when the index moved
-    to stac-geoparquet -- those columns simply do not exist there any more.
+    `naip_year` from the `region`/`year` partition keys, and
+    resolution/product/quad/filename split out of the key path. This replaced a
+    direct `select source_key, state, naip_year, ...`, which broke when the
+    index moved to stac-geoparquet -- those columns simply do not exist there
+    any more.
+
+    DELIBERATELY generation-agnostic: it reads only `id` plus the two partition
+    keys, all of which have survived every schema the published index has worn.
+    It does NOT read `properties` (once a JSON blob, now flattened top-level
+    columns) or `assets` (once JSON, now a struct), so it keeps working against
+    the live index and the spec-compliant one build_stac_index.py now writes,
+    without a flag day. An earlier version of this docstring claimed
+    resolution/quad came from the naip:* `properties`; they never did, and
+    reading them from there would have coupled this to one generation.
+
+    The key-path split matches partition_from_key() on the text path, including
+    the 491 keys in hi/pr/vi that carry an extra directory level
+    (hi/2021/60cm/rgbir_cog/19155/57/m_....tif): both take the first five
+    segments and the last, so the interposed level is ignored by both.
     """
     import duckdb
     import duckdb_s3
@@ -271,11 +291,10 @@ def build_manifest_inventory_from_index(
     glob = f"{index_root}/collection={INDEX_COLLECTION}/**/*.parquet"
     rel = con.sql(
         # id is "<collection>/<source_key>", so strip the leading collection
-        # segment; resolution/quad/filename then come out of the key path exactly
-        # as partition_from_key() splits them on the text path
-        # (state/year/resolution/product/quad/.../filename). Deriving them from
-        # the key rather than from `properties` keeps this working against index
-        # generations that carry no naip:* properties.
+        # segment; resolution/product/quad/filename then come out of the key path
+        # exactly as partition_from_key() splits them on the text path
+        # (state/year/resolution/product/quad/.../filename). See the docstring
+        # for why this is derived from the key rather than from `properties`.
         f"""with items as (
               select regexp_replace(id, '^[^/]+/', '') as source_key, region, year
               from read_parquet('{glob}', hive_partitioning=true)
@@ -285,6 +304,7 @@ def build_manifest_inventory_from_index(
               region                              as state,
               year                                as naip_year,
               split_part(source_key, '/', 3)      as resolution,
+              split_part(source_key, '/', 4)      as product,
               split_part(source_key, '/', 5)      as quad,
               split_part(source_key, '/', -1)     as filename
             from items"""
@@ -316,7 +336,7 @@ def build_manifest_inventory_from_index(
         # cap rows per (state, naip_year, resolution) partition, mirroring the
         # text path's partition_counts gate.
         query = f"""
-          select source_key, state, naip_year, resolution, quad, filename
+          select source_key, state, naip_year, resolution, product, quad, filename
           from (
             select *, row_number() over (
               partition by state, naip_year, resolution order by source_key
@@ -328,22 +348,26 @@ def build_manifest_inventory_from_index(
         """
     else:
         query = f"""
-          select source_key, state, naip_year, resolution, quad, filename
+          select source_key, state, naip_year, resolution, product, quad, filename
           from idx where {where_sql}
         """
 
     selected: dict[str, dict[str, Any]] = {}
-    for source_key, state, naip_year, resolution, quad, filename in con.sql(query).fetchall():
-        asset_href = f"s3://naip-analytic/{source_key}"
+    for source_key, state, naip_year, resolution, product, quad, filename in con.sql(query).fetchall():
+        asset_href = f"s3://{SOURCE_BUCKET}/{source_key}"
         selected[asset_href] = {
-            "source_bucket": "naip-analytic",
+            "source_bucket": SOURCE_BUCKET,
             "source_key": source_key,
             "asset_href": asset_href,
             "metadata_href": None,  # index carries no FGDC sidecar (option 1)
             "state": state,
             "naip_year": int(naip_year),
             "resolution_dir": resolution,
-            "product_family": "rgbir_cog",
+            # From the key path, as partition_from_key() does, rather than the
+            # hardcoded "rgbir_cog" this used to assume. All 295,232 rows in the
+            # analytic collection are in fact rgbir_cog, so this is not a bug
+            # fix -- it is removing an assumption that only held by luck.
+            "product_family": product,
             "spatial_prefix": quad,
             "filename": filename,
         }
@@ -840,7 +864,16 @@ def process_manifest_cog_headers(
         )
         s3_client = session.client("s3", config=config)
     else:
-        s3_client = boto3.client("s3", config=config)
+        # Resolve through get_aws_credentials() rather than letting boto3's own
+        # chain run: it falls back to the `aws login` session cache, which plain
+        # botocore cannot read. Without this every header read fails with
+        # "Unable to locate credentials" in the container -- where ~/.aws is
+        # mounted read-only and every working profile is a login session --
+        # while the LIST that found the assets moments earlier succeeds, because
+        # it goes through the credential-aware client.
+        from aws_s3 import get_aws_credentials
+
+        s3_client = boto3.client("s3", config=config, **get_aws_credentials())
 
     total = len(manifest_rows)
     print(f"Began COG header parsing for {total:,} selected assets...", flush=True)
@@ -925,7 +958,12 @@ def process_cog_headers_generic(
             )
             s3_client = session.client("s3", config=config)
         else:
-            s3_client = boto3.client("s3", config=config)
+            # Same login-session fallback as process_manifest_cog_headers: a
+            # requester-pays collection reaching this branch needs credentials
+            # boto3's own chain cannot resolve in the container.
+            from aws_s3 import get_aws_credentials
+
+            s3_client = boto3.client("s3", config=config, **get_aws_credentials())
     total = len(rows)
     print(f"Began COG header parsing for {total:,} selected assets...", flush=True)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

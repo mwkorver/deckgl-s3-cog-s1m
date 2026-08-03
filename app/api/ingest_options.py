@@ -6,12 +6,30 @@ from config import COLLECTION_ID
 
 @lru_cache(maxsize=64)
 def cached_available_years(collection_id: str, region: str) -> tuple[int, ...]:
+    """Years offerable for a region. Cached because it costs an S3 LIST per call
+    and the panel asks for every region at once (51 for NAIP).
+
+    Held for the life of the process unless reset_available_years_cache() runs --
+    see it for what invalidates this.
+    """
     import descriptors
 
     disc = descriptors.get_descriptor(collection_id).discovery
     if hasattr(disc, "available_years"):
         return tuple(disc.available_years(region))
     return tuple()
+
+
+def reset_available_years_cache() -> None:
+    """Drop the cached year lists so the next /ingest/options recomputes.
+
+    Called after an ingest completes, alongside lake.reset_latest_years_cache().
+    An ingest does not change what the SOURCE bucket offers, so this is not
+    about the new partition -- it is that an lru_cache with no invalidation is
+    a permanent per-process snapshot, so a year that appears in the bucket after
+    boot (a new NAIP vintage) would never surface until the API restarted.
+    """
+    cached_available_years.cache_clear()
 
 
 def build_ingest_options(body: dict[str, Any]):

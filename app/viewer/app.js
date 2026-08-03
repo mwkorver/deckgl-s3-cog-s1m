@@ -5366,6 +5366,9 @@ async function pollIngestStatus(jobId) {
       // currently-selected state is preserved by refreshAvailability).
       if (data.status === "completed") {
         await refreshAvailability();
+        // ...and the ingest panel's own dropdowns, which are otherwise loaded
+        // once and never refreshed.
+        await loadIngestCatalogOptions();
       }
     }
   } catch (error) {
@@ -5506,6 +5509,10 @@ async function runIngestSync(baseUrl = "") {
     ingestLogsEl.textContent = JSON.stringify(data, null, 2);
     await refreshEnvironment();
     await refreshAvailability();
+    // The ingest panel's own Collection/State/Year dropdowns were loaded once
+    // (on mode switch or a Collection change) and never refreshed, so they kept
+    // whatever /ingest/options returned at that moment.
+    await loadIngestCatalogOptions();
   } catch (error) {
     console.error("Sync ingest failed:", error);
     ingestSummaryEl.textContent = `Failed to run ingest: ${error?.message || error}`;

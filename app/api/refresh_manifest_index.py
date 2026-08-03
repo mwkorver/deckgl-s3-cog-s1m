@@ -105,7 +105,13 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="discover only; don't write")
     args = ap.parse_args()
 
-    s3 = boto3.client("s3")
+    # get_aws_credentials() rather than boto3's own chain: it falls back to the
+    # `aws login` session cache, which plain botocore cannot read, so a bare
+    # client fails with "Unable to locate credentials" wherever ~/.aws is
+    # mounted read-only (the container) even with a valid token on disk.
+    from aws_s3 import get_aws_credentials
+
+    s3 = boto3.client("s3", **get_aws_credentials())
     print(f"discovering {BUCKET} partitions with year >= {args.years_from} ...", flush=True)
     all_keys, found = discover(s3, args.years_from, args.states)
     print(f"\nfound {len(found)} (state,year) partition(s), {len(all_keys):,} COG keys total")

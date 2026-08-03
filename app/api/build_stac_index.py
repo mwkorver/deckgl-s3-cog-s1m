@@ -11,24 +11,63 @@ Three writer settings are load-bearing and easy to lose:
 
   geoparquet_version 'V2'   Without it DuckDB writes NO GeospatialStatistics:
                             measured 6/6 row groups carrying `geo_bbox` with the
-                            option, 0/6 without. Those per-row-group extents are
-                            what let a reader skip row groups, so dropping them
-                            silently removes the index's spatial pruning.
+                            option, 0/6 without (and 0/6 with 'V1'). Those
+                            per-row-group extents are what let a reader skip row
+                            groups, so dropping them silently removes the
+                            index's spatial pruning.
 
   row_group_size            DuckDB's default is 122,880 rows, which collapses a
                             whole partition into ONE row group and destroys
                             row-group pruning entirely (ca/2022: 6 groups -> 1).
-                            The published files sit at ~1,845 rows/group.
+                            2048 is also a FLOOR: DuckDB clamps this to a
+                            multiple of its vector size, so 1845, 1024 and 512
+                            all produce a byte-identical file. The published
+                            layout is [2048 x 5, 830], not the ~1,845/group an
+                            earlier comment here claimed (that was 11070/6
+                            arithmetic, not a measurement).
 
-  ORDER BY ST_Hilbert(...)  With EXPLICIT per-region bounds. The published index
-                            is already spatially clustered (mean row-group box
-                            15.4% of the partition extent; shuffled it is 98.6%),
-                            so the sort here PRESERVES that rather than adding
-                            it. ST_Hilbert without bounds degenerates over a
-                            single state's extent and makes locality worse.
+  ORDER BY ST_Hilbert(...)  With EXPLICIT per-region bounds. This is a NO-OP on
+                            current data and is kept as insurance: rebuilding
+                            with no ORDER BY at all gives identical locality
+                            (15.4% mean row-group box either way) because the
+                            lake already arrives spatially clustered. The bounds
+                            are the load-bearing part -- unbounded ST_Hilbert
+                            collapses locality to 99.2%, indistinguishable from
+                            ORDER BY random() at 98.9%.
 
 zstd instead of DuckDB's default snappy is worth ~26% (measured 23.3-29.7% over
 seven partitions); the JSON columns compress ~8-14x, geometry barely at all.
+
+SCHEMA: this deliberately does NOT follow the stac-geoparquet spec
+(github.com/radiantearth/stac-geoparquet-spec), which wants `properties`
+flattened to top-level columns, `assets` as a struct, `bbox` as a STRUCT rather
+than a DOUBLE[], `datetime` as a native timestamp, a `links` column, and no
+`type`. That version was built and measured; it was not worth shipping.
+
+What it bought, on the full 295,232-row collection: 43.8 -> 29.7 MB (-32%), and
+real row-group pruning. As a DOUBLE[] the `bbox` statistics sit on ONE leaf
+mixing all four dimensions -- on nj/2023 the min was a longitude and the max a
+latitude -- so the column prunes nothing; as a STRUCT each dimension gets its
+own leaf. Measured from a Lambda in us-west-2, that pruning is worth -41 to -47%
+on queries matching nothing.
+
+What it cost: +6-7% on queries that DO match, which is the common case. bbox
+filtering alone was break-even in-region, so the residual is most likely footer
+parsing -- the flattened schema carries ~15 columns against 8, and the whole
+footer is read on every open regardless of projection.
+
+The deciding argument was who benefits. The bbox encoding is a documented pain
+point for the tiler in threejs-cf-zxy-s1m (tiler/src/tiler/resolver.py: "this
+lake declares no GeoParquet `covering`, and its `bbox` is STAC's plain
+DOUBLE[]") -- but that tiler reads `collection=naip-visualization`, which this
+writer does not produce and cannot: the two source buckets are not a perfect
+match (nj and fl have 2010/ under naip-analytic and not under
+naip-visualization), so that collection has to be built from its own bucket
+listing. So the spec-compliant schema would have cost every consumer of THIS
+collection ~7% and delivered the pruning win to none of them.
+
+Revisit if naip-visualization ever moves into this writer, or if the query mix
+shifts toward tiles that miss.
 """
 
 import argparse
@@ -47,11 +86,19 @@ TARGET_COLLECTION = os.environ.get("S3_COG_STAC_INDEX_TARGET_COLLECTION", "naip-
 DEFAULT_LAKE = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb")
 DEFAULT_OUT = os.environ.get("S3_COG_STAC_INDEX", "s3://naip-geoparquet-index/manifest-index")
 
-# Matches the published files (~1,845 rows/group). See the module docstring.
-DEFAULT_ROW_GROUP_SIZE = 1845
+# DuckDB clamps row_group_size to a multiple of its 2048 vector size, so this is
+# the smallest group it will actually emit. Anything below it is silently
+# rounded up; 4096 does take effect and doubles rows scanned per tile.
+DEFAULT_ROW_GROUP_SIZE = 2048
 
 # Constant STAC scaffolding, matching what the published index already carries.
 STAC_VERSION = "1.0.0"
+# KNOWN INCONSISTENCY, left alone deliberately: projection extension v2.0.0
+# replaced the numeric `proj:epsg` with the string `proj:code`, and this repo's
+# own /search already emits proj:code (app/viewer/app.js). The index stays on
+# v1.0.0 + proj:epsg because moving it is a breaking change for external readers
+# and buys nothing on its own -- it only makes sense bundled with the wider
+# spec-compliance pass the module docstring explains was rejected.
 PROJECTION_EXTENSION = "https://stac-extensions.github.io/projection/v1.0.0/schema.json"
 COG_MEDIA_TYPE = "image/tiff; application=geotiff; profile=cloud-optimized"
 
@@ -73,8 +120,11 @@ def build_sql(lake_glob: str, target_collection: str) -> str:
 
     Every field comes from a column the lake already carries; nothing is
     re-derived from the COGs. `properties` keeps the index's existing keys and
-    additionally carries the lake's naip:* values, which the manifest-index
-    reader needs (resolution/quad) and which the published index omits.
+    additionally carries the lake's naip:* values (resolution/quad) that the
+    published index omits.
+
+    This matches the published index's shape on purpose -- see the module
+    docstring for the spec-compliant alternative that was measured and rejected.
     """
     return f"""
       with src as (

@@ -223,6 +223,125 @@ def test_register_adhoc_collection():
     assert d.get_descriptor(bucket) is desc
 
 
+def test_manifest_index_available_years_reads_the_published_layout(tmp_path):
+    """It must scan collection=/region=/year=, not the retired state=/naip_year=.
+
+    This had no test, and the failure mode is silent: scanning the wrong
+    partition names returns [] for every state, which is indistinguishable from
+    "the index has no data yet". It shipped that way -- /ingest/options returned
+    "years": [] for all 49 states against the live index.
+    """
+    import duckdb
+    import ingest_manifest as im
+
+    root = tmp_path / "idx"
+    for region, year in (("nj", 2023), ("nj", 2019), ("ca", 2022)):
+        part = root / f"collection={im.INDEX_COLLECTION}" / f"region={region}" / f"year={year}"
+        part.mkdir(parents=True)
+        duckdb.connect().execute(f"copy (select 1 as x) to '{part / 'data_0.parquet'}' (format parquet)")
+    # the retired layout must NOT be picked up
+    stale = root / f"collection={im.INDEX_COLLECTION}" / "state=nj" / "naip_year=1999"
+    stale.mkdir(parents=True)
+
+    adapter = d.ManifestIndexAdapter(index_root=str(root))
+    assert adapter.available_years("nj") == [2023, 2019]  # newest first
+    assert adapter.available_years("ca") == [2022]
+    assert adapter.available_years("wy") == []
+
+
+def test_naip_key_parser_matches_the_text_path_splitter():
+    """naip_key_parser must split exactly as partition_from_key() does.
+
+    Including the 491 keys in hi/pr/vi that carry an extra directory level. Both
+    take parts[:5] and parts[-1], so the interposed level is ignored by both; if
+    they diverged, the two ingest paths would disagree on quad and filename for
+    those rows only -- a silent, region-specific split.
+    """
+    import ingest_manifest as im
+
+    keys = [
+        "nj/2023/30cm/rgbir_cog/39075/m_3907536_ne_18_030_20230711_20231019.tif",
+        "ca/2022/60cm/rgbir_cog/34116/m_3411629_se_11_060_20220429.tif",
+        # the island depth: an extra level between quad and filename
+        "hi/2021/60cm/rgbir_cog/19155/57/m_1915557_se_05_060_20211217_20220909.tif",
+        "pr/2022/60cm/rgbir_cog/18066/12/m_1806612_ne_20_060_20220304.tif",
+    ]
+    for key in keys:
+        kf = d.naip_key_parser(key)
+        expected = im.partition_from_key(key)
+        assert kf is not None, key
+        assert kf.region == expected["state"], key
+        assert kf.year == expected["naip_year"], key
+        for field in ("resolution_dir", "product_family", "spatial_prefix"):
+            assert kf.properties[field] == expected[field], (key, field)
+
+    # rejected the same way partition_from_key rejects them
+    for bad in ("manifest.txt", "nj/notayear/30cm/rgbir_cog/39075/x.tif", "toolong/2023/a/b/c.tif"):
+        assert d.naip_key_parser(bad) is None or im.partition_from_key(bad) is None, bad
+
+
+def test_naip_row_projection_supplies_what_row_to_insertable_needs():
+    """The generic->NAIP row projection is a rename, not a second key parse.
+
+    row_to_insertable() (the EarthSearch path) reads state/naip_year/
+    resolution_dir/product_family/spatial_prefix off the row. A broken projection
+    would not raise -- every row would miss the STAC join and fall through to the
+    COG-header fallback, so the ingest would still 'succeed'.
+    """
+    key = "nj/2023/30cm/rgbir_cog/39075/m_3907536_ne_18_030_20230711_20231019.tif"
+    href = f"s3://naip-analytic/{key}"
+    kf = d.naip_key_parser(key)
+    generic = {
+        href: {
+            "source_bucket": "naip-analytic",
+            "source_key": key,
+            "asset_href": href,
+            "filename": key.rsplit("/", 1)[-1],
+            "region": kf.region,
+            "year": kf.year,
+            "properties": kf.properties,
+        }
+    }
+    ((_, row),) = d.to_naip_rows(generic).items()
+    for field in (
+        "source_bucket",
+        "source_key",
+        "asset_href",
+        "filename",
+        "state",
+        "naip_year",
+        "resolution_dir",
+        "product_family",
+        "spatial_prefix",
+    ):
+        assert field in row, field
+    assert row["state"] == "nj" and row["naip_year"] == 2023
+    assert row["resolution_dir"] == "30cm"
+    assert row["product_family"] == "rgbir_cog"
+    assert row["spatial_prefix"] == "39075"
+
+
+def test_naip_enumerate_prefixes_narrows_on_year():
+    """A known year must not trigger a whole-state crawl.
+
+    naip-analytic is requester-pays and limit_per_partition caps rows KEPT, not
+    objects listed, so an unnarrowed prefix is billable LIST volume.
+    """
+    calls = []
+
+    class FakeS3:
+        def list_objects_v2(self, **kw):
+            calls.append(kw)
+            return {"CommonPrefixes": [{"Prefix": "nj/2013/"}, {"Prefix": "nj/2023/"}, {"Prefix": "nj/junk/"}]}
+
+    assert d.naip_enumerate_prefixes(FakeS3(), "naip-analytic", "nj", 2015) == ["nj/2015/"]
+    assert calls == []  # no listing at all when the year is known
+
+    years = d.naip_enumerate_prefixes(FakeS3(), "naip-analytic", "nj", None)
+    assert years == ["nj/2013/", "nj/2023/"]  # non-numeric prefix dropped
+    assert calls and calls[0]["RequestPayer"] == "requester"  # or the list 403s
+
+
 if __name__ == "__main__":
     tests = [
         test_ky_key_parser,
