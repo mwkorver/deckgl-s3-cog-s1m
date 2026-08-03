@@ -44,6 +44,11 @@ INGEST_MODE = os.environ.get("S3_COG_INGEST_MODE") or (
 # can POST ingest cross-origin to the container function instead. Empty locally
 # (ingest runs in-process) and on the ingest function itself.
 INGEST_URL = (os.environ.get("S3_COG_INGEST_URL") or "").rstrip("/")
+# Lambda function name BEHIND INGEST_URL, needed only so /environment can tell an
+# operator where the write token actually lives. A Lambda Function URL does not
+# reveal its function name, and the read function's own AWS_LAMBDA_FUNCTION_NAME
+# is the WRONG answer -- the token is on the ingest function, not on us.
+INGEST_FUNCTION = os.environ.get("S3_COG_INGEST_FUNCTION", "")
 # Shared token required by public write ingest endpoints. Local dev may leave
 # this unset; Lambda write endpoints fail closed when it is missing.
 INGEST_TOKEN = os.environ.get("S3_COG_INGEST_TOKEN", "")

@@ -12,6 +12,7 @@ from config import (
     COLLECTION_ID,
     EARTHSEARCH_API,
     EARTHSEARCH_PAGE_SIZE,
+    INGEST_FUNCTION,
     INGEST_MODE,
     INGEST_TOKEN,
     INGEST_URL,
@@ -162,14 +163,19 @@ def probe_manifest_freshness() -> dict[str, Any]:
 def ingest_token_hint() -> str | None:
     """The command an operator runs to read the ingest token back.
 
-    Only meaningful on Lambda, where AWS_LAMBDA_FUNCTION_NAME names the function
-    whose environment holds the token. Locally there is nothing to retrieve --
-    require_ingest_token skips auth entirely when no token is configured.
+    Names the function that actually HOLDS the token. When INGEST_URL is set this
+    process only serves reads and forwards writes to a separate ingest function,
+    so its own AWS_LAMBDA_FUNCTION_NAME is the wrong answer -- the deployed read
+    API pointed operators at `deckgl-s3-cog-s1m-read`, which has no token, while
+    the writes it forwards are gated by the one on the ingest worker.
+
+    Locally there is nothing to retrieve: require_ingest_token skips auth
+    entirely when no token is configured off Lambda.
     """
-    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-west-2"
+    function_name = INGEST_FUNCTION or (os.environ.get("AWS_LAMBDA_FUNCTION_NAME") if not INGEST_URL else "")
     if not function_name:
         return None
-    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-west-2"
     return (
         f"aws lambda get-function-configuration --function-name {function_name} "
         f"--region {region} --query 'Environment.Variables.S3_COG_INGEST_TOKEN' --output text"
@@ -210,11 +216,14 @@ def build_environment_payload():
         "ingest_url": INGEST_URL or None,
         # How to retrieve the write token -- never the token itself. The viewer
         # does not ship it (a public bucket cannot hold a secret), so an operator
-        # needs some way to find it. It lives in this function's own environment,
-        # the one place it must exist anyway, and the runtime hands us our own
-        # name, so this hint needs no configuration to stay correct. Reading it
-        # back requires lambda:GetFunctionConfiguration -- IAM.
-        "ingest_token_required": bool(INGEST_TOKEN),
+        # needs some way to find it. Reading it back requires
+        # lambda:GetFunctionConfiguration -- IAM.
+        #
+        # When INGEST_URL is set, writes go to a SEPARATE function and this one
+        # holds no token: bool(INGEST_TOKEN) would be False and the panel would
+        # say no token is needed, right before every write 401s. Delegating means
+        # a token IS required -- the ingest function fails closed without one.
+        "ingest_token_required": bool(INGEST_URL) or bool(INGEST_TOKEN),
         "ingest_token_hint": ingest_token_hint(),
         "effective_config": {
             "collection_id": COLLECTION_ID,

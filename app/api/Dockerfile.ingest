@@ -28,8 +28,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # All read + ingest source. app.py is the handler; ingest_duckdb/ingest_manifest
 # carry the pyarrow/pyproj/pillow ingest pipeline; duckdb_s3 wires DuckDB-on-S3.
-COPY app.py aws_s3.py config.py lake.py probes.py ingest_jobs.py ingest_options.py ./
-COPY ingest_duckdb.py ingest_manifest.py descriptors.py duckdb_s3.py build_manifest_index.py ./
+#
+# COPY *.py, NOT a hand-maintained filename list. This image and the read stack's
+# app/api/Makefile were two independent lists of files for ONE application, kept
+# in sync by hand -- and they drifted: s1m.py was missing here, so app.py (which
+# imports it at MODULE level, for terrain discovery this function never serves)
+# failed with Runtime.ImportModuleError and EVERY route 502'd, /health included.
+# A plain-text 502 on every path reads like an auth or CORS fault, not a missing
+# file, which is what made it expensive to diagnose.
+#
+# The read package enumerates because zip size is capped; this is a container,
+# where the extra source is negligible. Cheaper to ship a few unused modules than
+# to re-learn that lesson the next time app.py grows an import.
+COPY *.py ./
 RUN mkdir -p viewer
 
 # Mangum handler (app.handler) -- the Lambda container base image's entrypoint

@@ -93,6 +93,12 @@ Resources:
           # Point the viewer at the separately deployed container ingest
           # function. /environment surfaces this so the ingest panel POSTs there.
           S3_COG_INGEST_URL: !Ref IngestUrl
+          # Name of the function behind that URL. Only /environment uses it, to
+          # tell an operator where the write token lives: a Function URL does not
+          # reveal its function, and this stack's own name is the wrong answer --
+          # the token is on the ingest worker. Must match ingest-template.yaml's
+          # FunctionName.
+          S3_COG_INGEST_FUNCTION: deckgl-s3-cog-s1m-ingest-worker
           DUCKDB_EXT_DIR: /opt/duckdb_extensions
       Policies:
         # App output (lake/ footprints) lives in THIS

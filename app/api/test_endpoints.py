@@ -570,3 +570,40 @@ def test_manifest_index_reader_handles_the_island_key_depth(tmp_path):
     text_path = im.partition_from_key(key)
     for field in ("state", "naip_year", "resolution_dir", "product_family", "spatial_prefix", "filename"):
         assert row[field] == text_path[field], field
+
+
+def test_ingest_token_hint_names_the_function_that_holds_the_token(monkeypatch):
+    """A delegating read API must point at the INGEST function, not itself.
+
+    The deployed read API reported ingest_token_required=False and a hint naming
+    `deckgl-s3-cog-s1m-read` -- which holds no token -- while every write it
+    forwards to the ingest worker is token-gated. The panel therefore said no
+    token was needed, then the write 401'd.
+    """
+    import importlib
+
+    import config
+    import probes
+
+    # read function: delegates writes, holds no token of its own
+    monkeypatch.setenv("S3_COG_INGEST_URL", "https://x.lambda-url.us-west-2.on.aws")
+    monkeypatch.setenv("S3_COG_INGEST_FUNCTION", "deckgl-s3-cog-s1m-ingest-worker")
+    monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "deckgl-s3-cog-s1m-read")
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+    monkeypatch.delenv("S3_COG_INGEST_TOKEN", raising=False)
+    importlib.reload(config)
+    importlib.reload(probes)
+    hint = probes.ingest_token_hint()
+    assert "deckgl-s3-cog-s1m-ingest-worker" in hint
+    assert "deckgl-s3-cog-s1m-read" not in hint
+    assert bool(config.INGEST_URL) or bool(config.INGEST_TOKEN)  # required despite no local token
+
+    # local: no delegation, no token -> nothing to retrieve
+    monkeypatch.delenv("S3_COG_INGEST_URL", raising=False)
+    monkeypatch.delenv("S3_COG_INGEST_FUNCTION", raising=False)
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    importlib.reload(config)
+    importlib.reload(probes)
+    assert probes.ingest_token_hint() is None
+    importlib.reload(config)
+    importlib.reload(probes)
