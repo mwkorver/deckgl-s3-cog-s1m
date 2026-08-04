@@ -175,14 +175,16 @@ Instead of keeping a PostgreSQL/PostGIS database running 24/7, metadata searches
 - Hilbert clustering (`ST_Hilbert`) improves spatial locality within partitions, helping DuckDB use Parquet statistics to skip unrelated row groups.
 - The ingest writer uses DuckDB's `GEOPARQUET_VERSION 'V2'`, producing WKB-backed columns annotated with Parquet's native `GEOMETRY` logical type plus GeoParquet 2.0 metadata for interoperability.
 
-### 2. Lazy, Per-COG URL Presigning (Requester-Pays Friendly)
-To access requester-pays S3 assets securely:
-- **Small Search Responses:** `POST /search` returns raw, un-signed `s3://` hrefs. This prevents response bloat (avoiding the addition of large STS credentials / tokens to every URL) and removes the latency of bulk presigning.
-- **On-Demand Requests:** The frontend `MosaicLayer` uses `getSource()` to sign each COG URL via `GET /sign` only when that COG enters the active viewport. Its range requests then reuse the signed URL.
-- **Caching & Coalescing:** Includes a client-side `signedUrlCache` with automatic TTL evictions, request coalescing for concurrent loads, and 403-handling to auto-renew expired signatures.
-- **Token-Aware Self-Heal:** A presigned URL cannot outlive the STS token that signed it. When credentials come from short-lived, auto-rotating login sessions (~15 min), `GET /sign` bounds both the URL's `ExpiresIn` and the server-side presign cache to the token's *real* remaining life (parsing `expiresAt` timezone-aware so it is never over-trusted) and returns the true `expires_in`. The signing client rebuilds on the token's rotation cadence, so it never emits URLs signed with a dead token, and the viewer re-signs before expiry.
-- **Priority Loading:** Uses Euclidean distance from the viewport center to sort and load tiles center-out.
 
+### 2. Lazy, Per-COG URL Presigning (Requester-Pays Friendly)
+
+To access requester-pays S3 assets securely:
+
+- **Small Search Responses:** `POST /search` returns raw, un-signed `s3://` hrefs. This prevents response bloat (avoiding the addition of large STS credentials / tokens to every URL) and removes the latency of bulk presigning.
+- **On-Demand Requests:** The frontend `MosaicLayer` uses `getSource()` to sign each COG URL via `GET /sign` only when that COG enters the active viewport. A single call to `GeoTIFF.fromUrl` then issues a sequence of `Range` GETs against that same signed URL to read the TIFF header, the Image File Directory, the tile offset/byte-count tables, and finally the actual pixel tiles for the current zoom level and viewport.
+- **Caching & Coalescing:** Includes a client-side `signedUrlCache` keyed by `s3://` href (not by tile), so all of those internal sub-requests reuse the same presigned URL until expiry. Without this, every internal range read would trigger its own `GET /sign` round-trip, multiplying latency by the number of COG metadata lookups. Request coalescing (`inflightSigns`) ensures that when `geotiff.js` fires its initial burst of concurrent range reads to open a new COG, they all wait on a single in-flight `/sign` call rather than each spawning a redundant one. Also includes automatic TTL evictions and 403-handling to auto-renew expired signatures.
+- **Priority Loading:** Uses Euclidean distance from the viewport center to sort and load tiles center-out.
+  
 ### 3. Declarative & Semi-Automated Onboarding
 Adding new image collections is simplified via layout inference:
 - A CLI validates candidate files using a light, dependency-free TIFF header probe.
