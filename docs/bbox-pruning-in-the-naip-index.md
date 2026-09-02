@@ -1,9 +1,9 @@
 # The NAIP index's bbox shape defeats row-group pruning
 
-**Status:** measured. A struct bbox cuts bytes fetched by 53% on a tile that hits
-and 82% on one that misses, on `ca/2022`. That is worth doing, but one number in
-this repo disagrees with it and has to be reconciled first — see "What still has
-to be checked".
+**Status:** measured on both published collections. A struct bbox cuts bytes
+fetched by 41-53% on a tile that hits and 82% on one that misses, on `ca/2022`.
+That is worth doing, but one number in this repo disagrees with it and has to be
+reconciled first — see "What still has to be checked".
 
 Reproduce with `python app/api/bench_bbox_pruning.py matrix`.
 
@@ -108,23 +108,32 @@ with no covering declared) and does not write it, even when the struct is named
 slower file. If covering is wanted, it needs a footer-metadata patch that leaves
 the page data alone, not a round-trip.
 
-### 2. Physical layout — already done
+### 2. Physical layout — done for one collection, not the other
 
-This was drafted as the second half of the job. It is not: the writer already
-does both parts.
+This was drafted as the second half of the job. For `naip-analytic` it is
+already done; for the collection the tiler actually reads it is not.
 
-- Rows are sorted by `ST_Hilbert(src.geometry, region_bounds.ext)` with explicit
-  per-region bounds ([build_stac_index.py:179](../app/api/build_stac_index.py:179)).
-  Measured locality on published `ca/2022`: **15.4% mean row-group extent** as a
-  fraction of the file's own box (23.9 / 12.7 / 13.8 / 14.0 / 21.9 / 5.9%).
-- `row_group_size` is 2048, which is DuckDB's floor — it clamps to a multiple of
-  its vector size, so nothing smaller is possible. Published layout is
-  `[2048 × 5, 830]`.
+- `row_group_size` is 2048 in both, which is DuckDB's floor — it clamps to a
+  multiple of its vector size, so nothing smaller is possible. Published layout
+  is `[2048 × 5, 830]`.
+- Clustering differs sharply. Measured mean row-group extent as a fraction of
+  each file's own box, `ca/2022`:
 
-So per-dimension statistics land on a file that is already clustered tightly
-enough for them to bite, which is why the numbers below are as large as they are.
-No re-sort is needed, and the geoparquet-io STR ordering this note previously
-pointed at would replace an ordering already measured as sufficient.
+  | collection | locality | why |
+  |---|---:|---|
+  | `naip-analytic` | **15.4%** | inherited from a lake that already arrived clustered |
+  | `naip-visualization` | **42.2%** | nothing sorted it |
+
+  Neither was sorted at publication time — the generator has no `ORDER BY` (see
+  "Where the published files come from"). `build_stac_index.py:179` does sort, by
+  `ST_Hilbert(src.geometry, region_bounds.ext)` with explicit per-region bounds,
+  but it did not write these files.
+
+So for `naip-analytic` the per-dimension statistics land on a file that is
+already clustered tightly enough for them to bite. For `naip-visualization` a
+Hilbert sort is real work still on the table, and it is free in the same pass as
+the schema change — it is why that collection prunes to 2/6 groups on a hit where
+`naip-analytic` reaches 1/6.
 
 ## What was measured
 
@@ -137,6 +146,8 @@ deterministic.
 `ca/2022`, z15-sized envelope, `bbox + geometry` predicate, DuckDB's Parquet
 prefetcher left on because that is what the Lambda consumer runs with:
 
+`collection=naip-analytic`:
+
 | tile | variant | bytes fetched | distinct | row groups |
 |---|---|---:|---:|---|
 | hit | array (published) | 495,993 | 446,077 | 6/6 |
@@ -144,10 +155,25 @@ prefetcher left on because that is what the Lambda consumer runs with:
 | miss (inside extent) | array (published) | 389,165 | 339,249 | 6/6 |
 | miss (inside extent) | **struct** | **70,048** | **18,640** | **0/6** |
 
-**−53% on a hit, −82% on a miss**, and the row-group count moves from "all of
-them" to "the one that can contain the answer". Turning geo_bbox off changes
-none of it (`array-v1` and `struct-v1` land within 600 bytes of their `V2`
-counterparts), which is the evidence for the inert-statistics finding above.
+`collection=naip-visualization` — the one the tiler actually reads:
+
+| tile | variant | bytes fetched | distinct | row groups |
+|---|---|---:|---:|---|
+| hit | array (published) | 499,313 | 448,118 | 6/6 |
+| hit | **struct** | **294,717** | **242,032** | **2/6** |
+| miss (inside extent) | array (published) | 392,746 | 341,551 | 6/6 |
+| miss (inside extent) | **struct** | **72,602** | **19,917** | **0/6** |
+
+**−53%/−41% on a hit, −82% on both misses**, and the row-group count moves from
+"all of them" to "the one or two that can contain the answer". The serving
+collection gains less on hits only because nothing ever sorted it — 2/6 rather
+than 1/6, for the 42.2% locality above. Turning geo_bbox off changes none of it
+(`array-v1` and `struct-v1` land within 600 bytes of their `V2` counterparts),
+which is the evidence for the inert-statistics finding above.
+
+The file-size effect is not consistent and should not weigh either way: the
+struct variant is 14% larger than the array on `naip-analytic` and 1% smaller on
+`naip-visualization`.
 
 Two side observations from the same run: a `geometry`-only predicate reads *more*
 than the bbox filter in every variant and never prunes, so the consumer's
@@ -181,16 +207,37 @@ Also outstanding:
   state-year. The 295,232-row whole-collection read is where the earlier −41 to
   −47% was measured.
 
-## Who this is for
+## Where the published files come from
 
-Note the split. `threejs-cf-zxy-s1m` reads `collection=naip-visualization`,
-which `build_stac_index.py` does **not** produce and cannot: the two source
-buckets are not a perfect match (nj and fl have 2010/ under `naip-analytic` and
-not under `naip-visualization`), so that collection has to be built from its own
-bucket listing. Both collections are published, both carry the same DOUBLE[]
-bbox, and both would need the change for the tiler to benefit.
+Traced 2026-09-02, because "change the writer" and "change the published file"
+are not the same action and the difference decides the plan.
 
-Worth knowing before rewriting anything: the published files carry no
-`asset_href`/`gsd` columns, which `build_stac_index.py` emits. What is live today
-was not written by this repo's writer, so "change the writer" and "change the
-published file" are not yet the same action.
+Provenance is two steps with different owners:
+
+1. **Data — this repo.** `ingest_duckdb.py` builds the lakes.
+   `collection=naip-analytic` comes from the `collection=naip` lake;
+   `collection=naip-visualization` comes from a lake built by the ad-hoc
+   descriptor path, which supports that bucket by name
+   ([descriptors.py:147](../app/api/descriptors.py:147)) and whose output carries
+   this pipeline's exact 15-column schema.
+2. **Publication — nobody.** Projecting those lakes into 9-column STAC Items was
+   done once, 2026-07-26, by inline DuckDB SQL in a plan document that lives in
+   no repository. `build_stac_index.py` landed six days later and writes zstd
+   plus `asset_href`/`gsd`; the published files are snappy with neither.
+
+That generator explains every property measured here: snappy (no `COMPRESSION`
+option), `[2048 × 5, 830]` (`ROW_GROUP_SIZE 2000` clamped up to the floor),
+`geo_bbox` present (`GEOPARQUET_VERSION 'V2'`), the `DOUBLE[]` bbox
+(`[bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax] AS bbox`), and the 42.2% locality
+(no `ORDER BY`). The four per-dimension doubles the fix wants already exist in
+the lake it read — the array is a lossy repackaging of columns upstream.
+
+An earlier draft of this note said `naip-visualization` "has to be built from its
+own bucket listing" and so was out of reach. Building it that way is exactly what
+already happened; what is missing is wiring the projection step to that lake.
+
+Two operational facts before rewriting anything: the tiler reads this bucket
+**live** — never seeded, never copied into its per-account bucket — so a fix
+propagates with no redeploy and a bad write breaks every deployment at once. And
+the bucket has **versioning off**, so an overwrite is unrecoverable. Copy the
+tree to a backup prefix first.

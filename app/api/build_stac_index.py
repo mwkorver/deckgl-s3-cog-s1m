@@ -56,18 +56,35 @@ filtering alone was break-even in-region, so the residual is most likely footer
 parsing -- the flattened schema carries ~15 columns against 8, and the whole
 footer is read on every open regardless of projection.
 
-The deciding argument was who benefits. The bbox encoding is a documented pain
-point for the tiler in threejs-cf-zxy-s1m (tiler/src/tiler/resolver.py: "this
-lake declares no GeoParquet `covering`, and its `bbox` is STAC's plain
-DOUBLE[]") -- but that tiler reads `collection=naip-visualization`, which this
-writer does not produce and cannot: the two source buckets are not a perfect
-match (nj and fl have 2010/ under naip-analytic and not under
-naip-visualization), so that collection has to be built from its own bucket
-listing. So the spec-compliant schema would have cost every consumer of THIS
-collection ~7% and delivered the pruning win to none of them.
+The deciding argument was who benefits, and it was argued from a false premise.
+The bbox encoding is a documented pain point for the tiler in threejs-cf-zxy-s1m
+(tiler/src/tiler/resolver.py: "this lake declares no GeoParquet `covering`, and
+its `bbox` is STAC's plain DOUBLE[]"). That tiler reads
+`collection=naip-visualization`, which this writer does not produce -- and the
+reasoning stopped there, concluding the pruning win would reach none of this
+collection's consumers.
 
-Revisit if naip-visualization ever moves into this writer, or if the query mix
-shifts toward tiles that miss.
+CORRECTED 2026-09-02. "Does not produce" is true; "and cannot" was not. The
+premise was that the two source buckets do not match (nj and fl have 2010/ under
+naip-analytic and not under naip-visualization) so that collection "has to be
+built from its own bucket listing" -- which is right, and is a thing this repo
+already does. The ad-hoc descriptor path ingests that bucket by name
+(descriptors.py: REQUESTER_PAYS_BUCKETS, and register_adhoc_descriptor's own
+error message recommends it), and a lake built that way exists, carrying
+ingest_duckdb.py's exact 15-column output schema. What was missing was never the
+capability; it was wiring THIS projection to that lake instead of only to
+collection=naip.
+
+So the pruning win is reachable by the tiler, and docs/bbox-pruning-in-the-naip-
+index.md measures what it is worth: -41% bytes fetched on a tile that hits and
+-82% on one that misses, on the naip-visualization partition the tiler actually
+reads. That does not by itself overturn the rejection above -- the +6-7% on
+matching queries was measured on a variant that ALSO flattened properties to ~15
+columns, and until that is re-run in isolation the two numbers are not comparable
+-- but the "delivered to none of them" half of the argument no longer holds.
+
+Revisit means: re-run the Lambda measurement on the isolated bbox change, and if
+it holds, point this writer at both lakes.
 """
 
 import argparse
