@@ -75,16 +75,31 @@ ingest_duckdb.py's exact 15-column output schema. What was missing was never the
 capability; it was wiring THIS projection to that lake instead of only to
 collection=naip.
 
-So the pruning win is reachable by the tiler, and docs/bbox-pruning-in-the-naip-
-index.md measures what it is worth: -41% bytes fetched on a tile that hits and
--82% on one that misses, on the naip-visualization partition the tiler actually
-reads. That does not by itself overturn the rejection above -- the +6-7% on
-matching queries was measured on a variant that ALSO flattened properties to ~15
-columns, and until that is re-run in isolation the two numbers are not comparable
--- but the "delivered to none of them" half of the argument no longer holds.
+So the pruning win is reachable by the tiler. It is also not a win. Re-measured
+2026-09-02 from a Lambda in us-west-2 on the ISOLATED bbox change -- struct bbox
+only, 9 columns, everything else identical, five cold containers per cell -- the
+regression above survives without the column flattening it was blamed on:
 
-Revisit means: re-run the Lambda measurement on the isolated bbox change, and if
-it holds, point this writer at both lakes.
+    tile   array (published)   struct
+    hit          242.9 ms     285.6 ms   +17.6%
+    miss         208.3 ms     111.2 ms   -46.6%
+
+The miss lands inside the -41 to -47% band recorded above; the hit is WORSE than
+the +6-7%, not better. Bytes fetched do drop on a hit (-41%), which is why the
+byte-level harness pointed the other way. Request counts explain the gap: the
+struct's four bbox leaves are four column chunks where the array had one, so
+pruning five of six row groups still costs TWO EXTRA ROUND TRIPS (11 requests ->
+13). In-region, round trips dominate transfer at this file size. On a miss the
+statistics prune before any of that (10 -> 4 requests) and the win is real.
+
+So the rejection stands, on firmer ground than when it was written: not footer
+parsing, but request count on the common path. The workload is mostly hits --
+NAIP covers CONUS, so a tile matching nothing is an edge case.
+
+Revisit only if the query mix shifts toward misses. The better lever for this
+index is orthogonal: `assets` + `properties` are 25.7% of the file and the tiler
+needs only href out of them, which is what the promoted asset_href/gsd columns
+above already address -- fewer bytes with no extra column chunks. Unmeasured.
 """
 
 import argparse

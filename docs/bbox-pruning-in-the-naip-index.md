@@ -1,9 +1,13 @@
 # The NAIP index's bbox shape defeats row-group pruning
 
-**Status:** measured on both published collections. A struct bbox cuts bytes
-fetched by 41-53% on a tile that hits and 82% on one that misses, on `ca/2022`.
-That is worth doing, but one number in this repo disagrees with it and has to be
-reconciled first — see "What still has to be checked".
+**Status:** settled — **do not make the change.** A struct bbox cuts bytes
+fetched by 41-53% on a tile that hits, and is nonetheless **17.6% SLOWER** from
+Lambda in-region on exactly that tile, because it needs more S3 round trips to
+fetch those fewer bytes. Misses get much faster (-46.6%), but the serving
+workload is mostly hits. The rejection recorded in `build_stac_index.py` stands.
+
+Bytes were the wrong metric. That is the useful finding here, and the rest of
+this note is the record of arriving at it.
 
 Reproduce with `python app/api/bench_bbox_pruning.py matrix`.
 
@@ -180,20 +184,63 @@ than the bbox filter in every variant and never prunes, so the consumer's
 filter-and-refine shape is right; and `struct-covering` (covering added, geo_bbox
 lost to the pyarrow rewrite) is worse than `struct-v2` on every measure.
 
-## What still has to be checked
+## The Lambda measurement, which reverses the conclusion
 
-**The one number that disagrees.** The writer's own docstring records a
-spec-compliant schema that was built, measured from Lambda, and rejected:
-−32% file size and −41 to −47% on queries matching nothing, against **+6–7% on
-queries that DO match** ([build_stac_index.py:38](../app/api/build_stac_index.py:38)).
-The measurement here says a hit gets *better*, by a lot. The likely explanation
-is that the rejected variant changed more than the bbox: it also flattened
-`properties` to top-level columns, taking the schema from 8 columns to ~15, and
-the docstring attributes the regression to footer parsing rather than to the
-bbox. If that is right, the earlier rejection was decided by a variable that the
-bbox change does not require. **Re-run the Lambda measurement against the
-isolated change — struct bbox only, 9 columns, everything else identical —
-before acting on either number.**
+The docstring records **+6–7% on queries that DO match** for a rejected
+spec-compliant schema ([build_stac_index.py:38](../app/api/build_stac_index.py:38)),
+which the byte numbers above appeared to contradict. The hypothesis was that the
+rejected variant changed more than the bbox — it also flattened `properties`,
+taking the schema from 8 columns to ~15 — so the regression belonged to the
+flattening, not the bbox.
+
+**That hypothesis is wrong.** Measured from a Lambda in us-west-2, DuckDB 1.5.5,
+against the isolated change (struct bbox only, 9 columns, everything else
+identical), five cold containers per cell, variants interleaved:
+
+| tile | array (published) | struct | |
+|---|---:|---:|---|
+| hit | 242.9 ms | 285.6 ms | **+17.6%** |
+| miss | 208.3 ms | 111.2 ms | **−46.6%** |
+
+Medians of cold-container first-query latency. The distributions do not overlap
+on hits (array 225–255 ms, struct 270–443 ms). The miss figure lands inside the
+docstring's own −41 to −47% band; the hit regression is real and larger than the
++6–7% it recorded.
+
+### Why fewer bytes are slower
+
+Request counts from the same queries explain it:
+
+| tile | variant | requests | bytes |
+|---|---|---:|---:|
+| hit | array | 11 | 499,313 |
+| hit | **struct** | **13** | **294,717** |
+| miss | array | 10 | 392,746 |
+| miss | **struct** | **4** | **72,602** |
+
+On a hit, the struct's four separate bbox leaves are four column chunks to fetch
+where the array had one, so pruning five row groups still costs **two extra round
+trips**. In-region, S3 round trips dominate transfer for a file this size: 200 KB
+saved does not pay for two more requests. On a miss the statistics prune before
+any of that, so requests drop with the bytes and the win is real.
+
+Warm containers are not the escape: with DuckDB's external file cache the whole
+partition is in memory and every variant is ~46 ms, indistinguishable. The bbox
+shape only matters on cold containers — which is precisely the "every cold tile"
+case, and the case that just got worse.
+
+### What this means
+
+Do not change the schema. The workload is mostly hits — NAIP covers CONUS, so a
+tile that matches nothing is an edge or coastal case — and the change trades the
+common path for the rare one.
+
+The more promising lever is the one this note ignored: `assets` and `properties`
+are 25.7% of the file and the tiler needs only `href` out of them.
+`build_stac_index.py` already promotes `asset_href`/`gsd` as top-level columns
+for exactly this reason, and the published files predate it and carry neither.
+That reduces bytes without adding column chunks. Unmeasured — but it is the
+shape of a change that could win on the common path rather than against it.
 
 Also outstanding:
 
