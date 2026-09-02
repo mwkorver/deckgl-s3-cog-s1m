@@ -1,13 +1,19 @@
 # The NAIP index's bbox shape defeats row-group pruning
 
-**Status:** settled — **do not make the change.** A struct bbox cuts bytes
-fetched by 41-53% on a tile that hits, and is nonetheless **17.6% SLOWER** from
-Lambda in-region on exactly that tile, because it needs more S3 round trips to
-fetch those fewer bytes. Misses get much faster (-46.6%), but the serving
-workload is mostly hits. The rejection recorded in `build_stac_index.py` stands.
+**Status:** settled, with a different change to make than the one proposed.
 
-Bytes were the wrong metric. That is the useful finding here, and the rest of
-this note is the record of arriving at it.
+The bbox change loses: a struct bbox cuts bytes fetched by 41-53% on a tile that
+hits and is **17.6% SLOWER** from Lambda in-region on exactly that tile, because
+it needs more S3 round trips to fetch those fewer bytes. The rejection recorded
+in `build_stac_index.py` stands.
+
+But the mechanism that sank it points at a change that wins. Round trips, not
+bytes, are what cost: re-encoding each partition to **two row groups and zstd**
+is **21-24% faster cold** on the partitions where it applies, needs no schema
+change, no consumer change, and no tiler deploy. See "What to do instead".
+
+Bytes were the wrong metric throughout. That is the finding; the rest of this
+note is the record of arriving at it.
 
 Reproduce with `python app/api/bench_bbox_pruning.py matrix`.
 
@@ -235,12 +241,67 @@ Do not change the schema. The workload is mostly hits — NAIP covers CONUS, so 
 tile that matches nothing is an edge or coastal case — and the change trades the
 common path for the rare one.
 
-The more promising lever is the one this note ignored: `assets` and `properties`
-are 25.7% of the file and the tiler needs only `href` out of them.
-`build_stac_index.py` already promotes `asset_href`/`gsd` as top-level columns
-for exactly this reason, and the published files predate it and carry neither.
-That reduces bytes without adding column chunks. Unmeasured — but it is the
-shape of a change that could win on the common path rather than against it.
+## What to do instead: fewer row groups
+
+If round trips are the cost, the lever is whatever reduces them. Measured the
+same way, on the tiler's real query (`ca/2022`, cold containers, n=5, median):
+
+| variant | hit | vs published |
+|---|---:|---:|
+| published (snappy, 6 groups) | 269.8 ms | — |
+| zstd, 6 groups | 247.9 ms | −8.1% |
+| zstd + promoted `asset_href`/`gsd` | 281.2 ms | **+4.2%** |
+| **zstd, 1 group** | **191.6 ms** | **−29.0%** |
+
+Two things in that table are worth pausing on. Promoting the columns the tiler
+digs out of JSON made it **slower** — two more column chunks, two more requests,
+the same trap as the struct bbox. And the one-group variant **doubles the bytes
+fetched on a hit** (1,006,568 against 554,176) while cutting requests from 11 to
+4, and wins by 29% anyway.
+
+### Where the knee is
+
+Sweeping row-group count on the two largest partitions, warm-container method
+with DuckDB's file cache disabled (which understates the effect — it reuses TLS
+connections, and that is precisely the overhead fewer requests avoid):
+
+| partition | published | 5-6 groups | 3 groups | **2 groups** | 1 group |
+|---|---:|---:|---:|---:|---:|
+| `tx/2022` (17,276 rows, 9 groups) | — | −20.7% | −29.6% | **−32.3%** | −28.1% |
+| `ca/2022` (11,070 rows, 6 groups) | — | −1.8% | −23.5% | **−29.3%** | −22.9% |
+| `la/2023` (3,286 rows, 2 groups) | — | +3.0% | +3.0% | +2.8% | −1.8% |
+
+**Two is the optimum, not one.** One group is consistently worse than two — a
+single chunk has to be fetched whole before decoding can start, where two overlap.
+`la` is already at two groups and has nothing to gain, which is the point: the
+target is a count, not a size.
+
+Confirmed on cold containers, the honest measurement:
+
+| partition | published | 2 groups | |
+|---|---:|---:|---|
+| `ca/2022` | 254.0 ms | 194.4 ms | **−23.5%** |
+| `tx/2022` | 310.8 ms | 245.4 ms | **−21.0%** |
+
+### How much of the collection this touches
+
+Estimating rows from file size across all 79 `naip-visualization` partitions:
+
+- 29 partitions (37%, but only 6% of rows) are already one row group — nothing to do
+- 37 partitions (47%, 53% of rows) are at 2-3 groups — marginal
+- 13 partitions (17%, **41% of rows**) are at 4+ groups — this is where the win is
+
+So it is a minority of partitions carrying a plurality of the data, and the
+largest partition in the collection (`tx/2022`, 9 groups) is the biggest winner.
+
+### What this contradicts
+
+`build_stac_index.py:19` calls `row_group_size 2048` load-bearing, because
+DuckDB's default collapses a partition into one row group "and destroys
+row-group pruning entirely". The premise is right and the conclusion inverted:
+with a `DOUBLE[]` bbox there is no row-group pruning to destroy, so small groups
+buy nothing and cost a round trip each. 2048 is only load-bearing in a world
+where the bbox is a struct — and that world measured slower.
 
 Also outstanding:
 

@@ -16,15 +16,27 @@ Three writer settings are load-bearing and easy to lose:
                             groups, so dropping them silently removes the
                             index's spatial pruning.
 
-  row_group_size            DuckDB's default is 122,880 rows, which collapses a
-                            whole partition into ONE row group and destroys
-                            row-group pruning entirely (ca/2022: 6 groups -> 1).
-                            2048 is also a FLOOR: DuckDB clamps this to a
-                            multiple of its vector size, so 1845, 1024 and 512
-                            all produce a byte-identical file. The published
-                            layout is [2048 x 5, 830], not the ~1,845/group an
-                            earlier comment here claimed (that was 11070/6
-                            arithmetic, not a measurement).
+  row_group_size            2048 is a FLOOR: DuckDB clamps this to a multiple of
+                            its vector size, so 1845, 1024 and 512 all produce a
+                            byte-identical file. The published layout is
+                            [2048 x 5, 830], not the ~1,845/group an earlier
+                            comment here claimed (that was 11070/6 arithmetic,
+                            not a measurement).
+
+                            2048 IS THE WRONG VALUE, measured 2026-09-02. This
+                            comment used to argue that DuckDB's 122,880 default
+                            "destroys row-group pruning entirely (ca/2022: 6
+                            groups -> 1)". True, and irrelevant: with the bbox a
+                            DOUBLE[] there is no row-group pruning to destroy
+                            (see docs/bbox-pruning-in-the-naip-index.md), so
+                            small groups buy nothing and cost one S3 round trip
+                            each. Targeting TWO row groups per partition is
+                            21-24% faster cold from Lambda -- and two beats one,
+                            which is worse than both (a single chunk must be
+                            fetched whole before decode starts). Prefer
+                            row_group_size ~= ceil(rows/2). 2048 only earns its
+                            keep if the bbox ever becomes a struct, and that
+                            change measured slower on the common path.
 
   ORDER BY ST_Hilbert(...)  With EXPLICIT per-region bounds. This is a NO-OP on
                             current data and is kept as insurance: rebuilding
