@@ -294,6 +294,22 @@ Estimating rows from file size across all 79 `naip-visualization` partitions:
 So it is a minority of partitions carrying a plurality of the data, and the
 largest partition in the collection (`tx/2022`, 9 groups) is the biggest winner.
 
+### Applying it
+
+`app/api/rewrite_index_layout.py` does the re-encode. It rewrites only partitions
+at 3+ row groups (31 of 79 in `naip-visualization`), computes
+`row_group_size = ceil(rows / 2)` per partition, and copies each original to a
+backup prefix before overwriting — the bucket has no versioning, so that copy is
+the only undo. Row count, column list, row order and resulting group count are
+verified against the original *before* the live object is replaced; any mismatch
+leaves the live file untouched and the staged rewrite behind. `--apply` is
+required, the default is a dry run.
+
+Exercised end to end against a scratch copy of `ca/2022` and `tx/2022`: −27.0%
+and −27.7% on disk, 6 and 9 groups down to 2, `geo` metadata and per-row-group
+`geo_bbox` preserved, and the tiler's query returns the same row unmodified.
+Cold-Lambda gain on the script's own output measured −16% to −24% across runs.
+
 ### What this contradicts
 
 `build_stac_index.py:19` calls `row_group_size 2048` load-bearing, because
