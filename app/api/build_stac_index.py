@@ -23,7 +23,8 @@ Three writer settings are load-bearing and easy to lose:
                             comment here claimed (that was 11070/6 arithmetic,
                             not a measurement).
 
-                            2048 IS THE WRONG VALUE, measured 2026-09-02. This
+                            2048 WAS THE WRONG VALUE, measured 2026-09-02, and
+                            the default here is now 8192. This
                             comment used to argue that DuckDB's 122,880 default
                             "destroys row-group pruning entirely (ca/2022: 6
                             groups -> 1)". True, and irrelevant: with the bbox a
@@ -34,9 +35,12 @@ Three writer settings are load-bearing and easy to lose:
                             21-24% faster cold from Lambda -- and two beats one,
                             which is worse than both (a single chunk must be
                             fetched whole before decode starts). Prefer
-                            row_group_size ~= ceil(rows/2). 2048 only earns its
-                            keep if the bbox ever becomes a struct, and that
-                            change measured slower on the common path.
+                            row_group_size ~= ceil(rows/2), which a single
+                            partitioned COPY cannot express -- hence 8192 as the
+                            best constant, and rewrite_index_layout.py for the
+                            per-partition optimum. 2048 only earns its keep if
+                            the bbox ever becomes a struct, and that change
+                            measured slower on the common path.
 
   ORDER BY ST_Hilbert(...)  With EXPLICIT per-region bounds. This is a NO-OP on
                             current data and is kept as insurance: rebuilding
@@ -130,10 +134,23 @@ TARGET_COLLECTION = os.environ.get("S3_COG_STAC_INDEX_TARGET_COLLECTION", "naip-
 DEFAULT_LAKE = os.environ.get("S3_COG_LAKE_ROOT", "/cache/exports/naip_rgbir_duckdb")
 DEFAULT_OUT = os.environ.get("S3_COG_STAC_INDEX", "s3://naip-geoparquet-index/manifest-index")
 
-# DuckDB clamps row_group_size to a multiple of its 2048 vector size, so this is
-# the smallest group it will actually emit. Anything below it is silently
-# rounded up; 4096 does take effect and doubles rows scanned per tile.
-DEFAULT_ROW_GROUP_SIZE = 2048
+# 8192, not 2048: measured 2026-09-02, see the row_group_size note above and
+# docs/bbox-pruning-in-the-naip-index.md. Small groups cost one S3 round trip
+# each and buy no pruning, because the DOUBLE[] bbox statistics are
+# dimension-mixed and prune nothing.
+#
+# 8192 is the smallest single value that keeps EVERY partition in this
+# collection at one or two row groups (78 at one, 4 at two, against 2048's
+# spread up to eight). It is a compromise: the per-partition optimum is
+# ceil(rows/2), and a single COPY with partition_by writes every partition with
+# one row_group_size, so the writer cannot express that. Running
+# rewrite_index_layout.py afterwards lands each partition on its own optimum;
+# this default just makes the un-rewritten output good rather than bad.
+#
+# DuckDB clamps this to a multiple of its 2048 vector size and folds a trailing
+# group smaller than that into the previous one, which is why the counts above
+# are not plain ceil(rows/8192).
+DEFAULT_ROW_GROUP_SIZE = 8192
 
 # Constant STAC scaffolding, matching what the published index already carries.
 STAC_VERSION = "1.0.0"

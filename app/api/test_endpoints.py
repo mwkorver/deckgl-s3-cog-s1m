@@ -436,10 +436,9 @@ def test_build_stac_index_sql_carries_the_load_bearing_settings():
     """The projection's easily-lost settings, pinned.
 
     Each was measured: without geoparquet_version 'V2' DuckDB writes 0/6 row
-    groups with geo_bbox (spatial pruning silently gone); DuckDB's default
-    row_group_size of 122,880 collapses a partition to one row group; and
-    ST_Hilbert without explicit bounds degrades locality (99.2% mean row-group
-    box, indistinguishable from ORDER BY random()) rather than preserving it.
+    groups with geo_bbox (spatial pruning silently gone), and ST_Hilbert without
+    explicit bounds degrades locality (99.2% mean row-group box,
+    indistinguishable from ORDER BY random()) rather than preserving it.
     """
     import build_stac_index as bsi
 
@@ -455,9 +454,11 @@ def test_build_stac_index_sql_carries_the_load_bearing_settings():
     assert "as gsd" in sql
     # id is "<collection>/<source_key>", which the index reader strips back off
     assert "'naip-analytic/' || src.source_key" in sql
-    # 2048, not 1845: DuckDB clamps row_group_size to a multiple of its vector
-    # size, so the two produce a byte-identical file and 2048 is what it means.
-    assert bsi.DEFAULT_ROW_GROUP_SIZE == 2048
+    # 8192, not 2048: small row groups cost an S3 round trip each and buy no
+    # pruning, because the DOUBLE[] bbox statistics are dimension-mixed. 8192 is
+    # the smallest value keeping every partition at one or two row groups; 2048
+    # spread them up to eight and measured 21-29% slower cold from Lambda.
+    assert bsi.DEFAULT_ROW_GROUP_SIZE == 8192
 
 
 def test_manifest_index_reader_projects_stac_items(tmp_path):
