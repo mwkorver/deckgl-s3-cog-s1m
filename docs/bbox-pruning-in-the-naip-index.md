@@ -310,6 +310,36 @@ and −27.7% on disk, 6 and 9 groups down to 2, `geo` metadata and per-row-group
 `geo_bbox` preserved, and the tiler's query returns the same row unmodified.
 Cold-Lambda gain on the script's own output measured −16% to −24% across runs.
 
+### Applied, 2026-09-02
+
+Both published collections were re-encoded. 31 partitions in each; the rest were
+already at 1-2 groups and were left alone.
+
+| collection | rewritten | before | after | | rows after |
+|---|---:|---:|---:|---|---|
+| `naip-analytic` | 31 of 82 | 31,577,619 B | 22,268,548 B | −29.5% | 295,232 |
+| `naip-visualization` | 31 of 79 | 31,578,439 B | 22,403,201 B | −29.1% | 292,357 |
+
+Both row counts match what the original index plan recorded, so nothing was lost
+or duplicated. No partition anywhere is above two row groups now.
+
+Cold-Lambda latency against the retained backups, n=5, median:
+
+| partition | before | after | |
+|---|---:|---:|---|
+| `naip-visualization` `tx/2022` (9 → 2 groups) | 312.2 ms | 235.1 ms | −24.7% |
+| `naip-analytic` `tx/2022` (9 → 2 groups) | 327.9 ms | 233.1 ms | −28.9% |
+| `naip-analytic` `ca/2022` (6 → 2 groups) | 269.9 ms | 212.9 ms | −21.1% |
+
+Originals are under `manifest-index-backup/`, restorable with `aws s3 cp`. No
+consumer changed: the tiler reads the bucket live and picked this up on its next
+cold container, with no deploy.
+
+One thing left undone deliberately: `build_stac_index.py`'s `DEFAULT_ROW_GROUP_SIZE`
+is still 2048, so a regenerated partition would revert to the slow layout. The
+docstring there explains why and points at `ceil(rows/2)`; changing a writer
+default is a separate decision from re-encoding published files.
+
 ### What this contradicts
 
 `build_stac_index.py:19` calls `row_group_size 2048` load-bearing, because
