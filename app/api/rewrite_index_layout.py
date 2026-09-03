@@ -54,6 +54,12 @@ DEFAULT_COLLECTION = os.environ.get("S3_COG_STAC_INDEX_TARGET_COLLECTION", "naip
 MIN_GROUPS_TO_REWRITE = 3
 
 # The measured optimum. See the module docstring: one group is worse than two.
+# It is a CEILING, not an exact target -- DuckDB folds a trailing group smaller
+# than its 2048 vector size into the previous one, so for some row counts two is
+# simply unreachable. ut/2021 (6,032 rows) is the worked example: row_group_size
+# 2048 gives three groups, and 4096 gives one, because the 1,936-row tail is
+# below the vector size. One group still measured -22 to -28%, so landing on one
+# is a fine outcome and only "more groups than we started with" is a failure.
 TARGET_GROUPS = 2
 
 # DuckDB clamps row_group_size to a multiple of its 2048 vector size, so the
@@ -209,8 +215,10 @@ def main():
             problems.append(f"rows {before['rows']} -> {after['rows']}")
         if after["columns"] != before["columns"]:
             problems.append("column list changed")
-        if after["groups"] != TARGET_GROUPS:
-            problems.append(f"got {after['groups']} groups, wanted {TARGET_GROUPS}")
+        if after["groups"] > TARGET_GROUPS:
+            problems.append(f"got {after['groups']} groups, wanted at most {TARGET_GROUPS}")
+        elif after["groups"] >= before["groups"]:
+            problems.append(f"no improvement: {before['groups']} -> {after['groups']} groups")
         if order_fingerprint(con, tmp) != order_fingerprint(con, src):
             problems.append("row order changed")
         if problems:
