@@ -11,10 +11,23 @@ Three writer settings are load-bearing and easy to lose:
 
   geoparquet_version 'V2'   Without it DuckDB writes NO GeospatialStatistics:
                             measured 6/6 row groups carrying `geo_bbox` with the
-                            option, 0/6 without (and 0/6 with 'V1'). Those
-                            per-row-group extents are what let a reader skip row
-                            groups, so dropping them silently removes the
-                            index's spatial pruning.
+                            option, 0/6 without (and 0/6 with 'V1'). It also
+                            annotates the column with Parquet's native GEOMETRY
+                            logical type, so these files satisfy both standards
+                            at once -- native Parquet geospatial AND GeoParquet's
+                            `geo` metadata, WKB-encoded, which is what makes the
+                            two compatible.
+
+                            NOTE: no reader currently uses those per-row-group
+                            extents -- DuckDB 1.5.x prunes on them not at all
+                            (V1 vs V2 differ by <600 bytes on every query
+                            measured). They are kept because they cost nothing
+                            and a reader that uses them is a version bump away.
+                            That bump is the re-test trigger for the row-group
+                            sizing above: today extra row groups only cost round
+                            trips, but once geo_bbox prunes, group count becomes
+                            a granularity trade. See
+                            docs/bbox-pruning-in-the-naip-index.md.
 
   row_group_size            2048 is a FLOOR: DuckDB clamps this to a multiple of
                             its vector size, so 1845, 1024 and 512 all produce a

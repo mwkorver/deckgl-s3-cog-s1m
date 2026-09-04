@@ -100,6 +100,31 @@ above survives, for a reason the first draft of this note did not state.
 Keep writing them anyway: they cost nothing, they are what the format specifies,
 and a reader that does use them is a version bump away.
 
+**RE-TEST TRIGGER: when a reader starts pruning on GeospatialStatistics.** That
+is the assumption this whole note rests on, it is the one most likely to expire,
+and it will expire quietly — nothing breaks, the index just stops being shaped
+for the reader it has.
+
+It matters because of what was done in response. Consolidating each partition to
+two row groups was free *only because nothing prunes*: with an inert statistic,
+extra groups cost a round trip each and buy nothing. The moment a reader can use
+`geo_bbox`, row-group count stops being free and becomes a granularity
+trade — a two-group file can skip at most half of itself, where the original
+six-group `ca/2022` could have skipped five of six. The statistics are still
+written, so the capability is not lost; only the resolution is coarser.
+
+How to check, cheaply: rebuild one partition with `geoparquet_version 'V1'` (0/N
+groups carry `geo_bbox`) and compare against `'V2'` on a tile that misses. Today
+they land within 600 bytes of each other. When they stop doing so, re-run the
+row-group sweep before assuming two is still right.
+
+Worth knowing alongside this: the files declare GeoParquet `"version": "2.0.0"`,
+which as of 2026-09 exists only as `v2.0.0-rc.1` (July 2024) — the latest stable
+spec is 1.1.0. That is sanctioned rather than sloppy: the RC says it "uses the
+2.0.0 version numbers so that writers don't need to produce weird version
+numbers". But it does mean these files track a spec that can still change, and
+the reader behaviour above is part of what is still settling.
+
 ## The fix is a schema change
 
 ### 1. Schema
@@ -364,6 +389,8 @@ Also outstanding:
 - **The full-collection case.** These queries are scoped by partition glob to one
   state-year. The 295,232-row whole-collection read is where the earlier −41 to
   −47% was measured.
+- **Reader support for GeospatialStatistics**, which is the re-test trigger above
+  and the one that would change the conclusion rather than refine it.
 
 ## Where the published files come from
 
