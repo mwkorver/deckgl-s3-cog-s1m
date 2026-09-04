@@ -298,12 +298,11 @@ largest partition in the collection (`tx/2022`, 9 groups) is the biggest winner.
 
 `app/api/rewrite_index_layout.py` does the re-encode. It rewrites only partitions
 at 3+ row groups (31 of 79 in `naip-visualization`), computes
-`row_group_size = ceil(rows / 2)` per partition, and copies each original to a
-backup prefix before overwriting — the bucket has no versioning, so that copy is
-the only undo. Row count, column list, row order and resulting group count are
-verified against the original *before* the live object is replaced; any mismatch
-leaves the live file untouched and the staged rewrite behind. `--apply` is
-required, the default is a dry run.
+`row_group_size = ceil(rows / 2)` per partition. Row count, column list, row
+order and resulting group count are verified against the original *before* the
+live object is replaced; any mismatch leaves the live file untouched and the
+staged rewrite behind. `--apply` is required, the default is a dry run, and it
+refuses to write to a bucket without versioning enabled.
 
 Exercised end to end against a scratch copy of `ca/2022` and `tx/2022`: −27.0%
 and −27.7% on disk, 6 and 9 groups down to 2, `geo` metadata and per-row-group
@@ -331,9 +330,14 @@ Cold-Lambda latency against the retained backups, n=5, median:
 | `naip-analytic` `tx/2022` (9 → 2 groups) | 327.9 ms | 233.1 ms | −28.9% |
 | `naip-analytic` `ca/2022` (6 → 2 groups) | 269.9 ms | 212.9 ms | −21.1% |
 
-Originals are under `manifest-index-backup/`, restorable with `aws s3 cp`. No
-consumer changed: the tiler reads the bucket live and picked this up on its next
-cold container, with no deploy.
+No consumer changed: the tiler reads the bucket live and picked this up on its
+next cold container, with no deploy.
+
+The `manifest-index-backup/` copies this run made were deleted once the rewrite
+was verified. The bucket now has **versioning enabled** (2026-09-03) with a
+lifecycle rule keeping the two newest noncurrent versions, so a future overwrite
+is recoverable without an explicit backup prefix — verified by rolling one
+partition back from its version id.
 
 One thing left undone deliberately: `build_stac_index.py`'s `DEFAULT_ROW_GROUP_SIZE`
 is still 2048, so a regenerated partition would revert to the slow layout. The
@@ -393,5 +397,6 @@ already happened; what is missing is wiring the projection step to that lake.
 Two operational facts before rewriting anything: the tiler reads this bucket
 **live** — never seeded, never copied into its per-account bucket — so a fix
 propagates with no redeploy and a bad write breaks every deployment at once. And
-the bucket has **versioning off**, so an overwrite is unrecoverable. Copy the
-tree to a backup prefix first.
+the bucket had **versioning off** when this was written, making an overwrite
+unrecoverable; it was enabled on 2026-09-03, keeping the two newest noncurrent
+versions.

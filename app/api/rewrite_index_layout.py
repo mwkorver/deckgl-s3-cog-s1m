@@ -23,23 +23,33 @@ partitions are one group already, and la/2023 (2 groups) measured 2.8% SLOWER
 re-encoded, so the floor is left alone. The win lives in the 13 partitions at 4+
 groups that hold 41% of the rows.
 
-SAFETY. The index bucket has versioning OFF, so an overwrite cannot be rolled
-back. Every partition is copied to a backup prefix before it is replaced, and
-the run verifies row count, column list and row order against the original
-before it writes anything over the live object. --apply is required; the default
-is a dry run.
+SAFETY. The undo is S3 versioning, enabled on naip-geoparquet-index 2026-09-03
+with a lifecycle rule keeping the two newest noncurrent versions. An earlier
+version of this script copied every partition to a backup prefix first, because
+the bucket had none; that is now the bucket's job rather than this script's.
+
+What it still does is verify BEFORE overwriting: the rewrite is staged to a
+separate key, and row count, column list, row order and resulting group count are
+checked against the live object. A mismatch leaves the live object untouched and
+the staged file behind to inspect. Verification is the part worth keeping --
+versioning lets you undo a bad write, but only if you notice it.
+
+To roll one partition back:
+
+    aws s3api list-object-versions --bucket naip-geoparquet-index \
+        --prefix manifest-index/collection=<c>/region=<r>/year=<y>/
+    aws s3api copy-object --bucket naip-geoparquet-index --key <key> \
+        --copy-source '<bucket>/<key>?versionId=<id>' --request-payer requester
 
 Usage:
     python rewrite_index_layout.py                          # dry run, all partitions
     python rewrite_index_layout.py --collection naip-analytic
     python rewrite_index_layout.py --regions tx ca --apply
-    python rewrite_index_layout.py --apply --backup-prefix manifest-index-backup-20260902
 """
 
 import argparse
 import math
 import os
-import posixpath
 from time import perf_counter
 
 import boto3
@@ -75,9 +85,10 @@ def parse_args():
     parser.add_argument("--regions", nargs="*", help="Limit to these regions (default: all)")
     parser.add_argument("--years", nargs="*", type=int, help="Limit to these years (default: all)")
     parser.add_argument(
-        "--backup-prefix",
-        help="Bucket-relative prefix for the pre-overwrite copy "
-        "(default: <index prefix>-backup). Required because the bucket has no versioning.",
+        "--staging-prefix",
+        default=".rewrite-staging",
+        help="Bucket-relative prefix the rewrite is staged under before verification. "
+        "Kept OUTSIDE the index prefix so a reader globbing the index tree cannot see it.",
     )
     parser.add_argument("--apply", action="store_true", help="Actually write. Without it, this is a dry run.")
     parser.add_argument("--limit", type=int, help="Stop after this many partitions (for a trial run)")
@@ -106,6 +117,26 @@ def list_partitions(s3, index_root: str, collection: str, regions, years) -> lis
                 continue
             out.append(f"s3://{bucket}/{key}")
     return sorted(out)
+
+
+def require_versioning(s3, bucket: str) -> None:
+    """Refuse to overwrite a bucket that cannot roll the overwrite back.
+
+    This script used to copy every partition to a backup prefix, which made the
+    undo unconditional. It now relies on bucket versioning instead -- so the
+    undo is a bucket SETTING, and a setting can be off. Checking it is what
+    keeps the safety honest rather than assumed; without this, --apply against
+    an unversioned bucket would destroy the previous layout while printing that
+    it had been retained.
+    """
+    status = s3.get_bucket_versioning(Bucket=bucket).get("Status")
+    if status != "Enabled":
+        raise SystemExit(
+            f"refusing to write: s3://{bucket} has versioning {status or 'disabled'}, "
+            f"so an overwrite could not be rolled back.\n"
+            f"  aws s3api put-bucket-versioning --bucket {bucket} "
+            f"--versioning-configuration Status=Enabled"
+        )
 
 
 def row_group_size_for(rows: int) -> int:
@@ -158,13 +189,16 @@ def main():
     con = duckdb.connect()
     duckdb_s3.configure(con, args.index, spatial=True)
 
+    if args.apply:
+        require_versioning(s3, split_s3(args.index)[0])
+
     partitions = list_partitions(s3, args.index, args.collection, args.regions, args.years)
     if args.limit:
         partitions = partitions[: args.limit]
     print(f"{len(partitions)} partition(s) under collection={args.collection}\n")
 
     bucket, index_prefix = split_s3(args.index)
-    backup_prefix = (args.backup_prefix or f"{index_prefix.rstrip('/')}-backup").strip("/")
+    staging_prefix = args.staging_prefix.strip("/")
 
     header = f"{'partition':38} {'rows':>8} {'groups':>7} {'bytes':>12}  action"
     print(header)
@@ -194,16 +228,10 @@ def main():
             )
             continue
 
-        # Back up BEFORE touching the live object: no versioning, no undo.
-        backup_key = posixpath.join(backup_prefix, key[len(index_prefix.strip("/")) + 1 :])
-        s3.copy_object(
-            Bucket=bucket,
-            Key=backup_key,
-            CopySource={"Bucket": bucket, "Key": key},
-            RequestPayer="requester",
-        )
-
-        tmp = f"s3://{bucket}/{backup_prefix}/.staging/{key.replace('/', '_')}"
+        # No backup copy: bucket versioning retains the object being replaced,
+        # and the lifecycle rule keeps the two newest noncurrent versions. The
+        # module docstring carries the rollback command.
+        tmp = f"s3://{bucket}/{staging_prefix}/{key.replace('/', '_')}"
         t0 = perf_counter()
         rewrite(con, src, tmp, before["rows"])
         after = describe(con, tmp)
@@ -247,7 +275,7 @@ def main():
     print()
     if args.apply:
         print(f"rewrote {written}, skipped {skipped}, {saved:,} bytes saved")
-        print(f"originals under s3://{bucket}/{backup_prefix}/")
+        print(f"replaced objects retained as noncurrent versions in s3://{bucket}/")
     else:
         print(f"dry run: would rewrite {planned}, skip {skipped}. Re-run with --apply to write.")
     con.close()
