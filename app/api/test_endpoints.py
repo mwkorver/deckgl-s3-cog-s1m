@@ -449,9 +449,13 @@ def test_build_stac_index_sql_carries_the_load_bearing_settings():
     # STAC shape the consumer reads
     for col in ("as id", "as type", "as geometry", "as bbox", "as datetime", "as properties", "as assets"):
         assert col in sql, col
-    # promoted columns so a reader can skip the JSON blobs
-    assert "as asset_href" in sql
-    assert "as gsd" in sql
+    # NOT promoted. asset_href/gsd as top-level columns were measured at +4.2%
+    # cold from Lambda: two extra column chunks are two extra S3 round trips, and
+    # round trips dominate transfer for this index. Nothing reads them either --
+    # the tiler JSON_EXTRACTs from `assets`, and ingest_manifest's reader is
+    # deliberately generation-agnostic (id/region/year only).
+    assert "as asset_href" not in sql
+    assert "as gsd" not in sql
     # id is "<collection>/<source_key>", which the index reader strips back off
     assert "'naip-analytic/' || src.source_key" in sql
     # 8192, not 2048: small row groups cost an S3 round trip each and buy no

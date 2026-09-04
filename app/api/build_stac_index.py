@@ -114,8 +114,12 @@ NAIP covers CONUS, so a tile matching nothing is an edge case.
 
 Revisit only if the query mix shifts toward misses. The better lever for this
 index is orthogonal: `assets` + `properties` are 25.7% of the file and the tiler
-needs only href out of them, which is what the promoted asset_href/gsd columns
-above already address -- fewer bytes with no extra column chunks. Unmeasured.
+needs only href out of them. This writer used to promote asset_href/gsd to
+top-level columns for exactly that reason. MEASURED 2026-09-02 and REMOVED: the
+promoted variant was +4.2% SLOWER cold from Lambda, because two extra columns are
+two extra column chunks and therefore two more S3 round trips -- the same trap as
+the struct bbox above. Fewer bytes, more requests, slower. Anything that shrinks
+this file has to do it without adding column chunks.
 """
 
 import argparse
@@ -229,10 +233,6 @@ def build_sql(lake_glob: str, target_collection: str) -> str:
             'roles', ['data']
           )
         )                                                                as assets,
-        -- Promoted out of the JSON blobs: a reader needing only href/gsd can
-        -- skip `assets` + `properties` entirely, which are 25.7% of the file.
-        src.asset_href                                                   as asset_href,
-        src.gsd                                                          as gsd,
         '{target_collection}'                                            as collection,
         src.region                                                       as region,
         src.year                                                         as year
